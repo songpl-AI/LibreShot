@@ -39,9 +39,11 @@ final class CaptureService {
     private var stream: SCStream?
     private var streamOutput: CaptureStreamOutput?
     private var continuation: CheckedContinuation<NSImage, Error>?
+    private var isStopping = false
 
     // Updated to accept optional displayID. If nil, captures main display.
     func captureDisplayImage(displayID: CGDirectDisplayID? = nil) async throws -> NSImage {
+        isStopping = false
         if !CGPreflightScreenCaptureAccess() {
             _ = CGRequestScreenCaptureAccess()
             throw CaptureServiceError.permissionDenied
@@ -272,15 +274,20 @@ final class CaptureService {
     }
 
     private func stopStream() {
+        if isStopping { return }
+        isStopping = true
         let stream = self.stream
         let output = self.streamOutput
-        self.stream = nil
-        self.streamOutput = nil
-        Task {
-            if let output {
-                try? await stream?.removeStreamOutput(output, type: .screen)
+        Task { [weak self] in
+            if let stream {
+                try? await stream.stopCapture()
+                if let output {
+                    try? await stream.removeStreamOutput(output, type: .screen)
+                }
             }
-            try? await stream?.stopCapture()
+            self?.stream = nil
+            self?.streamOutput = nil
+            self?.isStopping = false
         }
     }
 }

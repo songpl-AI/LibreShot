@@ -15,6 +15,17 @@ enum CaptureAction {
     case pin
 }
 
+enum SelectionHandle: CaseIterable {
+    case topLeft
+    case top
+    case topRight
+    case right
+    case bottomRight
+    case bottom
+    case bottomLeft
+    case left
+}
+
 class OverlayViewModel: ObservableObject {
     // Selection State
     @Published var startPoint: CGPoint?
@@ -27,6 +38,8 @@ class OverlayViewModel: ObservableObject {
     @Published var annotations: [Annotation] = []
     @Published var currentAnnotation: Annotation?
     @Published var selectedColor: Color = .red
+    @Published var activeSelectionHandle: SelectionHandle?
+    @Published var isMovingSelection: Bool = false
     
     // Actions
     var onCapture: ((CGRect, [Annotation], CaptureAction) -> Void)?
@@ -83,6 +96,10 @@ class OverlayViewModel: ObservableObject {
     // MARK: - Annotation Logic
     
     @Published var selectedAnnotationID: UUID?
+    
+    func annotationID(at point: CGPoint) -> UUID? {
+        hitTest(at: point)
+    }
     
     func startDrawing(at point: CGPoint) {
         // If no tool selected, try to select an annotation
@@ -184,6 +201,8 @@ class OverlayViewModel: ObservableObject {
         selectedTool = nil
         selectedAnnotationID = nil
         cancelTextInput()
+        activeSelectionHandle = nil
+        isMovingSelection = false
     }
     
     // MARK: - Text Input State
@@ -277,6 +296,143 @@ class OverlayViewModel: ObservableObject {
         }
         if let fontSize = fontSize, annotations[index].type == .text {
             annotations[index].fontSize = fontSize
+        }
+    }
+
+    func beginMoveSelection(at point: CGPoint) {
+        guard state == .editing, selectionRect != .zero else { return }
+        isMovingSelection = true
+        selectionDragStartPoint = point
+        selectionDragStartRect = selectionRect
+    }
+
+    func updateMoveSelection(to point: CGPoint, within bounds: CGRect) {
+        guard isMovingSelection else { return }
+        let deltaX = point.x - selectionDragStartPoint.x
+        let deltaY = point.y - selectionDragStartPoint.y
+        let maxX = max(bounds.width - selectionDragStartRect.width, 0)
+        let maxY = max(bounds.height - selectionDragStartRect.height, 0)
+        let newX = min(max(selectionDragStartRect.minX + deltaX, 0), maxX)
+        let newY = min(max(selectionDragStartRect.minY + deltaY, 0), maxY)
+        let newRect = CGRect(x: newX, y: newY, width: selectionDragStartRect.width, height: selectionDragStartRect.height)
+        let offset = CGSize(width: newRect.minX - selectionRect.minX, height: newRect.minY - selectionRect.minY)
+        selectionRect = newRect
+        moveAllAnnotations(offset: offset)
+        moveEditingTextPosition(offset: offset)
+    }
+
+    func endMoveSelection() {
+        isMovingSelection = false
+    }
+
+    func beginResizeSelection(handle: SelectionHandle, at point: CGPoint) {
+        guard state == .editing, selectionRect != .zero else { return }
+        activeSelectionHandle = handle
+        selectionDragStartPoint = point
+        selectionDragStartRect = selectionRect
+    }
+
+    func updateResizeSelection(to point: CGPoint, within bounds: CGRect) {
+        guard let handle = activeSelectionHandle else { return }
+        let deltaX = point.x - selectionDragStartPoint.x
+        let deltaY = point.y - selectionDragStartPoint.y
+        let minSize: CGFloat = 20
+        var minX = selectionDragStartRect.minX
+        var maxX = selectionDragStartRect.maxX
+        var minY = selectionDragStartRect.minY
+        var maxY = selectionDragStartRect.maxY
+
+        switch handle {
+        case .topLeft:
+            minX += deltaX
+            minY += deltaY
+        case .top:
+            minY += deltaY
+        case .topRight:
+            maxX += deltaX
+            minY += deltaY
+        case .right:
+            maxX += deltaX
+        case .bottomRight:
+            maxX += deltaX
+            maxY += deltaY
+        case .bottom:
+            maxY += deltaY
+        case .bottomLeft:
+            minX += deltaX
+            maxY += deltaY
+        case .left:
+            minX += deltaX
+        }
+
+        minX = max(minX, 0)
+        minY = max(minY, 0)
+        maxX = min(maxX, bounds.width)
+        maxY = min(maxY, bounds.height)
+
+        if maxX - minX < minSize {
+            if handle == .left || handle == .topLeft || handle == .bottomLeft {
+                minX = max(maxX - minSize, 0)
+            } else if handle == .right || handle == .topRight || handle == .bottomRight {
+                maxX = min(minX + minSize, bounds.width)
+            } else {
+                maxX = min(minX + minSize, bounds.width)
+            }
+        }
+
+        if maxY - minY < minSize {
+            if handle == .top || handle == .topLeft || handle == .topRight {
+                minY = max(maxY - minSize, 0)
+            } else if handle == .bottom || handle == .bottomLeft || handle == .bottomRight {
+                maxY = min(minY + minSize, bounds.height)
+            } else {
+                maxY = min(minY + minSize, bounds.height)
+            }
+        }
+
+        selectionRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    func endResizeSelection() {
+        activeSelectionHandle = nil
+    }
+
+    var isManipulatingSelection: Bool {
+        isMovingSelection || activeSelectionHandle != nil
+    }
+
+    private var selectionDragStartRect: CGRect = .zero
+    private var selectionDragStartPoint: CGPoint = .zero
+
+    private func moveAllAnnotations(offset: CGSize) {
+        guard offset.width != 0 || offset.height != 0 else { return }
+        annotations = annotations.map { annotation in
+            var updated = annotation
+            updated.startPoint.x += offset.width
+            updated.startPoint.y += offset.height
+            updated.endPoint.x += offset.width
+            updated.endPoint.y += offset.height
+            if updated.type == .pen {
+                updated.points = updated.points.map { CGPoint(x: $0.x + offset.width, y: $0.y + offset.height) }
+            }
+            return updated
+        }
+        if var current = currentAnnotation {
+            current.startPoint.x += offset.width
+            current.startPoint.y += offset.height
+            current.endPoint.x += offset.width
+            current.endPoint.y += offset.height
+            if current.type == .pen {
+                current.points = current.points.map { CGPoint(x: $0.x + offset.width, y: $0.y + offset.height) }
+            }
+            currentAnnotation = current
+        }
+    }
+
+    private func moveEditingTextPosition(offset: CGSize) {
+        guard offset.width != 0 || offset.height != 0 else { return }
+        if isEditingText {
+            editingTextPosition = CGPoint(x: editingTextPosition.x + offset.width, y: editingTextPosition.y + offset.height)
         }
     }
 }

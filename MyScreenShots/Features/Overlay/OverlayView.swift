@@ -52,11 +52,29 @@ struct OverlayView: View {
                 
                 // Layer 3: Selection Border
                 if viewModel.selectionRect != .zero {
-                    Rectangle()
-                        .stroke(Color.white, lineWidth: 1)
-                        .frame(width: viewModel.selectionRect.width, height: viewModel.selectionRect.height)
-                        .position(x: viewModel.selectionRect.midX, y: viewModel.selectionRect.midY)
-                        .allowsHitTesting(false)
+                    let rect = viewModel.selectionRect
+                    ZStack {
+                        Rectangle()
+                            .stroke(Color.white, lineWidth: 1)
+                            .frame(width: rect.width, height: rect.height)
+                            .position(x: rect.midX, y: rect.midY)
+                        
+                        if viewModel.state == .editing && viewModel.selectedTool == nil {
+                            let handleSize: CGFloat = 8
+                            let handleHitSize: CGFloat = 20
+                            ForEach(SelectionHandle.allCases, id: \.self) { handle in
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.white)
+                                        .frame(width: handleSize, height: handleSize)
+                                }
+                                .frame(width: handleHitSize, height: handleHitSize)
+                                .position(handlePosition(for: handle, in: rect))
+                                .allowsHitTesting(false)
+                            }
+                        }
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 }
                 
                 // Layer 4: Toolbar (Only in Editing mode)
@@ -86,9 +104,10 @@ struct OverlayView: View {
                     }
                 }
             }
+            .coordinateSpace(name: "overlay")
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 0)
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
                         if viewModel.isEditingText {
                             // Click outside commits text
@@ -102,7 +121,6 @@ struct OverlayView: View {
                             }
                             viewModel.updateSelection(to: value.location)
                         } else if viewModel.state == .editing {
-                            
                             // 1. Text Tool Logic
                             if viewModel.selectedTool == .text {
                                 // Do nothing on drag, wait for click (ended)
@@ -111,20 +129,49 @@ struct OverlayView: View {
                             
                             // 2. Selection/Move Logic (No tool selected)
                             if viewModel.selectedTool == nil {
+                                let bounds = geometry.frame(in: .named("overlay"))
+                                let rect = viewModel.selectionRect
+                                
+                                if viewModel.isManipulatingSelection {
+                                    if viewModel.activeSelectionHandle != nil {
+                                        viewModel.updateResizeSelection(to: value.location, within: bounds)
+                                    } else if viewModel.isMovingSelection {
+                                        viewModel.updateMoveSelection(to: value.location, within: bounds)
+                                    }
+                                    return
+                                }
+                                
                                 if value.translation == .zero {
-                                     // Just started click, could be selection
-                                     viewModel.startDrawing(at: value.location) // This now handles selection logic
+                                    if let handle = selectionHandle(at: value.startLocation, in: rect, hitSize: 20) {
+                                        viewModel.beginResizeSelection(handle: handle, at: value.startLocation)
+                                        viewModel.updateResizeSelection(to: value.location, within: bounds)
+                                        return
+                                    }
+                                    
+                                    if rect.contains(value.startLocation),
+                                       viewModel.annotationID(at: value.startLocation) == nil {
+                                        viewModel.beginMoveSelection(at: value.startLocation)
+                                        viewModel.updateMoveSelection(to: value.location, within: bounds)
+                                        return
+                                    }
+                                    
+                                    viewModel.startDrawing(at: value.location)
                                 } else {
-                                     // Dragging selected annotation
-                                     let currentX = viewModel.currentPoint?.x ?? value.startLocation.x
-                                     let currentY = viewModel.currentPoint?.y ?? value.startLocation.y
-                                     
-                                     let deltaX = value.location.x - currentX
-                                     let deltaY = value.location.y - currentY
-                                     
-                                     viewModel.moveSelectedAnnotation(offset: CGSize(width: deltaX, height: deltaY))
-                                     
-                                     viewModel.currentPoint = value.location
+                                    if viewModel.isMovingSelection {
+                                        viewModel.updateMoveSelection(to: value.location, within: bounds)
+                                        return
+                                    }
+                                    
+                                    // Dragging selected annotation
+                                    let currentX = viewModel.currentPoint?.x ?? value.startLocation.x
+                                    let currentY = viewModel.currentPoint?.y ?? value.startLocation.y
+                                    
+                                    let deltaX = value.location.x - currentX
+                                    let deltaY = value.location.y - currentY
+                                    
+                                    viewModel.moveSelectedAnnotation(offset: CGSize(width: deltaX, height: deltaY))
+                                    
+                                    viewModel.currentPoint = value.location
                                 }
                                 return
                             }
@@ -154,7 +201,13 @@ struct OverlayView: View {
                             } 
                             // Selection Mode
                             else if viewModel.selectedTool == nil {
-                                 viewModel.currentPoint = nil // Reset drag tracking
+                                if viewModel.isMovingSelection {
+                                    viewModel.endMoveSelection()
+                                }
+                                if viewModel.activeSelectionHandle != nil {
+                                    viewModel.endResizeSelection()
+                                }
+                                viewModel.currentPoint = nil
                             }
                             // Drawing Mode
                             else {
@@ -231,5 +284,37 @@ struct OverlayView: View {
                 .foregroundColor(annotation.color)
             context.draw(text, at: annotation.startPoint, anchor: .topLeading)
         }
+    }
+
+    func handlePosition(for handle: SelectionHandle, in rect: CGRect) -> CGPoint {
+        switch handle {
+        case .topLeft:
+            return CGPoint(x: rect.minX, y: rect.minY)
+        case .top:
+            return CGPoint(x: rect.midX, y: rect.minY)
+        case .topRight:
+            return CGPoint(x: rect.maxX, y: rect.minY)
+        case .right:
+            return CGPoint(x: rect.maxX, y: rect.midY)
+        case .bottomRight:
+            return CGPoint(x: rect.maxX, y: rect.maxY)
+        case .bottom:
+            return CGPoint(x: rect.midX, y: rect.maxY)
+        case .bottomLeft:
+            return CGPoint(x: rect.minX, y: rect.maxY)
+        case .left:
+            return CGPoint(x: rect.minX, y: rect.midY)
+        }
+    }
+
+    func selectionHandle(at point: CGPoint, in rect: CGRect, hitSize: CGFloat) -> SelectionHandle? {
+        let half = hitSize / 2
+        for handle in SelectionHandle.allCases {
+            let position = handlePosition(for: handle, in: rect)
+            if abs(point.x - position.x) <= half && abs(point.y - position.y) <= half {
+                return handle
+            }
+        }
+        return nil
     }
 }
