@@ -72,6 +72,26 @@ struct EditorToolbarView: View {
             }
             .buttonStyle(.plain)
             
+            // Pin Button (New)
+            Button(action: {
+                viewModel.confirmPin()
+            }) {
+                Image(systemName: "pin")
+                    .font(.system(size: 16, weight: .medium))
+                    .padding(7)
+                    .foregroundColor(.orange)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("贴图到屏幕")
+            
             Button(action: {
                 viewModel.confirmCopy()
             }) {

@@ -106,13 +106,53 @@ extension CaptureService {
                 path.addLine(to: p1)
                 path.move(to: end)
                 path.addLine(to: p2)
+            case .ellipse:
+                let x = min(annotation.startPoint.x, annotation.endPoint.x)
+                let y = min(annotation.startPoint.y, annotation.endPoint.y)
+                let width = abs(annotation.endPoint.x - annotation.startPoint.x)
+                let height = abs(annotation.endPoint.y - annotation.startPoint.y)
+                let rect = CGRect(x: x, y: y, width: width, height: height)
+                path.addEllipse(in: rect)
+            case .text:
+                // Text is drawn separately below via string drawing
+                continue
             }
             
             context.addPath(path)
             context.strokePath()
         }
         
+        
         context.restoreGState()
+        
+        // 4. Draw Text Annotations in standard coordinate system
+        // We restored GState, so we are back to NSImage default (y-up, origin bottom-left).
+        // need to convert annotation coordinates (y-down, origin top-left) to this system.
+        
+        for annotation in annotations where annotation.type == .text {
+            let text = annotation.text as NSString
+            let finalFontSize = annotation.fontSize * scaleX
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: finalFontSize),
+                .foregroundColor: NSColor(annotation.color)
+            ]
+            let size = text.size(withAttributes: attributes)
+            
+            // Calculate position
+            // Annotation y is from top.
+            // Image y is from bottom.
+            // We want top of text to be at annotation.y
+            // So bottom of text should be at: (ImageHeight - (annotation.y * scale) - textHeight)
+            
+            let drawPoint = CGPoint(
+                x: annotation.startPoint.x * scaleX,
+                y: image.size.height - (annotation.startPoint.y * scaleY) - size.height
+            )
+            
+            text.draw(at: drawPoint, withAttributes: attributes)
+        }
+        
+        // Context state is already restored to base
         newImage.unlockFocus()
         
         return newImage

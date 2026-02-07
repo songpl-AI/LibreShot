@@ -4,6 +4,8 @@ enum AnnotationType: String, CaseIterable, Identifiable {
     case pen
     case rectangle
     case arrow
+    case ellipse
+    case text
     
     var id: String { self.rawValue }
     
@@ -12,6 +14,8 @@ enum AnnotationType: String, CaseIterable, Identifiable {
         case .pen: return "pencil"
         case .rectangle: return "square"
         case .arrow: return "arrow.up.right"
+        case .ellipse: return "oval"
+        case .text: return "textformat"
         }
     }
 }
@@ -24,4 +28,6 @@ struct Annotation: Identifiable {
     var startPoint: CGPoint = .zero // For shapes
     var endPoint: CGPoint = .zero // For shapes
     var lineWidth: CGFloat = 3.0
+    var text: String = ""  // For text annotations
+    var fontSize: CGFloat = 16.0
 }

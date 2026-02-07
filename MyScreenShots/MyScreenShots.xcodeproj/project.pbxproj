@@ -12,6 +12,7 @@
 		9FE4E29E2F36E28D00F19710 /* OverlayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2992F36E28D00F19710 /* OverlayWindowController.swift */; };
 		9FE4E2A42F36E4A300F19710 /* EditorToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2A22F36E4A300F19710 /* EditorToolbarView.swift */; };
 		9FE4E2A52F36E4A300F19710 /* Annotation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2A12F36E4A300F19710 /* Annotation.swift */; };
+		9FE4E2B52F3722E600F19710 /* PinnedImageWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2B32F3722E600F19710 /* PinnedImageWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		9FE4E2992F36E28D00F19710 /* OverlayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindowController.swift; sourceTree = "<group>"; };
 		9FE4E2A12F36E4A300F19710 /* Annotation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Annotation.swift; sourceTree = "<group>"; };
 		9FE4E2A22F36E4A300F19710 /* EditorToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorToolbarView.swift; sourceTree = "<group>"; };
+		9FE4E2B32F3722E600F19710 /* PinnedImageWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedImageWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -45,6 +47,7 @@
 		9FE4E2622F36D4E100F19710 = {
 			isa = PBXGroup;
 			children = (
+				9FE4E2B42F3722E600F19710 /* Core */,
 				9FE4E2A32F36E4A300F19710 /* Editor */,
 				9FE4E29B2F36E28D00F19710 /* Features */,
 				9FE4E26D2F36D4E100F19710 /* MyScreenShots */,
@@ -85,6 +88,14 @@
 				9FE4E2A22F36E4A300F19710 /* EditorToolbarView.swift */,
 			);
 			path = Editor;
+			sourceTree = "<group>";
+		};
+		9FE4E2B42F3722E600F19710 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				9FE4E2B32F3722E600F19710 /* PinnedImageWindowController.swift */,
+			);
+			path = Core;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -163,6 +174,7 @@
 			files = (
 				9FE4E29C2F36E28D00F19710 /* OverlayView.swift in Sources */,
 				9FE4E29D2F36E28D00F19710 /* OverlayViewModel.swift in Sources */,
+				9FE4E2B52F3722E600F19710 /* PinnedImageWindowController.swift in Sources */,
 				9FE4E2A42F36E4A300F19710 /* EditorToolbarView.swift in Sources */,
 				9FE4E2A52F36E4A300F19710 /* Annotation.swift in Sources */,
 				9FE4E29E2F36E28D00F19710 /* OverlayWindowController.swift in Sources */,

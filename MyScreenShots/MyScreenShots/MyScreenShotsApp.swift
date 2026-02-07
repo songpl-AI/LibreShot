@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 @main
 struct MyScreenShotsApp: App {
@@ -25,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlayWindowController: OverlayWindowController?
     private var settingsWindowController: NSWindowController?
     private var hotkeyObserver: NSObjectProtocol?
+
+    private var pinnedWindows: [PinnedImageWindowController] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -162,9 +165,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .save:
                     _ = try await CaptureService.shared.saveImageWithFallback(croppedImage)
                     await playSuccessSound()
+                case .pin:
+                    await pinImageToScreen(image: croppedImage)
+                    await playSuccessSound()
                 }
             } catch {
                 await handleCaptureError(error)
+            }
+        }
+    }
+    
+    @MainActor
+    private func pinImageToScreen(image: NSImage) {
+        let controller = PinnedImageWindowController(image: image)
+        controller.showWindow(nil)
+        pinnedWindows.append(controller)
+        
+        // Listen for window close to cleanup
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: controller.window, queue: .main) { [weak self] notification in
+            guard let self = self else { return }
+            if let window = notification.object as? NSWindow,
+               let index = self.pinnedWindows.firstIndex(where: { $0.window === window }) {
+                self.pinnedWindows.remove(at: index)
             }
         }
     }
