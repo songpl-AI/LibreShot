@@ -49,7 +49,7 @@ class OverlayWindowController: NSWindowController {
             window.setFrame(target.frame, display: true)
         }
         
-        let overlayView = OverlayView(onCapture: { [weak self] rect, annotations, action in
+        let overlayView = OverlayView(onCapture: { [weak self] (rect: CGRect, annotations: [Annotation], action: CaptureAction) in
             self?.close()
             onCapture(rect, annotations, action)
         }, onCancel: { [weak self] in

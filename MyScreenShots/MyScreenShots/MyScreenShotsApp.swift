@@ -13,6 +13,7 @@ struct MyScreenShotsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
+        // No visible scenes, app is managed by AppDelegate
         Settings {
             EmptyView()
         }
@@ -22,9 +23,16 @@ struct MyScreenShotsApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var overlayWindowController: OverlayWindowController?
+    private var settingsWindowController: NSWindowController?
+    private var hotkeyObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
+        setupStatusItem()
+        setupHotkeys()
+    }
+    
+    private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "MyScreenShots")
@@ -34,9 +42,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "全屏截图", action: #selector(captureFullScreen), keyEquivalent: "1"))
         menu.addItem(NSMenuItem(title: "区域截图", action: #selector(captureSelection), keyEquivalent: "2"))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+    }
+    
+    private func setupHotkeys() {
+        // Register saved hotkey
+        let savedKey = SettingsService.shared.shortcutKey
+        let savedMods = SettingsService.shared.shortcutModifiers
+        if savedKey != -1 {
+            HotkeyService.shared.registerHotkey(keyCode: savedKey, modifiers: savedMods)
+        }
+        
+        // Handle trigger
+        HotkeyService.shared.onTrigger = { [weak self] in
+            self?.captureSelection()
+        }
+        
+        // Listen for hotkey changes from settings
+        hotkeyObserver = NotificationCenter.default.addObserver(
+            forName: .hotkeyDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            print("Hotkey changed notification received, re-registering...")
+            self?.reregisterHotkey()
+        }
+    }
+    
+    private func reregisterHotkey() {
+        let keyCode = SettingsService.shared.shortcutKey
+        let modifiers = SettingsService.shared.shortcutModifiers
+        
+        if keyCode != -1 {
+            HotkeyService.shared.registerHotkey(keyCode: keyCode, modifiers: modifiers)
+        } else {
+            HotkeyService.shared.unregisterHotkey()
+        }
+    }
+    
+    deinit {
+        if let observer = hotkeyObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+    
+    @objc private func openSettings() {
+        if settingsWindowController == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 450, height: 250),
+                styleMask: [.titled, .closable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "设置"
+            window.center()
+            window.contentView = NSHostingView(rootView: SettingsView())
+            window.isReleasedWhenClosed = false
+            settingsWindowController = NSWindowController(window: window)
+        }
+        
+        settingsWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func quitApp() {
+        NSApplication.shared.terminate(nil)
     }
 
     @objc private func captureFullScreen() {
@@ -113,10 +187,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             message = error.localizedDescription
         }
         await showAlert(title: "截图失败", message: message)
-    }
-
-    @objc private func quitApp() {
-        NSApplication.shared.terminate(nil)
     }
 
     @MainActor

@@ -93,15 +93,26 @@ final class CaptureService {
         }
     }
 
-    func saveToDesktop(_ image: NSImage) throws -> URL {
+    func saveToDefaultLocation(_ image: NSImage) throws -> URL {
+        // Try to use configured directory
+        if let result = SettingsService.shared.withSaveDirectory(block: { directoryURL -> URL? in
+            return try? self.saveToDirectory(image, directoryURL: directoryURL)
+        }), let savedURL = result {
+            return savedURL
+        }
+        
+        // Fallback to Desktop
         guard let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
             throw CaptureServiceError.saveFailed(underlying: NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError))
         }
-
+        return try saveToDirectory(image, directoryURL: desktopURL)
+    }
+    
+    private func saveToDirectory(_ image: NSImage, directoryURL: URL) throws -> URL {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let fileName = "MyScreenShots_\(formatter.string(from: Date())).png"
-        let fileURL = desktopURL.appendingPathComponent(fileName)
+        let fileURL = directoryURL.appendingPathComponent(fileName)
 
         guard let tiffData = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiffData),
@@ -125,7 +136,7 @@ final class CaptureService {
 
     func saveImageWithFallback(_ image: NSImage) async throws -> URL {
         do {
-            return try saveToDesktop(image)
+            return try saveToDefaultLocation(image)
         } catch {
             if isPermissionError(error) {
                 return try await saveWithPanel(image)
@@ -191,8 +202,43 @@ final class CaptureService {
         
         guard let croppedCGImage = cgImage.cropping(to: scaledRect) else { return nil }
         
+        // Apply rounded corners if enabled
+        if SettingsService.shared.useRoundedCorners {
+            return applyRoundedCorners(to: croppedCGImage, size: rect.size)
+        }
+        
         // Return image with point size matching the selection rect
         return NSImage(cgImage: croppedCGImage, size: rect.size)
+    }
+    
+    private func applyRoundedCorners(to cgImage: CGImage, size: NSSize) -> NSImage? {
+        let width = Int(size.width)
+        let height = Int(size.height)
+        let bitsPerComponent = 8
+        let bytesPerRow = 4 * width
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        
+        guard let context = CGContext(data: nil,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: bitsPerComponent,
+                                      bytesPerRow: bytesPerRow,
+                                      space: colorSpace,
+                                      bitmapInfo: bitmapInfo.rawValue) else {
+            return nil
+        }
+        
+        let rect = CGRect(origin: .zero, size: size)
+        let radius: CGFloat = 8.0 // Corner radius
+        
+        context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        context.clip()
+        
+        context.draw(cgImage, in: rect)
+        
+        guard let resultCGImage = context.makeImage() else { return nil }
+        return NSImage(cgImage: resultCGImage, size: size)
     }
 
     private func isPermissionError(_ error: Error) -> Bool {

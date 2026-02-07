@@ -38,7 +38,7 @@ MacOS 沙盒机制要求严格的权限控制。虽然在 Xcode 的 "App Sandbox
 这是一个常见的 ScreenCaptureKit 警告，通常出现在截图流（SCStream）启动初期或停止阶段。
 *   **启动时**: 系统可能在 Output Handler 完全绑定前就产生了一帧数据。
 *   **停止时**: 当我们调用 `stopCapture()` 时，底层流可能还在尝试发送最后一帧，但我们已经移除了 Output，导致丢帧。
-对于“单次截图”场景，这个错误是**良性**的，不影响功能。
+对于"单次截图"场景，这个错误是**良性**的，不影响功能。
 
 ### Q: 控制台出现 "Unable to obtain a task name port right" 或 "No factory registered"
 **错误信息 (Log):**
@@ -88,7 +88,7 @@ Break on void _NSDetectedLayoutRecursion(void) to debug.
 
 **原因分析:**
 这通常发生在 SwiftUI 视图被嵌入到 AppKit (`NSHostingView`) 中，并且在布局过程中（Layout Pass）又触发了新的状态更新，导致无限循环或冲突。
-91→在我们的场景中，可能是全屏 Overlay 窗口初始化时的尺寸计算与 SwiftUI 的 GeometryReader 布局发生了某种竞态。
+→在我们的场景中，可能是全屏 Overlay 窗口初始化时的尺寸计算与 SwiftUI 的 GeometryReader 布局发生了某种竞态。
 
 **结论:**
 如果界面显示正常且没有卡死，这通常是一个**良性警告**。SwiftUI 内部布局机制在某些边界条件下（如全屏无边框窗口）可能会触发此类检查。
@@ -161,3 +161,152 @@ newImage.unlockFocus()
 
 **解决方案:**
 成功仅播放提示音，不弹窗；失败仍保留弹窗与错误信息。
+
+---
+
+## 6. 快捷键设置问题
+
+### Q: 无法设置全局快捷键
+**症状**: 点击快捷键录制区域后，按下组合键无反应，快捷键无法保存。
+
+**根本原因**:
+在 SwiftUI 和 AppKit 混合应用中，键盘焦点管理非常复杂：
+1. SwiftUI 的布局系统会干扰 AppKit 视图的焦点管理
+2. NSViewRepresentable 中的视图无法可靠地获得键盘焦点
+3. overlay 方式显示的视图可能无法接收键盘事件
+
+**解决方案**:
+使用 `NSEvent.addLocalMonitorForEvents` 进行应用级别的键盘事件监听，而不是依赖视图焦点。
+
+**实现要点**:
+```swift
+// ✅ 正确方式：使用 Local Event Monitor
+NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+    // 直接在应用级别捕获键盘事件
+    let keyCode = event.keyCode
+    let modifiers = event.modifierFlags
+    // 处理快捷键录制...
+    return nil // 消费事件
+}
+
+// ❌ 错误方式：依赖 NSView 焦点
+class RecorderView: NSView {
+    override func keyDown(with event: NSEvent) {
+        // 在 SwiftUI 环境中可能无法可靠触发
+    }
+}
+```
+
+**关键优化**:
+1. **立即停止监听**: 录制成功后马上移除事件监听器，避免后续按键触发
+2. **验证修饰符**: 必须包含至少一个修饰键（⌘/⌃/⌥/⇧），防止纯字母键被注册
+3. **Escape 取消**: 监听 Escape 键并立即停止监听
+
+### Q: 需要多次尝试才能成功设置快捷键
+**症状**: 按下快捷键后，需要反复按多次才能保存，或者保存后立即被覆盖。
+
+**原因**:
+事件监听器没有在第一次成功录制后立即停止，导致：
+- 用户释放按键时触发新的录制（无修饰符 → 注册失败）
+- 重复按键时不断重新注册相同快捷键
+- 状态更新延迟导致监听器未及时移除
+
+**解决方案**:
+在 `onKeyRecorded` 回调中**同步停止监听**：
+
+```swift
+keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+    // ... 验证逻辑 ...
+    
+    // 关键：立即停止监听，防止后续按键触发
+    DispatchQueue.main.async {
+        self.stopMonitoring()  // 先停止
+        self.onKeyRecorded?(keyCode, modifiers)  // 再回调
+    }
+    
+    return nil
+}
+```
+
+**调试日志示例**:
+```
+# 问题：释放按键时又触发录制
+📝 Key event received: keyCode=7, char=X
+  ✅ Recording: keyCode=7, modifiers=768    # ⌘⇧X
+Hotkey registered: code 7, mods 768
+🚩 Flags changed: modifiers=0              # 释放按键
+📝 Key event received: keyCode=7, char=x   
+  ✅ Recording: keyCode=7, modifiers=0    # ❌ 又触发了！
+Failed to register hotkey: -9868          # 无修饰符，注册失败
+
+# 修复后
+📝 Key event received: keyCode=7, char=X
+  ✅ Recording: keyCode=7, modifiers=768
+🛑 Key down monitor removed                # ✅ 立即停止
+Hotkey registered: code 7, mods 768
+```
+
+### Q: 快捷键设置后无法触发截图
+**可能原因**:
+1. **快捷键冲突**: 系统或其他应用已占用该快捷键
+2. **通知未触发**: 设置保存后未通知 AppDelegate 重新注册
+3. **注册失败**: 查看日志确认是否成功注册
+
+**解决方案**:
+
+#### 1. 确认快捷键注册成功
+查看日志：
+```
+Hotkey registered: code X, mods Y        # ✅ 成功
+Failed to register hotkey: -9868         # ❌ 失败（通常是冲突）
+```
+
+#### 2. 添加通知机制
+确保设置变更后 AppDelegate 重新注册：
+```swift
+// SettingsService.swift
+extension Notification.Name {
+    static let hotkeyDidChange = Notification.Name("hotkeyDidChange")
+}
+
+func saveShortcut(keyCode: Int, modifiers: Int) -> Bool {
+    let success = HotkeyService.shared.registerHotkey(...)
+    if success {
+        NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
+    }
+    return success
+}
+
+// AppDelegate.swift
+NotificationCenter.default.addObserver(forName: .hotkeyDidChange, ...) {
+    self.reregisterHotkey()  // 重新注册
+}
+```
+
+### 快捷键录制最佳实践
+
+| 方法 | 优点 | 缺点 | 适用场景 |
+|------|------|------|----------|
+| **NSEvent Monitor** ✅ | 应用级捕获<br>不依赖焦点<br>实现简单 | 需手动管理生命周期 | **SwiftUI/AppKit 混合应用**<br>全局快捷键录制 |
+| NSPanel + NSView | 独立窗口<br>焦点隔离 | 焦点管理复杂<br>在 SwiftUI 中不可靠 | 纯 AppKit 应用 |
+| SwiftUI Overlay | 集成简单 | ❌ 无法获得键盘焦点 | 不适合键盘输入 |
+
+**实现清单**:
+- [x] 使用 `NSEvent.addLocalMonitorForEvents` 监听键盘
+- [x] 录制成功后**立即停止监听**
+- [x] 验证快捷键必须包含修饰符
+- [x] 支持 Escape 取消录制
+- [x] 使用 `NotificationCenter` 通知快捷键变更
+- [x] 在 AppDelegate 中监听通知并重新注册
+- [x] 添加详细日志（emoji 前缀）便于调试
+- [x] 错误处理：显示注册失败提示
+
+**开发经验总结**:
+- ✅ **优先查阅成熟方案**: 参考类似应用（Hammerspoon, Karabiner）的实现
+- ✅ **尽早添加日志**: 从一开始就用 emoji 前缀区分不同阶段
+- ✅ **快速验证假设**: 遇到焦点问题，应立即尝试 Event Monitor 而不是修修补补
+- ✅ **文档化决策**: 记录为什么某种方法不可行，避免重复尝试
+
+---
+
+*最后更新：2026-02-07*
