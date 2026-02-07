@@ -1,11 +1,7 @@
 import SwiftUI
 
 struct OverlayView: View {
-    @StateObject var viewModel = OverlayViewModel()
-    
-    // We pass callbacks to VM for it to trigger
-    var onCapture: (CGRect, [Annotation], CaptureAction) -> Void
-    var onCancel: () -> Void
+    @ObservedObject var viewModel: OverlayViewModel
     
     var body: some View {
         GeometryReader { geometry in
@@ -65,8 +61,9 @@ struct OverlayView: View {
                 
                 // Layer 4: Toolbar (Only in Editing mode)
                 if viewModel.state == .editing {
+                    let toolbarPos = calculateToolbarPosition(screenSize: geometry.size)
                     EditorToolbarView(viewModel: viewModel)
-                        .position(x: toolbarPosition.x, y: toolbarPosition.y)
+                        .position(x: toolbarPos.x, y: toolbarPos.y)
                         
                     // Text Input Overlay
                     if viewModel.isEditingText {
@@ -170,31 +167,19 @@ struct OverlayView: View {
             )
         }
         .background(Color.clear)
-        .onAppear {
-            NSCursor.crosshair.push()
-            viewModel.onCapture = onCapture
-            viewModel.onCancel = onCancel
-        }
-        .onDisappear {
-            NSCursor.pop()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
-            onCancel()
-        }
     }
     
-    // Calculate toolbar position... (rest same)
-    var toolbarPosition: CGPoint {
+    // Calculate toolbar position based on selection and screen bounds
+    func calculateToolbarPosition(screenSize: CGSize) -> CGPoint {
         let rect = viewModel.selectionRect
         let padding: CGFloat = 10
         let toolbarHeight: CGFloat = 80 // Increased height for color picker
         
         var y = rect.maxY + padding + toolbarHeight / 2
         
-        if let screen = NSScreen.main {
-             if y > screen.frame.height - 80 {
-                 y = rect.minY - padding - toolbarHeight / 2
-             }
+        // If toolbar would be off-screen at bottom, move it above selection
+        if y > screenSize.height - 80 {
+            y = rect.minY - padding - toolbarHeight / 2
         }
          
         return CGPoint(x: rect.midX, y: y)

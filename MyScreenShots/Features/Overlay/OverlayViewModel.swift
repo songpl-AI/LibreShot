@@ -117,8 +117,7 @@ class OverlayViewModel: ObservableObject {
     
     func updateDrawing(to point: CGPoint) {
         // If moving an existing annotation
-        if selectedTool == nil, let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) {
-            let start = startPoint ?? point // Should have been set in startSelection/Drawing? 
+        if selectedTool == nil, let id = selectedAnnotationID, annotations.contains(where: { $0.id == id }) {
             // Wait, for move we need a reference point. 
             // Let's use currentPoint as 'previous' and point as 'new'
             

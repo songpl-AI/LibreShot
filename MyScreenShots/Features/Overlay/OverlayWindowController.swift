@@ -2,12 +2,37 @@ import Cocoa
 import SwiftUI
 
 class OverlayWindow: NSWindow {
-    override var canBecomeKey: Bool {
-        return true
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+    
+    var onEscapeKey: (() -> Void)?
+    
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            onEscapeKey?()
+            return
+        }
+        super.keyDown(with: event)
     }
 }
 
 class OverlayWindowController: NSWindowController {
+    private var cursorPushed = false
+    private let viewModel = OverlayViewModel()
+    
+    private func pushCrosshairCursor() {
+        if !cursorPushed {
+            NSCursor.crosshair.push()
+            cursorPushed = true
+        }
+    }
+    
+    private func popCrosshairCursor() {
+        if cursorPushed {
+            NSCursor.pop()
+            cursorPushed = false
+        }
+    }
     
     convenience init() {
         // Create a borderless, transparent window that covers the screen
@@ -27,6 +52,17 @@ class OverlayWindowController: NSWindowController {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
         self.init(window: window)
+        
+        // Setup Content View Controller once
+        let overlayView = OverlayView(viewModel: self.viewModel)
+        // Use a subclass or configuration to avoid auto-layout constraints on the root view if possible
+        // Or simply add the view directly to contentView without constraints if using pure frame layout
+        
+        let hostingController = NSHostingController(rootView: overlayView)
+        // IMPORTANT: Set sizing options to avoid constraint conflicts
+        hostingController.sizingOptions = [.minSize, .intrinsicContentSize, .maxSize]
+        
+        window.contentViewController = hostingController
     }
 
     override func windowDidLoad() {
@@ -38,28 +74,48 @@ class OverlayWindowController: NSWindowController {
     private var targetScreen: NSScreen?
     
     func show(onCapture: @escaping (CGRect, [Annotation], CaptureAction) -> Void, onCancel: @escaping () -> Void) {
-        guard let window = window else { return }
+        guard let overlayWindow = window as? OverlayWindow else { return }
         
-        // Use the screen containing the mouse cursor
-        let mouseLoc = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouseLoc, $0.frame, false) } ?? NSScreen.main
-        targetScreen = screen
+        // 1. Reset State
+        viewModel.reset()
         
-        if let target = screen {
-            window.setFrame(target.frame, display: true)
-        }
-        
-        let overlayView = OverlayView(onCapture: { [weak self] (rect: CGRect, annotations: [Annotation], action: CaptureAction) in
-            self?.close()
-            onCapture(rect, annotations, action)
-        }, onCancel: { [weak self] in
+        // 2. Setup Callbacks
+        let cancelAction = { [weak self] in
+            self?.popCrosshairCursor()
             self?.close()
             onCancel()
-        })
+        }
         
-        window.contentView = NSHostingView(rootView: overlayView)
-        window.makeKeyAndOrderFront(nil)
+        viewModel.onCapture = { [weak self] rect, annotations, action in
+            self?.popCrosshairCursor()
+            self?.close()
+            onCapture(rect, annotations, action)
+        }
+        viewModel.onCancel = cancelAction
+        
+        overlayWindow.onEscapeKey = cancelAction
+        
+        // 3. Determine Screen
+        let mouseLoc = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouseLoc) } ?? NSScreen.main
+        targetScreen = screen
+        
+        // 4. Update Window Frame
+        if let target = screen {
+            // Disable animation for instant appearance
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0
+            overlayWindow.setFrame(target.frame, display: true)
+            // Force layout update after frame change to sync view bounds
+            overlayWindow.contentView?.needsLayout = true
+            overlayWindow.layoutIfNeeded()
+            NSAnimationContext.endGrouping()
+        }
+        
+        // 5. Show
+        pushCrosshairCursor()
         NSApp.activate(ignoringOtherApps: true)
+        overlayWindow.makeKeyAndOrderFront(nil)
     }
     
     // Helper to get the display ID of the current target screen
