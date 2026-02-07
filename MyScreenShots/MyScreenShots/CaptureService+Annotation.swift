@@ -157,4 +157,138 @@ extension CaptureService {
         
         return newImage
     }
+
+    func compositeCropped(image: NSImage, annotations: [Annotation], cropRect: CGRect, displayID: CGDirectDisplayID? = nil) -> NSImage {
+        _ = displayID
+        if annotations.isEmpty { return image }
+        let newImage = NSImage(size: image.size)
+        newImage.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: image.size),
+                   from: NSRect(origin: .zero, size: image.size),
+                   operation: .copy,
+                   fraction: 1.0)
+
+        guard let context = NSGraphicsContext.current?.cgContext else {
+            newImage.unlockFocus()
+            return image
+        }
+
+        context.saveGState()
+        context.translateBy(x: 0, y: image.size.height)
+        context.scaleBy(x: 1.0, y: -1.0)
+
+        for annotation in annotations {
+            if !annotationIntersectsCrop(annotation, cropRect: cropRect) { continue }
+            context.setStrokeColor(NSColor(annotation.color).cgColor)
+            context.setLineWidth(annotation.lineWidth)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+
+            let path = CGMutablePath()
+            switch annotation.type {
+            case .pen:
+                let localPoints = annotation.points.map { CGPoint(x: $0.x - cropRect.origin.x, y: $0.y - cropRect.origin.y) }
+                if let first = localPoints.first {
+                    path.move(to: first)
+                    for point in localPoints.dropFirst() {
+                        path.addLine(to: point)
+                    }
+                }
+            case .rectangle:
+                let start = CGPoint(x: annotation.startPoint.x - cropRect.origin.x, y: annotation.startPoint.y - cropRect.origin.y)
+                let end = CGPoint(x: annotation.endPoint.x - cropRect.origin.x, y: annotation.endPoint.y - cropRect.origin.y)
+                let x = min(start.x, end.x)
+                let y = min(start.y, end.y)
+                let width = abs(end.x - start.x)
+                let height = abs(end.y - start.y)
+                let rect = CGRect(x: x, y: y, width: width, height: height)
+                path.addRect(rect)
+            case .arrow:
+                let start = CGPoint(x: annotation.startPoint.x - cropRect.origin.x, y: annotation.startPoint.y - cropRect.origin.y)
+                let end = CGPoint(x: annotation.endPoint.x - cropRect.origin.x, y: annotation.endPoint.y - cropRect.origin.y)
+                path.move(to: start)
+                path.addLine(to: end)
+
+                let angle = atan2(end.y - start.y, end.x - start.x)
+                let arrowLength: CGFloat = 15.0
+                let arrowAngle: CGFloat = .pi / 6
+
+                let p1 = CGPoint(
+                    x: end.x - arrowLength * cos(angle - arrowAngle),
+                    y: end.y - arrowLength * sin(angle - arrowAngle)
+                )
+                let p2 = CGPoint(
+                    x: end.x - arrowLength * cos(angle + arrowAngle),
+                    y: end.y - arrowLength * sin(angle + arrowAngle)
+                )
+
+                path.move(to: end)
+                path.addLine(to: p1)
+                path.move(to: end)
+                path.addLine(to: p2)
+            case .ellipse:
+                let start = CGPoint(x: annotation.startPoint.x - cropRect.origin.x, y: annotation.startPoint.y - cropRect.origin.y)
+                let end = CGPoint(x: annotation.endPoint.x - cropRect.origin.x, y: annotation.endPoint.y - cropRect.origin.y)
+                let x = min(start.x, end.x)
+                let y = min(start.y, end.y)
+                let width = abs(end.x - start.x)
+                let height = abs(end.y - start.y)
+                let rect = CGRect(x: x, y: y, width: width, height: height)
+                path.addEllipse(in: rect)
+            case .text:
+                continue
+            }
+
+            context.addPath(path)
+            context.strokePath()
+        }
+
+        context.restoreGState()
+
+        for annotation in annotations where annotation.type == .text {
+            if !annotationIntersectsCrop(annotation, cropRect: cropRect) { continue }
+            let text = annotation.text as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: annotation.fontSize),
+                .foregroundColor: NSColor(annotation.color)
+            ]
+            let size = text.size(withAttributes: attributes)
+            let localX = annotation.startPoint.x - cropRect.origin.x
+            let localY = annotation.startPoint.y - cropRect.origin.y
+            let drawPoint = CGPoint(
+                x: localX,
+                y: image.size.height - localY - size.height
+            )
+            text.draw(at: drawPoint, withAttributes: attributes)
+        }
+
+        newImage.unlockFocus()
+        return newImage
+    }
+
+    private func annotationIntersectsCrop(_ annotation: Annotation, cropRect: CGRect) -> Bool {
+        switch annotation.type {
+        case .rectangle, .ellipse, .text:
+            let rect: CGRect
+            if annotation.type == .text {
+                let width = CGFloat(annotation.text.count) * annotation.fontSize * 0.6
+                let height = annotation.fontSize * 1.5
+                rect = CGRect(x: annotation.startPoint.x, y: annotation.startPoint.y, width: width, height: height)
+            } else {
+                let x = min(annotation.startPoint.x, annotation.endPoint.x)
+                let y = min(annotation.startPoint.y, annotation.endPoint.y)
+                let width = abs(annotation.endPoint.x - annotation.startPoint.x)
+                let height = abs(annotation.endPoint.y - annotation.startPoint.y)
+                rect = CGRect(x: x, y: y, width: width, height: height)
+            }
+            return rect.intersects(cropRect)
+        case .pen, .arrow:
+            let xs = annotation.points.map { $0.x } + [annotation.startPoint.x, annotation.endPoint.x]
+            let ys = annotation.points.map { $0.y } + [annotation.startPoint.y, annotation.endPoint.y]
+            guard let minX = xs.min(), let maxX = xs.max(),
+                  let minY = ys.min(), let maxY = ys.max() else { return false }
+            let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            return rect.intersects(cropRect)
+        }
+    }
 }

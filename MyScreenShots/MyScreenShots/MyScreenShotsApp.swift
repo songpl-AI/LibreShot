@@ -146,27 +146,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(nanoseconds: 200 * 1_000_000)
             
             do {
-                let fullImage = try await CaptureService.shared.captureDisplayImage(displayID: displayID)
-                
-                // 1. Composite annotations onto the full image
-                // IMPORTANT: Pass displayID to composite to get correct scaling for that screen
-                let compositedImage = CaptureService.shared.composite(image: fullImage, annotations: annotations, displayID: displayID)
-                
-                // 2. Crop to selection
-                guard let croppedImage = CaptureService.shared.crop(image: compositedImage, to: rect, displayID: displayID) else {
+                var fullImage: NSImage? = try await CaptureService.shared.captureDisplayImage(displayID: displayID)
+                guard let capturedImage = fullImage else {
+                    await showAlert(title: "截图失败", message: "无法获取屏幕图像")
+                    return
+                }
+
+                var croppedImage: NSImage?
+                autoreleasepool {
+                    croppedImage = CaptureService.shared.crop(image: capturedImage, to: rect, displayID: displayID)
+                }
+                fullImage = nil
+
+                guard let cropped = croppedImage else {
                     await showAlert(title: "裁剪失败", message: "无法生成区域截图")
                     return
                 }
-                
+
+                let outputImage: NSImage
+                if annotations.isEmpty {
+                    outputImage = cropped
+                } else {
+                    var composited: NSImage?
+                    autoreleasepool {
+                        composited = CaptureService.shared.compositeCropped(image: cropped, annotations: annotations, cropRect: rect, displayID: displayID)
+                    }
+                    outputImage = composited ?? cropped
+                }
+
                 switch action {
                 case .copy:
-                    CaptureService.shared.copyToClipboard(croppedImage)
+                    CaptureService.shared.copyToClipboard(outputImage)
                     await playSuccessSound()
                 case .save:
-                    _ = try await CaptureService.shared.saveImageWithFallback(croppedImage)
+                    _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
                     await playSuccessSound()
                 case .pin:
-                    await pinImageToScreen(image: croppedImage)
+                    await pinImageToScreen(image: outputImage)
                     await playSuccessSound()
                 }
             } catch {
