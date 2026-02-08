@@ -132,16 +132,97 @@ class OverlayWindowController: NSWindowController {
             }
         }
         
-        // 5. Show
-        pushCrosshairCursor()
-        NSApp.activate(ignoringOtherApps: true)
-        overlayWindow.makeKeyAndOrderFront(nil)
+        // 5. Show - Use silent show first, then activate after capture
+        // Don't activate app immediately to avoid closing open menus
+        // NSApp.activate(ignoringOtherApps: true) 
+        
+        // CRITICAL: Do NOT order front yet. Even ordering front without key can cause some menus to close
+        // or trigger window server composition changes that affect the capture.
+        // overlayWindow.orderFront(nil) 
+        
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                // Wait a tiny bit for any previous events to settle
+                try? await Task.sleep(nanoseconds: 10 * 1_000_000)
+                
+                let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                
+                await MainActor.run {
+                    self.viewModel.updatePreviewImage(cgImage)
+                    
+                    // Now that we have the screenshot (including menus), we can show the window and take focus
+                    overlayWindow.orderFront(nil) // Show window first
+                    self.pushCrosshairCursor()
+                    NSApp.activate(ignoringOtherApps: true) // Then activate app
+                    overlayWindow.makeKeyAndOrderFront(nil) // Then make key
+                }
+            } catch {
+                await MainActor.run {
+                    self.viewModel.updatePreviewImage(nil)
+                    // Even if failed, we need to activate to show error or allow exit
+                    overlayWindow.orderFront(nil)
+                    self.pushCrosshairCursor()
+                    NSApp.activate(ignoringOtherApps: true)
+                    overlayWindow.makeKeyAndOrderFront(nil)
+                }
+            }
+        }
     }
     
     // Helper to get the display ID of the current target screen
     func getCurrentDisplayID() -> CGDirectDisplayID? {
         guard let screen = targetScreen else { return nil }
         return screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+    
+    // Public method to reset capture session (for re-triggering while active)
+    func resetCapture() {
+        // 1. Reset View Model (clears selection, annotations, preview)
+        viewModel.reset()
+        
+        // 2. Re-determine screen based on current mouse location
+        let mouseLoc = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouseLoc) } ?? NSScreen.main
+        targetScreen = screen
+        
+        // 3. Update Window Frame
+        if let target = screen, let window = window {
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0
+            window.setFrame(target.frame, display: true)
+            window.contentView?.needsLayout = true
+            window.layoutIfNeeded()
+            NSAnimationContext.endGrouping()
+        }
+        
+        // 4. Capture new preview image
+        viewModel.updatePreviewImage(nil)
+        
+        // Hide window temporarily to avoid capturing itself if needed, or just stay visible
+        // Since we are overlay, capturing screen usually ignores us if we use excludingWindows, 
+        // but here we want to capture everything.
+        // For reset, we are already active, so menus are likely already closed.
+        // So we can just capture.
+        
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                await MainActor.run {
+                    self.viewModel.updatePreviewImage(cgImage)
+                    self.pushCrosshairCursor()
+                    NSApp.activate(ignoringOtherApps: true)
+                    self.window?.makeKeyAndOrderFront(nil)
+                }
+            } catch {
+                await MainActor.run {
+                    self.viewModel.updatePreviewImage(nil)
+                }
+            }
+        }
     }
     
     deinit {

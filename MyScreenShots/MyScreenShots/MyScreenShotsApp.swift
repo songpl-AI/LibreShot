@@ -48,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "检查更新...", action: #selector(checkForUpdates), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
@@ -102,15 +104,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "设置"
+            window.title = "偏好设置"
             window.center()
             window.contentView = NSHostingView(rootView: SettingsView())
-            window.isReleasedWhenClosed = false
             settingsWindowController = NSWindowController(window: window)
         }
         
         settingsWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    @objc private func checkForUpdates() {
+        // TODO: Replace with your actual repository URL
+        if let url = URL(string: "https://github.com/your-username/MyScreenShots/releases") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func quitApp() {
@@ -131,6 +139,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func captureSelection() {
+        // If an overlay controller already exists, it means a capture session is active.
+        // We should focus it or reset it, rather than creating a duplicate or overwriting it.
+        if let existing = overlayWindowController {
+            print("Capture session already active, resetting and bringing to front")
+            // Reset state to allow fresh capture (e.g. if user wants to restart selection)
+            existing.resetCapture()
+            return
+        }
+
         // Always create a new controller to ensure fresh state and memory cleanup on release
         let controller = OverlayWindowController()
         
