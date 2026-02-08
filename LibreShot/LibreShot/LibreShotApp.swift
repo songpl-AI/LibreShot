@@ -130,8 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 // Default to main display for full screen shortcut
                 let image = try await CaptureService.shared.captureDisplayImage()
+                SoundService.shared.playCaptureSound()
                 _ = try await CaptureService.shared.saveImageWithFallback(image)
-                await playSuccessSound()
             } catch {
                 await handleCaptureError(error)
             }
@@ -154,9 +154,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hold a strong reference to keep it alive during the session
         self.overlayWindowController = controller
         
-        controller.show(onCapture: { [weak self] rect, annotations, action in
+        controller.show(onCapture: { [weak self, weak controller] rect, annotations, action in
             // Capture the specific screen where the selection happened
-            let displayID = self?.overlayWindowController?.getCurrentDisplayID()
+            // Use local controller reference to ensure we get the ID even if self?.overlayWindowController is nil
+            let displayID = controller?.getCurrentDisplayID()
             self?.performAreaCapture(rect: rect, annotations: annotations, displayID: displayID, action: action)
             
             // Cleanup: Release the controller to free memory
@@ -180,9 +181,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
+                // Find screen frame to convert coordinates
+                var screenFrame = NSScreen.main?.frame ?? .zero
+                if let id = displayID, let screen = NSScreen.screens.first(where: {
+                    ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == id
+                }) {
+                    screenFrame = screen.frame
+                }
+
+                // Convert SwiftUI/Window coordinates (Top-Left relative to screen)
+                // to AppKit Global coordinates (Bottom-Left relative to primary screen)
+                var globalRect = rect
+                globalRect.origin.x = screenFrame.minX + rect.minX
+                globalRect.origin.y = screenFrame.maxY - rect.minY - rect.height
+
                 var croppedImage: NSImage?
                 autoreleasepool {
-                    croppedImage = CaptureService.shared.crop(image: capturedImage, to: rect, displayID: displayID)
+                    croppedImage = CaptureService.shared.crop(image: capturedImage, to: globalRect, displayID: displayID)
                 }
                 fullImage = nil
 
@@ -202,13 +217,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     outputImage = composited ?? cropped
                 }
 
+                SoundService.shared.playCaptureSound()
+
                 switch action {
                 case .save:
                     _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
-                    await playSuccessSound()
                 case .copy:
                     CaptureService.shared.copyToClipboard(outputImage)
-                    await playSuccessSound()
                 case .pin:
                     // Create and show pinned window
                     await MainActor.run {
@@ -221,7 +236,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.pinnedWindows.append(pinnedWindow)
                         pinnedWindow.showWindow(nil)
                     }
-                    await playSuccessSound()
                 case .ocr:
                     // Perform OCR
                     do {
@@ -234,7 +248,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              self.ocrWindowController = ocrWC
                              ocrWC.showWindow(nil)
                          }
-                         await playSuccessSound()
                     } catch {
                         await showAlert(title: "OCR 失败", message: error.localizedDescription)
                     }
@@ -242,12 +255,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await handleCaptureError(error)
             }
-        }
-    }
-
-    private func playSuccessSound() async {
-        if SettingsService.shared.playSound {
-            NSSound(named: "Ping")?.play()
         }
     }
 
