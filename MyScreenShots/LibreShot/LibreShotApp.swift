@@ -1,6 +1,6 @@
 //
-//  MyScreenShotsApp.swift
-//  MyScreenShots
+//  LibreShotApp.swift
+//  LibreShot
 //
 //  Created by Allen on 2026/2/7.
 //
@@ -10,7 +10,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 @main
-struct MyScreenShotsApp: App {
+struct LibreShotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "MyScreenShots")
+            button.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "LibreShot")
         }
 
         let menu = NSMenu()
@@ -115,8 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func checkForUpdates() {
-        // TODO: Replace with your actual repository URL
-        if let url = URL(string: "https://github.com/your-username/MyScreenShots/releases") {
+        // Check for updates by opening the GitHub Releases page
+        if let url = URL(string: "https://github.com/songpl-AI/LibreShot/releases") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -203,221 +203,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 switch action {
-                case .copy:
-                    CaptureService.shared.copyToClipboard(outputImage)
-                    await playSuccessSound()
                 case .save:
                     _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
                     await playSuccessSound()
+                case .copy:
+                    CaptureService.shared.copyToClipboard(outputImage)
+                    await playSuccessSound()
                 case .pin:
-                    await pinImageToScreen(image: outputImage)
+                    // Create and show pinned window
+                    await MainActor.run {
+                        let pinnedWindow = PinnedImageWindowController(image: outputImage)
+                        pinnedWindow.onClose = { [weak self, weak pinnedWindow] in
+                            if let pw = pinnedWindow {
+                                self?.pinnedWindows.removeAll { $0 === pw }
+                            }
+                        }
+                        self.pinnedWindows.append(pinnedWindow)
+                        pinnedWindow.showWindow(nil)
+                    }
                     await playSuccessSound()
                 case .ocr:
-                    let text = try await CaptureService.shared.recognizeText(in: cropped)
-                    await showOCRResult(text: text)
+                    // Perform OCR
+                    do {
+                         let text = try await OCRService.shared.recognizeText(from: outputImage)
+                         await MainActor.run {
+                             // Close existing OCR window if any
+                             self.ocrWindowController?.close()
+                             
+                             let ocrWC = OCRResultWindowController(text: text)
+                             self.ocrWindowController = ocrWC
+                             ocrWC.showWindow(nil)
+                         }
+                         await playSuccessSound()
+                    } catch {
+                        await showAlert(title: "OCR 失败", message: error.localizedDescription)
+                    }
                 }
             } catch {
                 await handleCaptureError(error)
             }
         }
     }
-    
-    @MainActor
-    private func pinImageToScreen(image: NSImage) {
-        let controller = PinnedImageWindowController(image: image)
-        controller.showWindow(nil)
-        pinnedWindows.append(controller)
-        
-        // Listen for window close to cleanup
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: controller.window, queue: .main) { [weak self] notification in
-            guard let self = self else { return }
-            if let window = notification.object as? NSWindow,
-               let index = self.pinnedWindows.firstIndex(where: { $0.window === window }) {
-                self.pinnedWindows.remove(at: index)
-            }
+
+    private func playSuccessSound() async {
+        if SettingsService.shared.playSound {
+            NSSound(named: "Ping")?.play()
         }
-    }
-    
-    @MainActor
-    private func handleCaptureError(_ error: Error) async {
-        let message: String
-        if let captureError = error as? CaptureServiceError {
-            switch captureError {
-            case .permissionDenied:
-                message = "请在系统设置-隐私与安全性-屏幕录制中勾选 MyScreenShots，并重新启动应用。"
-            case .saveCancelled:
-                return
-            case .saveFailed:
-                message = "保存失败，请确认已开启桌面读写权限，或选择其他保存位置。"
-            default:
-                message = captureError.localizedDescription
-            }
-        } else {
-            message = error.localizedDescription
-        }
-        await showAlert(title: "截图失败", message: message)
     }
 
+    private func handleCaptureError(_ error: Error) async {
+        await showAlert(title: "错误", message: error.localizedDescription)
+    }
+    
     @MainActor
-    private func showAlert(title: String, message: String) async {
-        NSApp.activate(ignoringOtherApps: true)
+    private func showAlert(title: String, message: String) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.addButton(withTitle: "知道了")
+        alert.alertStyle = .warning
         alert.runModal()
-    }
-
-    @MainActor
-    private func playSuccessSound() async {
-        NSSound.beep()
-    }
-
-    @MainActor
-    private func showOCRResult(text: String) async {
-        if let existing = ocrWindowController {
-            existing.close()
-        }
-        let controller = OCRResultWindowController(text: text, onCopy: { [weak self] content in
-            self?.copyTextToClipboard(content)
-        })
-        
-        // Listen for window close to cleanup memory
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: controller.window, queue: .main) { [weak self] _ in
-            // Delay slightly to ensure window animation completes if needed, though cleanup is safe
-            self?.ocrWindowController = nil
-        }
-        
-        ocrWindowController = controller
-        controller.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    @MainActor
-    private func copyTextToClipboard(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-    }
-}
-
-final class OCRResultWindowController: NSWindowController {
-    init(text: String, onCopy: @escaping (String) -> Void) {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 360),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "OCR 结果"
-        window.isReleasedWhenClosed = false
-        window.center()
-        let view = OCRResultView(text: text, onCopy: onCopy, onClose: {
-            window.close()
-        })
-        window.contentView = NSHostingView(rootView: view)
-        super.init(window: window)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-}
-
-struct OCRResultView: View {
-    @State private var text: String
-    @State private var selectedRange: NSRange = NSRange(location: 0, length: 0)
-    var onCopy: (String) -> Void
-    var onClose: () -> Void
-
-    init(text: String, onCopy: @escaping (String) -> Void, onClose: @escaping () -> Void) {
-        _text = State(initialValue: text)
-        self.onCopy = onCopy
-        self.onClose = onClose
-    }
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("OCR 结果")
-                    .font(.headline)
-                Spacer()
-                Button("复制选中") {
-                    if let range = Range(selectedRange, in: text) {
-                        onCopy(String(text[range]))
-                    }
-                }
-                .disabled(selectedRange.length == 0)
-                Button("复制全部") {
-                    onCopy(text)
-                }
-                Button("关闭") {
-                    onClose()
-                }
-            }
-            OCRTextView(text: $text, selectedRange: $selectedRange)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.black.opacity(0.12), lineWidth: 1)
-                )
-        }
-        .padding(16)
-        .frame(minWidth: 520, minHeight: 360)
-    }
-}
-
-struct OCRTextView: NSViewRepresentable {
-    @Binding var text: String
-    @Binding var selectedRange: NSRange
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
-        textView.isEditable = true
-        textView.isSelectable = true
-        textView.isRichText = false
-        textView.font = NSFont.systemFont(ofSize: 13)
-        textView.backgroundColor = .white
-        textView.delegate = context.coordinator
-        textView.string = text
-
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .white
-        scrollView.documentView = textView
-        return scrollView
-    }
-
-    func updateNSView(_ nsView: NSScrollView, context: Context) {
-        guard let textView = nsView.documentView as? NSTextView else { return }
-        if textView.string != text {
-            textView.string = text
-        }
-        if textView.selectedRange() != selectedRange {
-            textView.setSelectedRange(selectedRange)
-        }
-    }
-
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        private let parent: OCRTextView
-
-        init(_ parent: OCRTextView) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
-        }
-
-        func textViewDidChangeSelection(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            parent.selectedRange = textView.selectedRange()
-        }
     }
 }
