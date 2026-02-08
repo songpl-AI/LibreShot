@@ -131,20 +131,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func captureSelection() {
-        let controller: OverlayWindowController
-        if let existing = overlayWindowController {
-            controller = existing
-        } else {
-            let created = OverlayWindowController()
-            overlayWindowController = created
-            controller = created
-        }
+        // Always create a new controller to ensure fresh state and memory cleanup on release
+        let controller = OverlayWindowController()
+        
+        // Hold a strong reference to keep it alive during the session
+        self.overlayWindowController = controller
+        
         controller.show(onCapture: { [weak self] rect, annotations, action in
             // Capture the specific screen where the selection happened
             let displayID = self?.overlayWindowController?.getCurrentDisplayID()
             self?.performAreaCapture(rect: rect, annotations: annotations, displayID: displayID, action: action)
-        }, onCancel: {
+            
+            // Cleanup: Release the controller to free memory
+            self?.overlayWindowController = nil
+        }, onCancel: { [weak self] in
             print("Selection cancelled")
+            // Cleanup: Release the controller to free memory
+            self?.overlayWindowController = nil
         })
     }
 
@@ -261,6 +264,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = OCRResultWindowController(text: text, onCopy: { [weak self] content in
             self?.copyTextToClipboard(content)
         })
+        
+        // Listen for window close to cleanup memory
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: controller.window, queue: .main) { [weak self] _ in
+            // Delay slightly to ensure window animation completes if needed, though cleanup is safe
+            self?.ocrWindowController = nil
+        }
+        
         ocrWindowController = controller
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)

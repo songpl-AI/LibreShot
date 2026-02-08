@@ -52,7 +52,8 @@ final class CaptureService {
     static let shared = CaptureService()
 
     private let outputQueue = DispatchQueue(label: "com.myscreenshots.capture.output")
-    private let context = CIContext()
+    // Disable caching of intermediates to save memory, as we don't do complex chains that reuse them often
+    let context = CIContext(options: [.cacheIntermediates: false])
     private var stream: SCStream?
     private var streamOutput: CaptureStreamOutput?
     private var continuation: CheckedContinuation<NSImage, Error>?
@@ -162,26 +163,28 @@ final class CaptureService {
 
     func recognizeText(in image: CGImage, recognitionLanguages: [String] = ["zh-Hans", "zh-Hant", "en-US"]) async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+            autoreleasepool {
+                let request = VNRecognizeTextRequest { request, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    let observations = request.results as? [VNRecognizedTextObservation] ?? []
+                    let text = self.buildOCRText(from: observations)
+                    continuation.resume(returning: text)
                 }
-                let observations = request.results as? [VNRecognizedTextObservation] ?? []
-                let text = self.buildOCRText(from: observations)
-                continuation.resume(returning: text)
-            }
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            if !recognitionLanguages.isEmpty {
-                request.recognitionLanguages = recognitionLanguages
-            }
-            let handler = VNImageRequestHandler(cgImage: image, options: [:])
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    try handler.perform([request])
-                } catch {
-                    continuation.resume(throwing: error)
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = true
+                if !recognitionLanguages.isEmpty {
+                    request.recognitionLanguages = recognitionLanguages
+                }
+                let handler = VNImageRequestHandler(cgImage: image, options: [:])
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        try handler.perform([request])
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
         }
@@ -265,8 +268,9 @@ final class CaptureService {
     }
     
     private func applyRoundedCorners(to cgImage: CGImage, size: NSSize) -> NSImage? {
-        let width = Int(size.width)
-        let height = Int(size.height)
+        // Use actual pixel dimensions from the CGImage to preserve resolution
+        let width = cgImage.width
+        let height = cgImage.height
         let bitsPerComponent = 8
         let bytesPerRow = 4 * width
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -282,8 +286,12 @@ final class CaptureService {
             return nil
         }
         
-        let rect = CGRect(origin: .zero, size: size)
-        let radius: CGFloat = 8.0 // Corner radius
+        // Rect in pixel coordinates
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        // Scale radius based on resolution (assuming size is points)
+        // Calculate scale factor by comparing pixel width to point width
+        let scale = CGFloat(width) / size.width
+        let radius: CGFloat = 8.0 * scale // Scaled corner radius
         
         context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
         context.clip()
@@ -291,6 +299,7 @@ final class CaptureService {
         context.draw(cgImage, in: rect)
         
         guard let resultCGImage = context.makeImage() else { return nil }
+        // Return NSImage with original point size but high-res backing
         return NSImage(cgImage: resultCGImage, size: size)
     }
 
@@ -344,26 +353,35 @@ final class CaptureService {
     }
 
     private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        guard let continuation else { return }
-        self.continuation = nil
+        autoreleasepool {
+            guard let continuation else { return }
+            // Note: continuation needs to be captured carefully if we nil it out outside, 
+            // but here we are inside the function.
+            // However, we can't nil out self.continuation inside autoreleasepool easily if we want to be thread safe 
+            // or we need to be careful.
+            // Let's just wrap the heavy lifting.
+            
+            guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                continuation.resume(throwing: CaptureServiceError.captureFailed)
+                self.continuation = nil
+                stopStream()
+                return
+            }
 
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            continuation.resume(throwing: CaptureServiceError.captureFailed)
+            let ciImage = CIImage(cvImageBuffer: imageBuffer)
+            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+                continuation.resume(throwing: CaptureServiceError.imageConversionFailed)
+                self.continuation = nil
+                stopStream()
+                return
+            }
+
+            let size = NSSize(width: ciImage.extent.width, height: ciImage.extent.height)
+            let nsImage = NSImage(cgImage: cgImage, size: size)
+            continuation.resume(returning: nsImage)
+            self.continuation = nil
             stopStream()
-            return
         }
-
-        let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
-            continuation.resume(throwing: CaptureServiceError.imageConversionFailed)
-            stopStream()
-            return
-        }
-
-        let size = NSSize(width: ciImage.extent.width, height: ciImage.extent.height)
-        let nsImage = NSImage(cgImage: cgImage, size: size)
-        continuation.resume(returning: nsImage)
-        stopStream()
     }
 
     private func stopStream() {

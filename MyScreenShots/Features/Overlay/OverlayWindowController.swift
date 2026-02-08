@@ -84,6 +84,7 @@ class OverlayWindowController: NSWindowController {
         let cancelAction = { [weak self] in
             self?.popCrosshairCursor()
             self?.close()
+            self?.viewModel.reset()
             onCancel()
         }
         
@@ -91,6 +92,8 @@ class OverlayWindowController: NSWindowController {
             self?.popCrosshairCursor()
             self?.close()
             onCapture(rect, annotations, action)
+            // Reset view model to release memory (images) after capture parameters are passed
+            self?.viewModel.reset()
         }
         viewModel.onCancel = cancelAction
         
@@ -139,5 +142,9 @@ class OverlayWindowController: NSWindowController {
     func getCurrentDisplayID() -> CGDirectDisplayID? {
         guard let screen = targetScreen else { return nil }
         return screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+    
+    deinit {
+        print("OverlayWindowController deinit - Memory Released")
     }
 }

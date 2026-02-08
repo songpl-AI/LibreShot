@@ -309,7 +309,8 @@ extension CaptureService {
         let scaleY = CGFloat(cgImage.height) / image.size.height
         var currentImage = CIImage(cgImage: cgImage)
         let fullExtent = currentImage.extent
-        let context = CIContext()
+        // Use shared context to save memory
+        let context = self.context
         for annotation in annotations {
             if annotation.type != .mosaic && annotation.type != .blur { continue }
             var localPoints: [CGPoint]
