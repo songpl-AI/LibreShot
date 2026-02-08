@@ -6,6 +6,8 @@ enum AnnotationType: String, CaseIterable, Identifiable {
     case arrow
     case ellipse
     case text
+    case mosaic
+    case blur
     
     var id: String { self.rawValue }
     
@@ -16,6 +18,8 @@ enum AnnotationType: String, CaseIterable, Identifiable {
         case .arrow: return "arrow.up.right"
         case .ellipse: return "oval"
         case .text: return "textformat"
+        case .mosaic: return "square.grid.3x3"
+        case .blur: return "drop"
         }
     }
 }

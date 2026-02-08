@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 extension CaptureService {
     /// Composites annotations onto the provided image.
@@ -8,13 +10,14 @@ extension CaptureService {
     ///   - annotations: List of annotations to draw.
     /// - Returns: A new NSImage with annotations drawn.
     func composite(image: NSImage, annotations: [Annotation], displayID: CGDirectDisplayID? = nil) -> NSImage {
+        let baseImage = applyAnnotationEffects(image: image, annotations: annotations, cropRect: nil)
         // Create a new image with the same size
-        let newImage = NSImage(size: image.size)
+        let newImage = NSImage(size: baseImage.size)
         
         newImage.lockFocus()
         // 1. Draw the original image
-        image.draw(in: NSRect(origin: .zero, size: image.size), 
-                   from: NSRect(origin: .zero, size: image.size), 
+        baseImage.draw(in: NSRect(origin: .zero, size: baseImage.size),
+                   from: NSRect(origin: .zero, size: baseImage.size),
                    operation: .copy, 
                    fraction: 1.0)
         
@@ -43,8 +46,8 @@ extension CaptureService {
         }
         
         if let screen = targetScreen {
-            scaleX = image.size.width / screen.frame.width
-            scaleY = image.size.height / screen.frame.height
+            scaleX = baseImage.size.width / screen.frame.width
+            scaleY = baseImage.size.height / screen.frame.height
         } else {
             scaleX = 1.0
             scaleY = 1.0
@@ -55,7 +58,7 @@ extension CaptureService {
         context.scaleBy(x: scaleX, y: scaleY)
         
         // 2. Flip vertically: Move origin to top-left
-        let heightInPoints = image.size.height / scaleY
+        let heightInPoints = baseImage.size.height / scaleY
         context.translateBy(x: 0, y: heightInPoints)
         context.scaleBy(x: 1.0, y: -1.0)
         
@@ -113,6 +116,8 @@ extension CaptureService {
                 let height = abs(annotation.endPoint.y - annotation.startPoint.y)
                 let rect = CGRect(x: x, y: y, width: width, height: height)
                 path.addEllipse(in: rect)
+            case .mosaic, .blur:
+                continue
             case .text:
                 // Text is drawn separately below via string drawing
                 continue
@@ -146,7 +151,7 @@ extension CaptureService {
             
             let drawPoint = CGPoint(
                 x: annotation.startPoint.x * scaleX,
-                y: image.size.height - (annotation.startPoint.y * scaleY) - size.height
+                y: baseImage.size.height - (annotation.startPoint.y * scaleY) - size.height
             )
             
             text.draw(at: drawPoint, withAttributes: attributes)
@@ -161,10 +166,11 @@ extension CaptureService {
     func compositeCropped(image: NSImage, annotations: [Annotation], cropRect: CGRect, displayID: CGDirectDisplayID? = nil) -> NSImage {
         _ = displayID
         if annotations.isEmpty { return image }
-        let newImage = NSImage(size: image.size)
+        let baseImage = applyAnnotationEffects(image: image, annotations: annotations, cropRect: cropRect)
+        let newImage = NSImage(size: baseImage.size)
         newImage.lockFocus()
-        image.draw(in: NSRect(origin: .zero, size: image.size),
-                   from: NSRect(origin: .zero, size: image.size),
+        baseImage.draw(in: NSRect(origin: .zero, size: baseImage.size),
+                   from: NSRect(origin: .zero, size: baseImage.size),
                    operation: .copy,
                    fraction: 1.0)
 
@@ -235,6 +241,8 @@ extension CaptureService {
                 let height = abs(end.y - start.y)
                 let rect = CGRect(x: x, y: y, width: width, height: height)
                 path.addEllipse(in: rect)
+            case .mosaic, .blur:
+                continue
             case .text:
                 continue
             }
@@ -257,7 +265,7 @@ extension CaptureService {
             let localY = annotation.startPoint.y - cropRect.origin.y
             let drawPoint = CGPoint(
                 x: localX,
-                y: image.size.height - localY - size.height
+                y: baseImage.size.height - localY - size.height
             )
             text.draw(at: drawPoint, withAttributes: attributes)
         }
@@ -282,13 +290,139 @@ extension CaptureService {
                 rect = CGRect(x: x, y: y, width: width, height: height)
             }
             return rect.intersects(cropRect)
-        case .pen, .arrow:
+        case .mosaic, .blur, .pen, .arrow:
             let xs = annotation.points.map { $0.x } + [annotation.startPoint.x, annotation.endPoint.x]
             let ys = annotation.points.map { $0.y } + [annotation.startPoint.y, annotation.endPoint.y]
             guard let minX = xs.min(), let maxX = xs.max(),
                   let minY = ys.min(), let maxY = ys.max() else { return false }
-            let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            let padding = (annotation.type == .mosaic || annotation.type == .blur) ? annotation.lineWidth / 2 : 0
+            let rect = CGRect(x: minX - padding, y: minY - padding, width: maxX - minX + padding * 2, height: maxY - minY + padding * 2)
             return rect.intersects(cropRect)
         }
+    }
+
+    private func applyAnnotationEffects(image: NSImage, annotations: [Annotation], cropRect: CGRect?) -> NSImage {
+        let hasEffects = annotations.contains { $0.type == .mosaic || $0.type == .blur }
+        if !hasEffects { return image }
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        let scaleX = CGFloat(cgImage.width) / image.size.width
+        let scaleY = CGFloat(cgImage.height) / image.size.height
+        var currentImage = CIImage(cgImage: cgImage)
+        let fullExtent = currentImage.extent
+        let context = CIContext()
+        for annotation in annotations {
+            if annotation.type != .mosaic && annotation.type != .blur { continue }
+            var localPoints: [CGPoint]
+            var localStart: CGPoint
+            var localEnd: CGPoint
+            if let crop = cropRect {
+                localPoints = annotation.points.map { CGPoint(x: $0.x - crop.minX, y: $0.y - crop.minY) }
+                localStart = CGPoint(x: annotation.startPoint.x - crop.minX, y: annotation.startPoint.y - crop.minY)
+                localEnd = CGPoint(x: annotation.endPoint.x - crop.minX, y: annotation.endPoint.y - crop.minY)
+            } else {
+                localPoints = annotation.points
+                localStart = annotation.startPoint
+                localEnd = annotation.endPoint
+            }
+            if let crop = cropRect {
+                let clampedPoints = localPoints.map { CGPoint(x: min(max($0.x, 0), crop.width), y: min(max($0.y, 0), crop.height)) }
+                let clampedStart = CGPoint(x: min(max(localStart.x, 0), crop.width), y: min(max(localStart.y, 0), crop.height))
+                let clampedEnd = CGPoint(x: min(max(localEnd.x, 0), crop.width), y: min(max(localEnd.y, 0), crop.height))
+                localPoints = clampedPoints
+                localStart = clampedStart
+                localEnd = clampedEnd
+            }
+            let pointsForBounds = localPoints.isEmpty ? [localStart, localEnd] : localPoints
+            let xs = pointsForBounds.map { $0.x }
+            let ys = pointsForBounds.map { $0.y }
+            guard let minX = xs.min(), let maxX = xs.max(),
+                  let minY = ys.min(), let maxY = ys.max() else { continue }
+            let boundsRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            let effectRect: CGRect
+            if annotation.type == .mosaic {
+                effectRect = boundsRect
+            } else {
+                let half = annotation.lineWidth / 2
+                effectRect = boundsRect.insetBy(dx: -half, dy: -half)
+            }
+            if effectRect.width <= 1 || effectRect.height <= 1 { continue }
+            let pixelWidth = effectRect.width * scaleX
+            let pixelHeight = effectRect.height * scaleY
+            let pixelX = effectRect.minX * scaleX
+            let pixelY = fullExtent.height - (effectRect.maxY * scaleY)
+            let pixelRect = CGRect(x: pixelX, y: pixelY, width: pixelWidth, height: pixelHeight).intersection(fullExtent)
+            if pixelRect.isEmpty { continue }
+            let strokeScale = max(annotation.lineWidth * max(scaleX, scaleY), 1)
+            let filtered: CIImage
+            if annotation.type == .mosaic {
+                let blockSize = max(annotation.lineWidth * 0.8, 10)
+                let pixelBlockSize = blockSize * max(scaleX, scaleY)
+                let filter = CIFilter.pixellate()
+                filter.inputImage = currentImage
+                filter.scale = Float(max(pixelBlockSize, 8))
+                filter.center = CGPoint(x: pixelRect.midX, y: pixelRect.midY)
+                filtered = filter.outputImage?.cropped(to: fullExtent) ?? currentImage
+            } else {
+                let filter = CIFilter.gaussianBlur()
+                filter.inputImage = currentImage.clampedToExtent()
+                filter.radius = Float(max(strokeScale * 4.2, 36))
+                filtered = filter.outputImage?.cropped(to: fullExtent) ?? currentImage
+            }
+            let mask: CIImage
+            if annotation.type == .mosaic {
+                mask = makeEffectMask(extent: fullExtent, rect: pixelRect)
+            } else if pointsForBounds.count >= 2 {
+                mask = makeBrushMask(extent: fullExtent, points: pointsForBounds, lineWidth: annotation.lineWidth, scaleX: scaleX, scaleY: scaleY)
+            } else {
+                mask = makeEffectMask(extent: fullExtent, rect: pixelRect)
+            }
+            let blend = CIFilter.blendWithMask()
+            blend.inputImage = filtered
+            blend.backgroundImage = currentImage
+            blend.maskImage = mask
+            if let output = blend.outputImage?.cropped(to: fullExtent) {
+                currentImage = output
+            }
+        }
+        guard let outputCG = context.createCGImage(currentImage, from: fullExtent) else { return image }
+        return NSImage(cgImage: outputCG, size: image.size)
+    }
+
+    private func makeEffectMask(extent: CGRect, rect: CGRect) -> CIImage {
+        let base = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
+        let highlight = CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: 1)).cropped(to: rect)
+        return highlight.composited(over: base)
+    }
+
+    private func makeBrushMask(extent: CGRect, points: [CGPoint], lineWidth: CGFloat, scaleX: CGFloat, scaleY: CGFloat) -> CIImage {
+        let width = Int(extent.width)
+        let height = Int(extent.height)
+        if width <= 0 || height <= 0 {
+            return CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
+        }
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        guard let cgContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width, space: colorSpace, bitmapInfo: CGImageAlphaInfo.none.rawValue) else {
+            return CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
+        }
+        cgContext.setFillColor(gray: 0, alpha: 1)
+        cgContext.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        cgContext.setStrokeColor(gray: 1, alpha: 1)
+        cgContext.setLineWidth(max(lineWidth * max(scaleX, scaleY), 1))
+        cgContext.setLineCap(.round)
+        cgContext.setLineJoin(.round)
+        let heightPixels = extent.height
+        let path = CGMutablePath()
+        if let first = points.first {
+            path.move(to: CGPoint(x: first.x * scaleX, y: heightPixels - first.y * scaleY))
+            for point in points.dropFirst() {
+                path.addLine(to: CGPoint(x: point.x * scaleX, y: heightPixels - point.y * scaleY))
+            }
+        }
+        cgContext.addPath(path)
+        cgContext.strokePath()
+        guard let maskImage = cgContext.makeImage() else {
+            return CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
+        }
+        return CIImage(cgImage: maskImage).cropped(to: extent)
     }
 }

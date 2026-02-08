@@ -39,11 +39,11 @@ struct OverlayView: View {
                                 context.stroke(haloPath, with: .color(.blue.opacity(0.5)), lineWidth: 2)
                             }
                             
-                            drawAnnotation(context: context, annotation: annotation)
+                            drawAnnotation(context: context, annotation: annotation, canvasSize: size)
                         }
                         // Draw current annotation being dragged
                         if let current = viewModel.currentAnnotation {
-                            drawAnnotation(context: context, annotation: current)
+                            drawAnnotation(context: context, annotation: current, canvasSize: size)
                         }
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -238,7 +238,95 @@ struct OverlayView: View {
         return CGPoint(x: rect.midX, y: y)
     }
 
-    func drawAnnotation(context: GraphicsContext, annotation: Annotation) {
+    func drawAnnotation(context: GraphicsContext, annotation: Annotation, canvasSize: CGSize) {
+        if annotation.type == .mosaic {
+            let blockSize = max(annotation.lineWidth * 0.8, 10)
+            let rect: CGRect
+            if annotation.points.isEmpty {
+                rect = CGRect(from: annotation.startPoint, to: annotation.endPoint).standardized
+            } else {
+                let xs = annotation.points.map { $0.x } + [annotation.startPoint.x, annotation.endPoint.x]
+                let ys = annotation.points.map { $0.y } + [annotation.startPoint.y, annotation.endPoint.y]
+                let minX = xs.min() ?? 0
+                let maxX = xs.max() ?? 0
+                let minY = ys.min() ?? 0
+                let maxY = ys.max() ?? 0
+                rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).standardized
+            }
+            if rect.width <= 0 || rect.height <= 0 {
+                return
+            }
+            let startX = (rect.minX / blockSize).rounded(.down) * blockSize
+            let startY = (rect.minY / blockSize).rounded(.down) * blockSize
+            if let bitmap = viewModel.previewBitmap, canvasSize.width > 0, canvasSize.height > 0 {
+                let scaleX = CGFloat(bitmap.pixelsWide) / canvasSize.width
+                let scaleY = CGFloat(bitmap.pixelsHigh) / canvasSize.height
+                var y = startY
+                while y < rect.maxY {
+                    var x = startX
+                    while x < rect.maxX {
+                        let block = CGRect(x: x, y: y, width: blockSize, height: blockSize).intersection(rect)
+                        if !block.isEmpty {
+                            let rawSampleX = Int((x + blockSize * 0.5) * scaleX)
+                            let rawSampleY = Int((y + blockSize * 0.5) * scaleY)
+                            let sampleX = min(max(rawSampleX, 0), bitmap.pixelsWide - 1)
+                            let flippedY = bitmap.pixelsHigh - 1 - rawSampleY
+                            let sampleY = min(max(flippedY, 0), bitmap.pixelsHigh - 1)
+                            if let nsColor = bitmap.colorAt(x: sampleX, y: sampleY) {
+                                context.fill(Path(block), with: .color(Color(nsColor)))
+                            } else {
+                                context.fill(Path(block), with: .color(Color.black))
+                            }
+                        }
+                        x += blockSize
+                    }
+                    y += blockSize
+                }
+            } else {
+                var lightBlocks = Path()
+                var darkBlocks = Path()
+                var y = startY
+                while y < rect.maxY {
+                    var x = startX
+                    while x < rect.maxX {
+                        let block = CGRect(x: x, y: y, width: blockSize, height: blockSize).intersection(rect)
+                        if !block.isEmpty {
+                            let ix = Int(((x - startX) / blockSize).rounded(.down))
+                            let iy = Int(((y - startY) / blockSize).rounded(.down))
+                            if (ix + iy) % 2 == 0 {
+                                lightBlocks.addRect(block)
+                            } else {
+                                darkBlocks.addRect(block)
+                            }
+                        }
+                        x += blockSize
+                    }
+                    y += blockSize
+                }
+                context.fill(lightBlocks, with: .color(Color.black.opacity(0.65)))
+                context.fill(darkBlocks, with: .color(Color.black.opacity(0.85)))
+            }
+            return
+        }
+        
+        if annotation.type == .blur {
+            var path = Path()
+            if let first = annotation.points.first {
+                path.move(to: first)
+                for point in annotation.points.dropFirst() {
+                    path.addLine(to: point)
+                }
+            } else {
+                let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
+                path.addRect(rect)
+            }
+            let stroke = StrokeStyle(lineWidth: annotation.lineWidth, lineCap: .round, lineJoin: .round)
+            let filled = path.strokedPath(stroke)
+            context.fill(filled, with: .color(Color.black.opacity(0.28)))
+            context.stroke(path, with: .color(Color.black.opacity(0.55)), style: stroke)
+            return
+        }
+        
         var path = Path()
         
         switch annotation.type {
@@ -270,6 +358,8 @@ struct OverlayView: View {
         case .ellipse:
             let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
             path.addEllipse(in: rect)
+        case .mosaic, .blur:
+            break
         case .text:
             break
         }

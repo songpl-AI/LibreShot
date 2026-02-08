@@ -130,8 +130,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func captureSelection() {
-        overlayWindowController = OverlayWindowController()
-        overlayWindowController?.show(onCapture: { [weak self] rect, annotations, action in
+        let controller: OverlayWindowController
+        if let existing = overlayWindowController {
+            controller = existing
+        } else {
+            let created = OverlayWindowController()
+            overlayWindowController = created
+            controller = created
+        }
+        controller.show(onCapture: { [weak self] rect, annotations, action in
             // Capture the specific screen where the selection happened
             let displayID = self?.overlayWindowController?.getCurrentDisplayID()
             self?.performAreaCapture(rect: rect, annotations: annotations, displayID: displayID, action: action)

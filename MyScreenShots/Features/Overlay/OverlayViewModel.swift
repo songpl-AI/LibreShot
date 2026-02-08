@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import CoreGraphics
 import SwiftUI
+import AppKit
 
 enum OverlayState {
     case idle
@@ -40,6 +41,8 @@ class OverlayViewModel: ObservableObject {
     @Published var selectedColor: Color = .red
     @Published var activeSelectionHandle: SelectionHandle?
     @Published var isMovingSelection: Bool = false
+    @Published var previewImage: CGImage?
+    var previewBitmap: NSBitmapImageRep?
     
     // Actions
     var onCapture: ((CGRect, [Annotation], CaptureAction) -> Void)?
@@ -61,6 +64,15 @@ class OverlayViewModel: ObservableObject {
     
     func cancel() {
         onCancel?()
+    }
+
+    func updatePreviewImage(_ image: CGImage?) {
+        previewImage = image
+        if let image {
+            previewBitmap = makePreviewBitmap(from: image, maxDimension: 1200)
+        } else {
+            previewBitmap = nil
+        }
     }
     
     // MARK: - Selection Logic
@@ -118,13 +130,20 @@ class OverlayViewModel: ObservableObject {
         }
         
         guard state == .editing, let tool = selectedTool else { return }
+        if (tool == .mosaic || tool == .blur), !selectionRect.contains(point) {
+            return
+        }
         
         // Start new annotation
         var annotation = Annotation(type: tool, color: selectedColor)
-        annotation.startPoint = point
-        annotation.endPoint = point
-        if tool == .pen {
-            annotation.points = [point]
+        let startPoint = (tool == .mosaic || tool == .blur) ? clampPoint(point, to: selectionRect) : point
+        annotation.startPoint = startPoint
+        annotation.endPoint = startPoint
+        if tool == .pen || tool == .blur {
+            annotation.points = [startPoint]
+        }
+        if tool == .mosaic || tool == .blur {
+            annotation.lineWidth = 24
         }
         currentAnnotation = annotation
         
@@ -155,9 +174,10 @@ class OverlayViewModel: ObservableObject {
         
         guard state == .editing, var annotation = currentAnnotation else { return }
         
-        annotation.endPoint = point
-        if annotation.type == .pen {
-            annotation.points.append(point)
+        let nextPoint = (annotation.type == .mosaic || annotation.type == .blur) ? clampPoint(point, to: selectionRect) : point
+        annotation.endPoint = nextPoint
+        if annotation.type == .pen || annotation.type == .blur {
+            annotation.points.append(nextPoint)
         }
         currentAnnotation = annotation
     }
@@ -171,7 +191,7 @@ class OverlayViewModel: ObservableObject {
         annotation.endPoint.x += offset.width
         annotation.endPoint.y += offset.height
         
-        if annotation.type == .pen {
+        if annotation.type == .pen || annotation.type == .mosaic || annotation.type == .blur {
             annotation.points = annotation.points.map { CGPoint(x: $0.x + offset.width, y: $0.y + offset.height) }
         }
         
@@ -203,6 +223,8 @@ class OverlayViewModel: ObservableObject {
         cancelTextInput()
         activeSelectionHandle = nil
         isMovingSelection = false
+        previewImage = nil
+        previewBitmap = nil
     }
     
     // MARK: - Text Input State
@@ -273,7 +295,7 @@ class OverlayViewModel: ObservableObject {
             }
             return rect.insetBy(dx: -padding, dy: -padding).contains(point)
             
-        case .pen, .arrow:
+        case .mosaic, .blur, .pen, .arrow:
              // Simple bounding box check for now
              // Ideal: path hit testing
              let xs = annotation.points.map { $0.x } + [annotation.startPoint.x, annotation.endPoint.x]
@@ -285,6 +307,37 @@ class OverlayViewModel: ObservableObject {
              let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
              return rect.insetBy(dx: -padding, dy: -padding).contains(point)
         }
+    }
+
+    private func clampPoint(_ point: CGPoint, to rect: CGRect) -> CGPoint {
+        let x = min(max(point.x, rect.minX), rect.maxX)
+        let y = min(max(point.y, rect.minY), rect.maxY)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func makePreviewBitmap(from image: CGImage, maxDimension: CGFloat) -> NSBitmapImageRep? {
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        if width <= 0 || height <= 0 {
+            return nil
+        }
+        let scale = min(maxDimension / max(width, height), 1)
+        let targetWidth = Int(width * scale)
+        let targetHeight = Int(height * scale)
+        if targetWidth <= 0 || targetHeight <= 0 {
+            return nil
+        }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(data: nil, width: targetWidth, height: targetHeight, bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: bitmapInfo) else {
+            return nil
+        }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(targetWidth), height: CGFloat(targetHeight)))
+        guard let scaled = context.makeImage() else {
+            return nil
+        }
+        return NSBitmapImageRep(cgImage: scaled)
     }
     
     // MARK: - Style Updates
@@ -412,7 +465,7 @@ class OverlayViewModel: ObservableObject {
             updated.startPoint.y += offset.height
             updated.endPoint.x += offset.width
             updated.endPoint.y += offset.height
-            if updated.type == .pen {
+            if updated.type == .pen || updated.type == .mosaic || updated.type == .blur {
                 updated.points = updated.points.map { CGPoint(x: $0.x + offset.width, y: $0.y + offset.height) }
             }
             return updated
@@ -422,7 +475,7 @@ class OverlayViewModel: ObservableObject {
             current.startPoint.y += offset.height
             current.endPoint.x += offset.width
             current.endPoint.y += offset.height
-            if current.type == .pen {
+            if current.type == .pen || current.type == .mosaic || current.type == .blur {
                 current.points = current.points.map { CGPoint(x: $0.x + offset.width, y: $0.y + offset.height) }
             }
             currentAnnotation = current

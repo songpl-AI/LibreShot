@@ -19,6 +19,7 @@ class OverlayWindow: NSWindow {
 class OverlayWindowController: NSWindowController {
     private var cursorPushed = false
     private let viewModel = OverlayViewModel()
+    private let previewCaptureService = CaptureService()
     
     private func pushCrosshairCursor() {
         if !cursorPushed {
@@ -110,6 +111,22 @@ class OverlayWindowController: NSWindowController {
             overlayWindow.contentView?.needsLayout = true
             overlayWindow.layoutIfNeeded()
             NSAnimationContext.endGrouping()
+        }
+        
+        viewModel.updatePreviewImage(nil)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                await MainActor.run {
+                    self.viewModel.updatePreviewImage(cgImage)
+                }
+            } catch {
+                await MainActor.run {
+                    self.viewModel.updatePreviewImage(nil)
+                }
+            }
         }
         
         // 5. Show

@@ -4,6 +4,8 @@ enum AnnotationType: String, CaseIterable, Identifiable {
     case pen
     case rectangle
     case arrow
+    case mosaic
+    case blur
     
     var id: String { self.rawValue }
     
@@ -12,6 +14,8 @@ enum AnnotationType: String, CaseIterable, Identifiable {
         case .pen: return "pencil"
         case .rectangle: return "square"
         case .arrow: return "arrow.up.right"
+        case .mosaic: return "square.grid.3x3"
+        case .blur: return "drop"
         }
     }
 }
