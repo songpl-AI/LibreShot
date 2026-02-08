@@ -13,22 +13,6 @@ enum CaptureServiceError: Error {
     case saveFailed(underlying: Error)
 }
 
-enum OCRError: Error {
-    case missingImage
-    case recognitionFailed
-}
-
-extension OCRError: LocalizedError {
-    var errorDescription: String? {
-        switch self {
-        case .missingImage:
-            return "无法获取图片内容"
-        case .recognitionFailed:
-            return "OCR 识别失败"
-        }
-    }
-}
-
 extension CaptureServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {

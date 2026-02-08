@@ -39,12 +39,19 @@ class SettingsService: ObservableObject {
         }
     }
     
+    @Published var playSound: Bool {
+        didSet {
+            UserDefaults.standard.set(playSound, forKey: "playSound")
+        }
+    }
+    
     private init() {
         self.saveDirectoryBookmark = UserDefaults.standard.data(forKey: "saveDirectoryBookmark")
         self.shortcutKey = UserDefaults.standard.object(forKey: "shortcutKey") as? Int ?? -1
         self.shortcutModifiers = UserDefaults.standard.object(forKey: "shortcutModifiers") as? Int ?? 0
         self.launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         self.useRoundedCorners = UserDefaults.standard.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
+        self.playSound = UserDefaults.standard.object(forKey: "playSound") as? Bool ?? true // Default to true
     }
     
     var saveDirectory: URL? {

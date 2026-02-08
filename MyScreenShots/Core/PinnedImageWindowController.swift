@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 class PinnedImageWindowController: NSWindowController {
     
     private let image: NSImage
+    var onClose: (() -> Void)?
     
     init(image: NSImage) {
         self.image = image
@@ -35,6 +36,7 @@ class PinnedImageWindowController: NSWindowController {
         
         let contentView = PinnedImageView(image: image, onClose: { [weak self] in
             self?.close()
+            self?.onClose?()
         })
         window.contentView = NSHostingView(rootView: contentView)
     }
