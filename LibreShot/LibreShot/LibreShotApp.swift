@@ -23,6 +23,8 @@ struct LibreShotApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
+    private var captureSelectionMenuItem: NSMenuItem?
+    private var captureFullScreenMenuItem: NSMenuItem?
     private var overlayWindowController: OverlayWindowController?
     private var settingsWindowController: NSWindowController?
     private var hotkeyObserver: NSObjectProtocol?
@@ -43,8 +45,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "全屏截图", action: #selector(captureFullScreen), keyEquivalent: "1"))
-        menu.addItem(NSMenuItem(title: "区域截图", action: #selector(captureSelection), keyEquivalent: "2"))
+        
+        let fullScreenItem = NSMenuItem(title: "全屏截图", action: #selector(captureFullScreen), keyEquivalent: "")
+        menu.addItem(fullScreenItem)
+        captureFullScreenMenuItem = fullScreenItem
+        
+        let selectionItem = NSMenuItem(title: "区域截图", action: #selector(captureSelection), keyEquivalent: "")
+        menu.addItem(selectionItem)
+        captureSelectionMenuItem = selectionItem
+        
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
@@ -56,16 +65,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupHotkeys() {
-        // Register saved hotkey
-        let savedKey = SettingsService.shared.shortcutKey
-        let savedMods = SettingsService.shared.shortcutModifiers
-        if savedKey != -1 {
-            HotkeyService.shared.registerHotkey(keyCode: savedKey, modifiers: savedMods)
-        }
+        // Initial registration and title update
+        reregisterHotkeys()
         
         // Handle trigger
-        HotkeyService.shared.onTrigger = { [weak self] in
+        HotkeyService.shared.onSelectionTrigger = { [weak self] in
             self?.captureSelection()
+        }
+        
+        HotkeyService.shared.onFullScreenTrigger = { [weak self] in
+            self?.captureFullScreen()
         }
         
         // Listen for hotkey changes from settings
@@ -75,18 +84,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             print("Hotkey changed notification received, re-registering...")
-            self?.reregisterHotkey()
+            self?.reregisterHotkeys()
         }
     }
     
-    private func reregisterHotkey() {
-        let keyCode = SettingsService.shared.shortcutKey
-        let modifiers = SettingsService.shared.shortcutModifiers
+    private func reregisterHotkeys() {
+        // Register Selection Shortcut
+        let selKey = SettingsService.shared.shortcutKey
+        let selMods = SettingsService.shared.shortcutModifiers
         
-        if keyCode != -1 {
-            HotkeyService.shared.registerHotkey(keyCode: keyCode, modifiers: modifiers)
+        if selKey != -1 {
+            HotkeyService.shared.registerSelectionHotkey(keyCode: selKey, modifiers: selMods)
+            let shortcutString = ShortcutUtils.string(for: selKey, modifiers: selMods)
+            captureSelectionMenuItem?.title = "区域截图 (\(shortcutString))"
         } else {
-            HotkeyService.shared.unregisterHotkey()
+            HotkeyService.shared.unregisterSelectionHotkey()
+            captureSelectionMenuItem?.title = "区域截图"
+        }
+        
+        // Register Full Screen Shortcut
+        let fullKey = SettingsService.shared.fullScreenShortcutKey
+        let fullMods = SettingsService.shared.fullScreenShortcutModifiers
+        
+        if fullKey != -1 {
+            HotkeyService.shared.registerFullScreenHotkey(keyCode: fullKey, modifiers: fullMods)
+            let shortcutString = ShortcutUtils.string(for: fullKey, modifiers: fullMods)
+            captureFullScreenMenuItem?.title = "全屏截图 (\(shortcutString))"
+        } else {
+            HotkeyService.shared.unregisterFullScreenHotkey()
+            captureFullScreenMenuItem?.title = "全屏截图"
         }
     }
     
@@ -132,6 +158,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let image = try await CaptureService.shared.captureDisplayImage()
                 SoundService.shared.playCaptureSound()
                 _ = try await CaptureService.shared.saveImageWithFallback(image)
+            } catch is CancellationError {
+                // User cancelled, do nothing
             } catch {
                 await handleCaptureError(error)
             }
@@ -221,7 +249,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 switch action {
                 case .save:
-                    _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
+                    do {
+                        _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
+                    } catch is CancellationError {
+                        // User cancelled, do nothing
+                    } catch {
+                        throw error
+                    }
                 case .copy:
                     CaptureService.shared.copyToClipboard(outputImage)
                 case .pin:

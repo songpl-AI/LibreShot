@@ -177,59 +177,72 @@ struct ShortcutSettingsView: View {
     @State private var registerError: Bool = false
     
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "command.keyboard")
-                .font(.system(size: 48))
-                .foregroundColor(.accentColor)
-                .padding(.top, 20)
-            
-            VStack(spacing: 8) {
-                Text("快捷键设置")
-                    .font(.title2)
-                    .fontWeight(.bold)
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("快捷键")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    Text("自定义全局快捷键，随时随地唤起截图。")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
                 
-                Text("点击下方录制区域，按下键盘组合键即可设置。")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
+                Image(systemName: "keyboard.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.accentColor)
+                    .opacity(0.8)
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .background(Color(NSColor.controlBackgroundColor))
             
-            GroupBox {
-                VStack(spacing: 16) {
-                    HStack {
-                        Text("区域截图:")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .frame(width: 80, alignment: .trailing)
-                        
-                        ShortcutRecorder(
-                            keyCode: $settings.shortcutKey,
-                            modifiers: $settings.shortcutModifiers,
-                            onShortcutRecorded: { recordedKey, recordedModifiers in
-                                saveShortcut(keyCode: recordedKey, modifiers: recordedModifiers)
-                            },
-                            onClear: {
-                                saveShortcut(keyCode: -1, modifiers: 0)
-                            }
-                        )
-                        .frame(width: 140)
-                    }
+            Divider()
+            
+            // Content
+            ScrollView {
+                VStack(spacing: 20) {
+                    
+                    // Selection Capture
+                    ShortcutRow(
+                        title: "区域截图",
+                        description: "选择屏幕区域进行截图、标注或贴图。",
+                        keyCode: $settings.shortcutKey,
+                        modifiers: $settings.shortcutModifiers,
+                        onSave: { k, m in saveShortcut(keyCode: k, modifiers: m) },
+                        onClear: { saveShortcut(keyCode: -1, modifiers: 0) }
+                    )
+                    
+                    Divider()
+                        .padding(.horizontal, 16)
+                    
+                    // Full Screen Capture
+                    ShortcutRow(
+                        title: "全屏截图",
+                        description: "立即捕捉当前整个屏幕的内容。",
+                        keyCode: $settings.fullScreenShortcutKey,
+                        modifiers: $settings.fullScreenShortcutModifiers,
+                        onSave: { k, m in saveFullScreenShortcut(keyCode: k, modifiers: m) },
+                        onClear: { saveFullScreenShortcut(keyCode: -1, modifiers: 0) }
+                    )
                     
                     if registerError {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                            Text("快捷键注册失败，可能被占用")
+                            Text("快捷键注册失败，可能已被其他应用占用")
                         }
                         .font(.caption)
                         .foregroundColor(.red)
+                        .padding(.top, 8)
                     }
                 }
-                .padding(20)
+                .padding(24)
             }
-            .frame(maxWidth: 360)
-            
-            Spacer()
         }
-        .padding()
+        .background(Color(NSColor.windowBackgroundColor))
     }
     
     private func saveShortcut(keyCode: Int, modifiers: Int) {
@@ -241,6 +254,56 @@ struct ShortcutSettingsView: View {
         registerError = false
         _ = settings.saveShortcut(keyCode: -1, modifiers: 0)
     }
+    
+    private func saveFullScreenShortcut(keyCode: Int, modifiers: Int) {
+        if keyCode != -1 {
+            let success = settings.saveFullScreenShortcut(keyCode: keyCode, modifiers: modifiers)
+            registerError = !success
+            return
+        }
+        registerError = false
+        _ = settings.saveFullScreenShortcut(keyCode: -1, modifiers: 0)
+    }
+}
+
+struct ShortcutRow: View {
+    let title: String
+    let description: String
+    @Binding var keyCode: Int
+    @Binding var modifiers: Int
+    let onSave: (Int, Int) -> Void
+    let onClear: () -> Void
+    
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.primary)
+                
+                Text(description)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            
+            Spacer()
+            
+            ShortcutRecorder(
+                keyCode: $keyCode,
+                modifiers: $modifiers,
+                onShortcutRecorded: onSave,
+                onClear: onClear
+            )
+            .frame(width: 140)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
+        )
+    }
 }
 
 // MARK: - About Settings
@@ -250,14 +313,15 @@ struct AboutSettingsView: View {
         VStack(spacing: 20) {
             Spacer()
             
-            Image(nsImage: NSImage(named: "AppIcon") ?? NSImage(systemSymbolName: "scissors", accessibilityDescription: nil)!)
+            Image(systemName: "scissors")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 80, height: 80)
+                .foregroundColor(.accentColor)
                 .shadow(radius: 4)
             
             VStack(spacing: 6) {
-                Text("MyScreenShots")
+                Text("LibreShot")
                     .font(.title)
                     .fontWeight(.bold)
                 

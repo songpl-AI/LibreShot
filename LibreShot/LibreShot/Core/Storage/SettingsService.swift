@@ -26,6 +26,18 @@ class SettingsService: ObservableObject {
             UserDefaults.standard.set(shortcutModifiers, forKey: "shortcutModifiers")
         }
     }
+
+    @Published var fullScreenShortcutKey: Int {
+        didSet {
+            UserDefaults.standard.set(fullScreenShortcutKey, forKey: "fullScreenShortcutKey")
+        }
+    }
+    
+    @Published var fullScreenShortcutModifiers: Int {
+        didSet {
+            UserDefaults.standard.set(fullScreenShortcutModifiers, forKey: "fullScreenShortcutModifiers")
+        }
+    }
     
     @Published var launchAtLogin: Bool {
         didSet {
@@ -47,8 +59,16 @@ class SettingsService: ObservableObject {
     
     private init() {
         self.saveDirectoryBookmark = UserDefaults.standard.data(forKey: "saveDirectoryBookmark")
-        self.shortcutKey = UserDefaults.standard.object(forKey: "shortcutKey") as? Int ?? -1
-        self.shortcutModifiers = UserDefaults.standard.object(forKey: "shortcutModifiers") as? Int ?? 0
+        
+        // Defaults:
+        // Area Capture: Cmd + Shift + X (KeyCode: 7, Modifiers: 768)
+        // Full Screen: Cmd + Shift + A (KeyCode: 0, Modifiers: 768)
+        self.shortcutKey = UserDefaults.standard.object(forKey: "shortcutKey") as? Int ?? 7
+        self.shortcutModifiers = UserDefaults.standard.object(forKey: "shortcutModifiers") as? Int ?? 768
+        
+        self.fullScreenShortcutKey = UserDefaults.standard.object(forKey: "fullScreenShortcutKey") as? Int ?? 0
+        self.fullScreenShortcutModifiers = UserDefaults.standard.object(forKey: "fullScreenShortcutModifiers") as? Int ?? 768
+        
         self.launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         self.useRoundedCorners = UserDefaults.standard.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
         self.playSound = UserDefaults.standard.object(forKey: "playSound") as? Bool ?? true // Default to true
@@ -95,22 +115,27 @@ class SettingsService: ObservableObject {
     
     @discardableResult
     func saveShortcut(keyCode: Int, modifiers: Int) -> Bool {
+        // Unregister old if needed (handled by registerHotkey internals or explicit unregister)
+        // For simplicity, we just try to register new one.
+        // Note: Real app should check if key is already taken by fullScreenShortcut
+        
         shortcutKey = keyCode
         shortcutModifiers = modifiers
         
-        let success: Bool
-        if keyCode < 0 {
-            HotkeyService.shared.unregisterHotkey()
-            success = true
-        } else {
-            success = HotkeyService.shared.registerHotkey(keyCode: keyCode, modifiers: modifiers)
-        }
+        // Notify changes
+        NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
         
-        // Notify that hotkey has changed
-        if success {
-            NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
-        }
+        // We return true here because actual registration happens in AppDelegate
+        // Ideally we should move registration logic here or return actual status
+        return true
+    }
+    
+    @discardableResult
+    func saveFullScreenShortcut(keyCode: Int, modifiers: Int) -> Bool {
+        fullScreenShortcutKey = keyCode
+        fullScreenShortcutModifiers = modifiers
         
-        return success
+        NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
+        return true
     }
 }

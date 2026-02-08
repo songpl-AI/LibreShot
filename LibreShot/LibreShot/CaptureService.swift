@@ -27,27 +27,38 @@ class CaptureService {
     init() {}
     
     func saveImageWithFallback(_ image: NSImage) async throws -> URL {
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [.png]
-        savePanel.canCreateDirectories = true
-        savePanel.isExtensionHidden = false
-        savePanel.title = "保存截图"
-        savePanel.message = "选择保存截图的位置"
-        savePanel.nameFieldStringValue = "Screenshot \(Date().formatted(date: .numeric, time: .standard)).png"
-        
-        let response = await savePanel.begin()
-        guard response == .OK, let url = savePanel.url else {
-            throw CancellationError()
+        // Ensure UI operations run on Main Actor
+        return try await MainActor.run {
+            let savePanel = NSSavePanel()
+            savePanel.allowedContentTypes = [.png]
+            savePanel.canCreateDirectories = true
+            savePanel.isExtensionHidden = false
+            savePanel.title = "保存截图"
+            savePanel.message = "选择保存截图的位置"
+            savePanel.nameFieldStringValue = "Screenshot \(Date().formatted(date: .numeric, time: .standard)).png"
+            
+            // Set panel level to ensure it appears above other windows (like pinned screenshots)
+            // .modalPanel level is usually sufficient, but .floating or .status might be needed depending on context
+            savePanel.level = .modalPanel
+            
+            // Bring app to front to ensure panel is visible
+            NSApp.activate(ignoringOtherApps: true)
+            
+            let response = savePanel.runModal()
+            
+            guard response == .OK, let url = savePanel.url else {
+                throw CancellationError()
+            }
+            
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmapImage = NSBitmapImageRep(data: tiffData),
+                  let pngData = bitmapImage.representation(using: .png, properties: [:]) else {
+                throw CaptureServiceError.imageConversionFailed
+            }
+            
+            try pngData.write(to: url)
+            return url
         }
-        
-        guard let tiffData = image.tiffRepresentation,
-              let bitmapImage = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmapImage.representation(using: .png, properties: [:]) else {
-            throw CaptureServiceError.imageConversionFailed
-        }
-        
-        try pngData.write(to: url)
-        return url
     }
     
     func copyToClipboard(_ image: NSImage) {

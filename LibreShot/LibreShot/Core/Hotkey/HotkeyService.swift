@@ -4,9 +4,16 @@ import Carbon
 class HotkeyService {
     static let shared = HotkeyService()
     
-    private var hotKeyRef: EventHotKeyRef?
+    // Dictionary to store multiple hotkeys: ID -> HotKeyRef
+    private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var eventHandler: EventHandlerRef?
-    var onTrigger: (() -> Void)?
+    
+    // Callbacks for different actions
+    var onSelectionTrigger: (() -> Void)?
+    var onFullScreenTrigger: (() -> Void)?
+    
+    private let selectionHotkeyID: UInt32 = 1
+    private let fullScreenHotkeyID: UInt32 = 2
     
     private init() {
         installEventHandler()
@@ -16,33 +23,68 @@ class HotkeyService {
         if let handler = eventHandler {
             RemoveEventHandler(handler)
         }
-        unregisterHotkey()
+        unregisterAllHotkeys()
     }
     
     private func installEventHandler() {
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         
-        // Convert Swift function to C function pointer
-        // Using explicit EventHandlerUPP closure to match C convention
-        let handler: EventHandlerUPP = { _, _, _ -> OSStatus in
-            Task { @MainActor in
-                HotkeyService.shared.onTrigger?()
+        let handler: EventHandlerUPP = { _, eventRef, _ -> OSStatus in
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(eventRef,
+                                         EventParamName(kEventParamDirectObject),
+                                         EventParamType(typeEventHotKeyID),
+                                         nil,
+                                         MemoryLayout<EventHotKeyID>.size,
+                                         nil,
+                                         &hotKeyID)
+            
+            if status == noErr {
+                Task { @MainActor in
+                    HotkeyService.shared.handleHotkeyTrigger(id: hotKeyID.id)
+                }
             }
+            
             return noErr
         }
         
         InstallEventHandler(GetApplicationEventTarget(), handler, 1, &eventType, nil, &eventHandler)
     }
     
+    private func handleHotkeyTrigger(id: UInt32) {
+        if id == selectionHotkeyID {
+            onSelectionTrigger?()
+        } else if id == fullScreenHotkeyID {
+            onFullScreenTrigger?()
+        }
+    }
+    
     @discardableResult
-    func registerHotkey(keyCode: Int, modifiers: Int) -> Bool {
-        unregisterHotkey()
+    func registerSelectionHotkey(keyCode: Int, modifiers: Int) -> Bool {
+        return registerHotkey(id: selectionHotkeyID, keyCode: keyCode, modifiers: modifiers)
+    }
+    
+    @discardableResult
+    func registerFullScreenHotkey(keyCode: Int, modifiers: Int) -> Bool {
+        return registerHotkey(id: fullScreenHotkeyID, keyCode: keyCode, modifiers: modifiers)
+    }
+    
+    func unregisterSelectionHotkey() {
+        unregisterHotkey(id: selectionHotkeyID)
+    }
+    
+    func unregisterFullScreenHotkey() {
+        unregisterHotkey(id: fullScreenHotkeyID)
+    }
+    
+    private func registerHotkey(id: UInt32, keyCode: Int, modifiers: Int) -> Bool {
+        // Unregister existing one with same ID first
+        unregisterHotkey(id: id)
         
         guard keyCode >= 0 else { return false }
         
-        // OSType is UInt32
-        let signature = OSType(1396920910) // "SCRN" in decimal: 'S'<<24 + 'C'<<16 + 'R'<<8 + 'N'
-        let hotKeyID = EventHotKeyID(signature: signature, id: 1)
+        let signature = OSType(1396920910) // "SCRN"
+        let hotKeyID = EventHotKeyID(signature: signature, id: id)
         
         var ref: EventHotKeyRef? = nil
         
@@ -53,20 +95,41 @@ class HotkeyService {
                                          0,
                                          &ref)
         
-        if status == noErr {
-            hotKeyRef = ref
-            print("Hotkey registered: code \(keyCode), mods \(modifiers)")
+        if status == noErr, let ref = ref {
+            hotKeyRefs[id] = ref
+            print("Hotkey registered for ID \(id): code \(keyCode), mods \(modifiers)")
             return true
         } else {
-            print("Failed to register hotkey: \(status)")
+            print("Failed to register hotkey ID \(id): \(status)")
             return false
         }
     }
     
-    func unregisterHotkey() {
-        if let ref = hotKeyRef {
+    private func unregisterHotkey(id: UInt32) {
+        if let ref = hotKeyRefs[id] {
             UnregisterEventHotKey(ref)
-            hotKeyRef = nil
+            hotKeyRefs.removeValue(forKey: id)
         }
+    }
+    
+    func unregisterAllHotkeys() {
+        for (id, _) in hotKeyRefs {
+            unregisterHotkey(id: id)
+        }
+    }
+    
+    // Legacy support for single hotkey (mapped to selection)
+    @discardableResult
+    func registerHotkey(keyCode: Int, modifiers: Int) -> Bool {
+        return registerSelectionHotkey(keyCode: keyCode, modifiers: modifiers)
+    }
+    
+    func unregisterHotkey() {
+        unregisterSelectionHotkey()
+    }
+    
+    var onTrigger: (() -> Void)? {
+        get { onSelectionTrigger }
+        set { onSelectionTrigger = newValue }
     }
 }
