@@ -2,6 +2,7 @@ import AppKit
 import ScreenCaptureKit
 import CoreImage
 import CoreGraphics
+import Vision
 
 enum CaptureServiceError: Error {
     case noDisplay
@@ -10,6 +11,22 @@ enum CaptureServiceError: Error {
     case imageConversionFailed
     case saveCancelled
     case saveFailed(underlying: Error)
+}
+
+enum OCRError: Error {
+    case missingImage
+    case recognitionFailed
+}
+
+extension OCRError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .missingImage:
+            return "无法获取图片内容"
+        case .recognitionFailed:
+            return "OCR 识别失败"
+        }
+    }
 }
 
 extension CaptureServiceError: LocalizedError {
@@ -136,6 +153,40 @@ final class CaptureService {
         pasteboard.writeObjects([image])
     }
 
+    func recognizeText(in image: NSImage, recognitionLanguages: [String] = ["zh-Hans", "zh-Hant", "en-US"]) async throws -> String {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw OCRError.missingImage
+        }
+        return try await recognizeText(in: cgImage, recognitionLanguages: recognitionLanguages)
+    }
+
+    func recognizeText(in image: CGImage, recognitionLanguages: [String] = ["zh-Hans", "zh-Hant", "en-US"]) async throws -> String {
+        return try await withCheckedThrowingContinuation { continuation in
+            let request = VNRecognizeTextRequest { request, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let observations = request.results as? [VNRecognizedTextObservation] ?? []
+                let text = self.buildOCRText(from: observations)
+                continuation.resume(returning: text)
+            }
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = true
+            if !recognitionLanguages.isEmpty {
+                request.recognitionLanguages = recognitionLanguages
+            }
+            let handler = VNImageRequestHandler(cgImage: image, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     func saveImageWithFallback(_ image: NSImage) async throws -> URL {
         do {
             return try saveToDefaultLocation(image)
@@ -248,6 +299,48 @@ final class CaptureService {
         guard case let .saveFailed(underlying) = captureError else { return false }
         let nsError = underlying as NSError
         return nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteNoPermissionError
+    }
+
+    private func buildOCRText(from observations: [VNRecognizedTextObservation]) -> String {
+        let blocks: [(CGRect, String)] = observations.compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            return (observation.boundingBox, candidate.string)
+        }
+        if blocks.isEmpty {
+            return ""
+        }
+        let sorted = blocks.sorted { lhs, rhs in
+            let lhsY = lhs.0.maxY
+            let rhsY = rhs.0.maxY
+            if abs(lhsY - rhsY) > 0.02 {
+                return lhsY > rhsY
+            }
+            return lhs.0.minX < rhs.0.minX
+        }
+        var lines: [[(CGRect, String)]] = []
+        var currentLine: [(CGRect, String)] = []
+        var currentY: CGFloat?
+        let lineThreshold: CGFloat = 0.025
+        for item in sorted {
+            let y = item.0.maxY
+            if let existingY = currentY, abs(y - existingY) > lineThreshold {
+                lines.append(currentLine)
+                currentLine = [item]
+                currentY = y
+            } else {
+                currentLine.append(item)
+                if currentY == nil {
+                    currentY = y
+                }
+            }
+        }
+        if !currentLine.isEmpty {
+            lines.append(currentLine)
+        }
+        let text = lines.map { line in
+            line.sorted { $0.0.minX < $1.0.minX }.map { $0.1 }.joined(separator: " ")
+        }.joined(separator: "\n")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer) {

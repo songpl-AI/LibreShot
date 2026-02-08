@@ -91,6 +91,25 @@ struct EditorToolbarView: View {
             }
             .buttonStyle(.plain)
             .help("贴图到屏幕")
+
+            Button(action: {
+                viewModel.confirmOCR()
+            }) {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 16, weight: .medium))
+                    .padding(7)
+                    .foregroundColor(.blue)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("识别文字")
             
             Button(action: {
                 viewModel.confirmCopy()

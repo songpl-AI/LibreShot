@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyObserver: NSObjectProtocol?
 
     private var pinnedWindows: [PinnedImageWindowController] = []
+    private var ocrWindowController: OCRResultWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -191,6 +192,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .pin:
                     await pinImageToScreen(image: outputImage)
                     await playSuccessSound()
+                case .ocr:
+                    let text = try await CaptureService.shared.recognizeText(in: cropped)
+                    await showOCRResult(text: text)
                 }
             } catch {
                 await handleCaptureError(error)
@@ -247,5 +251,146 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func playSuccessSound() async {
         NSSound.beep()
+    }
+
+    @MainActor
+    private func showOCRResult(text: String) async {
+        if let existing = ocrWindowController {
+            existing.close()
+        }
+        let controller = OCRResultWindowController(text: text, onCopy: { [weak self] content in
+            self?.copyTextToClipboard(content)
+        })
+        ocrWindowController = controller
+        controller.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
+    private func copyTextToClipboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+}
+
+final class OCRResultWindowController: NSWindowController {
+    init(text: String, onCopy: @escaping (String) -> Void) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 360),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "OCR 结果"
+        window.isReleasedWhenClosed = false
+        window.center()
+        let view = OCRResultView(text: text, onCopy: onCopy, onClose: {
+            window.close()
+        })
+        window.contentView = NSHostingView(rootView: view)
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+struct OCRResultView: View {
+    @State private var text: String
+    @State private var selectedRange: NSRange = NSRange(location: 0, length: 0)
+    var onCopy: (String) -> Void
+    var onClose: () -> Void
+
+    init(text: String, onCopy: @escaping (String) -> Void, onClose: @escaping () -> Void) {
+        _text = State(initialValue: text)
+        self.onCopy = onCopy
+        self.onClose = onClose
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("OCR 结果")
+                    .font(.headline)
+                Spacer()
+                Button("复制选中") {
+                    if let range = Range(selectedRange, in: text) {
+                        onCopy(String(text[range]))
+                    }
+                }
+                .disabled(selectedRange.length == 0)
+                Button("复制全部") {
+                    onCopy(text)
+                }
+                Button("关闭") {
+                    onClose()
+                }
+            }
+            OCRTextView(text: $text, selectedRange: $selectedRange)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                )
+        }
+        .padding(16)
+        .frame(minWidth: 520, minHeight: 360)
+    }
+}
+
+struct OCRTextView: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var selectedRange: NSRange
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView()
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.font = NSFont.systemFont(ofSize: 13)
+        textView.backgroundColor = .white
+        textView.delegate = context.coordinator
+        textView.string = text
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .white
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+        if textView.selectedRange() != selectedRange {
+            textView.setSelectedRange(selectedRange)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        private let parent: OCRTextView
+
+        init(_ parent: OCRTextView) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.selectedRange = textView.selectedRange()
+        }
     }
 }

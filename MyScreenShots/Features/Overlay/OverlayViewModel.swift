@@ -14,6 +14,7 @@ enum CaptureAction {
     case copy
     case save
     case pin
+    case ocr
 }
 
 enum SelectionHandle: CaseIterable {
@@ -60,6 +61,10 @@ class OverlayViewModel: ObservableObject {
     
     func confirmPin() {
         onCapture?(selectionRect, annotations, .pin)
+    }
+
+    func confirmOCR() {
+        onCapture?(selectionRect, annotations, .ocr)
     }
     
     func cancel() {
