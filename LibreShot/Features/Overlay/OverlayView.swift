@@ -6,6 +6,15 @@ struct OverlayView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
+                // Layer 0: Preview Image (Frozen Screen)
+                if let image = viewModel.previewImage {
+                    Image(decorative: image, scale: 1.0, orientation: .up)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .allowsHitTesting(false)
+                }
+
                 // Layer 1: Dimmed Background
                 Path { path in
                     path.addRect(geometry.frame(in: .local))

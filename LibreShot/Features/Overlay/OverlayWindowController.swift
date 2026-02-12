@@ -74,7 +74,7 @@ class OverlayWindowController: NSWindowController {
     // Store the screen where the window is shown
     private var targetScreen: NSScreen?
     
-    func show(onCapture: @escaping (CGRect, [Annotation], CaptureAction) -> Void, onCancel: @escaping () -> Void) {
+    func show(onCapture: @escaping (CGRect, [Annotation], CaptureAction, CGImage?) -> Void, onCancel: @escaping () -> Void) {
         guard let overlayWindow = window as? OverlayWindow else { return }
         
         // 1. Reset State
@@ -88,10 +88,10 @@ class OverlayWindowController: NSWindowController {
             onCancel()
         }
         
-        viewModel.onCapture = { [weak self] rect, annotations, action in
+        viewModel.onCapture = { [weak self] rect, annotations, action, image in
             self?.popCrosshairCursor()
             self?.close()
-            onCapture(rect, annotations, action)
+            onCapture(rect, annotations, action, image)
             // Reset view model to release memory (images) after capture parameters are passed
             self?.viewModel.reset()
         }
@@ -117,20 +117,6 @@ class OverlayWindowController: NSWindowController {
         }
         
         viewModel.updatePreviewImage(nil)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
-                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-                await MainActor.run {
-                    self.viewModel.updatePreviewImage(cgImage)
-                }
-            } catch {
-                await MainActor.run {
-                    self.viewModel.updatePreviewImage(nil)
-                }
-            }
-        }
         
         // 5. Show - Use silent show first, then activate after capture
         // Don't activate app immediately to avoid closing open menus

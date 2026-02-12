@@ -46,25 +46,25 @@ class OverlayViewModel: ObservableObject {
     var previewBitmap: NSBitmapImageRep?
     
     // Actions
-    var onCapture: ((CGRect, [Annotation], CaptureAction) -> Void)?
+    var onCapture: ((CGRect, [Annotation], CaptureAction, CGImage?) -> Void)?
     var onCancel: (() -> Void)?
     
     // MARK: - Finalize
     
     func confirmCopy() {
-        onCapture?(selectionRect, annotations, .copy)
+        onCapture?(selectionRect, annotations, .copy, previewImage)
     }
     
     func confirmSave() {
-        onCapture?(selectionRect, annotations, .save)
+        onCapture?(selectionRect, annotations, .save, previewImage)
     }
     
     func confirmPin() {
-        onCapture?(selectionRect, annotations, .pin)
+        onCapture?(selectionRect, annotations, .pin, previewImage)
     }
 
     func confirmOCR() {
-        onCapture?(selectionRect, annotations, .ocr)
+        onCapture?(selectionRect, annotations, .ocr, previewImage)
     }
     
     func cancel() {

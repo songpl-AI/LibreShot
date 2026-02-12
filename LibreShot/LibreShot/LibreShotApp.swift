@@ -182,11 +182,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hold a strong reference to keep it alive during the session
         self.overlayWindowController = controller
         
-        controller.show(onCapture: { [weak self, weak controller] rect, annotations, action in
+        controller.show(onCapture: { [weak self, weak controller] rect, annotations, action, image in
             // Capture the specific screen where the selection happened
             // Use local controller reference to ensure we get the ID even if self?.overlayWindowController is nil
             let displayID = controller?.getCurrentDisplayID()
-            self?.performAreaCapture(rect: rect, annotations: annotations, displayID: displayID, action: action)
+            self?.performAreaCapture(rect: rect, annotations: annotations, displayID: displayID, action: action, existingImage: image)
             
             // Cleanup: Release the controller to free memory
             self?.overlayWindowController = nil
@@ -197,13 +197,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
     }
 
-    private func performAreaCapture(rect: CGRect, annotations: [Annotation], displayID: CGDirectDisplayID?, action: CaptureAction) {
+    private func performAreaCapture(rect: CGRect, annotations: [Annotation], displayID: CGDirectDisplayID?, action: CaptureAction, existingImage: CGImage? = nil) {
         Task {
-            // Small delay to ensure overlay window is fully closed/faded out
-            try? await Task.sleep(nanoseconds: 200 * 1_000_000)
+            // Only sleep if we don't have an existing image (meaning we need to capture NOW, so we need overlay to be gone)
+            if existingImage == nil {
+                // Small delay to ensure overlay window is fully closed/faded out
+                try? await Task.sleep(nanoseconds: 200 * 1_000_000)
+            }
             
             do {
-                var fullImage: NSImage? = try await CaptureService.shared.captureDisplayImage(displayID: displayID)
+                var fullImage: NSImage?
+                if let existing = existingImage {
+                    let size = NSSize(width: existing.width, height: existing.height)
+                    fullImage = NSImage(cgImage: existing, size: size)
+                } else {
+                    fullImage = try await CaptureService.shared.captureDisplayImage(displayID: displayID)
+                }
+                
                 guard let capturedImage = fullImage else {
                     await showAlert(title: "截图失败", message: "无法获取屏幕图像")
                     return
