@@ -135,8 +135,13 @@ class OverlayWindowController: NSWindowController {
                 let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 
+                // Calculate scale factor from the captured image (Pixels) vs Screen Frame (Points)
+                let pixelWidth = CGFloat(cgImage?.width ?? Int(image.size.width))
+                let screenWidth = self.window?.screen?.frame.width ?? NSScreen.main?.frame.width ?? pixelWidth
+                let scale = pixelWidth / screenWidth
+                
                 await MainActor.run {
-                    self.viewModel.updatePreviewImage(cgImage)
+                    self.viewModel.updatePreviewImage(cgImage, scale: scale)
                     
                     // Now that we have the screenshot (including menus), we can show the window and take focus
                     overlayWindow.orderFront(nil) // Show window first
@@ -197,8 +202,14 @@ class OverlayWindowController: NSWindowController {
             do {
                 let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                
+                // Calculate scale factor from the captured image (Pixels) vs Screen Frame (Points)
+                let pixelWidth = CGFloat(cgImage?.width ?? Int(image.size.width))
+                let screenWidth = self.window?.screen?.frame.width ?? NSScreen.main?.frame.width ?? pixelWidth
+                let scale = pixelWidth / screenWidth
+                
                 await MainActor.run {
-                    self.viewModel.updatePreviewImage(cgImage)
+                    self.viewModel.updatePreviewImage(cgImage, scale: scale)
                     self.pushCrosshairCursor()
                     NSApp.activate(ignoringOtherApps: true)
                     self.window?.makeKeyAndOrderFront(nil)

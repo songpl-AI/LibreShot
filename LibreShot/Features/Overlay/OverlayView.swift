@@ -8,7 +8,7 @@ struct OverlayView: View {
             ZStack {
                 // Layer 0: Preview Image (Frozen Screen)
                 if let image = viewModel.previewImage {
-                    Image(decorative: image, scale: 1.0, orientation: .up)
+                    Image(decorative: image, scale: viewModel.previewScale, orientation: .up)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geometry.size.width, height: geometry.size.height)

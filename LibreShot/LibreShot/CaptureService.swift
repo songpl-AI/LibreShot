@@ -23,6 +23,7 @@ class CaptureService {
     
     private var continuation: CheckedContinuation<NSImage, Error>?
     private var isStopping = false
+    private var currentScale: CGFloat = 1.0
     
     init() {}
     
@@ -143,10 +144,30 @@ class CaptureService {
             display = first
         }
         
+        // Calculate scale factor and physical dimensions
+        var scale: CGFloat = 1.0
+        var physicalWidth: Int = display.width
+        var physicalHeight: Int = display.height
+        
+        if let screen = NSScreen.screens.first(where: {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == display.displayID
+        }) {
+            scale = screen.backingScaleFactor
+            // Force use of NSScreen's physical pixel count calculation for reliability
+            // This fixes issues where SCDisplay might report logical or scaled sizes
+            physicalWidth = Int(screen.frame.width * scale)
+            physicalHeight = Int(screen.frame.height * scale)
+        }
+        self.currentScale = scale
+        
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let configuration = SCStreamConfiguration()
-        configuration.width = display.width
-        configuration.height = display.height
+        
+        // Ensure we capture at physical resolution
+        configuration.width = physicalWidth
+        configuration.height = physicalHeight
+        configuration.scalesToFit = false // Ensure no automatic scaling occurs
+        
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.showsCursor = true
         configuration.capturesAudio = false
@@ -212,7 +233,9 @@ class CaptureService {
                 return
             }
 
-            let size = NSSize(width: ciImage.extent.width, height: ciImage.extent.height)
+            // Use the captured scale to set the correct logical size (Points)
+            let scale = self.currentScale
+            let size = NSSize(width: ciImage.extent.width / scale, height: ciImage.extent.height / scale)
             let nsImage = NSImage(cgImage: cgImage, size: size)
             continuation.resume(returning: nsImage)
             // self.continuation is already nil

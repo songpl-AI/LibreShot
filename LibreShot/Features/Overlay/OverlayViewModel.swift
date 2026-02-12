@@ -43,6 +43,7 @@ class OverlayViewModel: ObservableObject {
     @Published var activeSelectionHandle: SelectionHandle?
     @Published var isMovingSelection: Bool = false
     @Published var previewImage: CGImage?
+    @Published var previewScale: CGFloat = 1.0
     var previewBitmap: NSBitmapImageRep?
     
     // Actions
@@ -71,8 +72,9 @@ class OverlayViewModel: ObservableObject {
         onCancel?()
     }
 
-    func updatePreviewImage(_ image: CGImage?) {
+    func updatePreviewImage(_ image: CGImage?, scale: CGFloat = 1.0) {
         previewImage = image
+        previewScale = scale
         if let image {
             previewBitmap = makePreviewBitmap(from: image, maxDimension: 1200)
         } else {
@@ -229,6 +231,7 @@ class OverlayViewModel: ObservableObject {
         activeSelectionHandle = nil
         isMovingSelection = false
         previewImage = nil
+        previewScale = 1.0
         previewBitmap = nil
     }
     
