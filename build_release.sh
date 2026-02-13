@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Ensure script is executed from its own directory
+cd "$(dirname "$0")"
+
 # 设置项目路径和名称
 PROJECT_ROOT="LibreShot"
 PROJECT_NAME="LibreShot"
