@@ -4,16 +4,20 @@ import Carbon
 class HotkeyService {
     static let shared = HotkeyService()
     
-    // Dictionary to store multiple hotkeys: ID -> HotKeyRef
     private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var eventHandler: EventHandlerRef?
     
-    // Callbacks for different actions
     var onSelectionTrigger: (() -> Void)?
     var onFullScreenTrigger: (() -> Void)?
+    var onLongScreenshotTrigger: (() -> Void)?
+    var onLongCaptureFinishTrigger: (() -> Void)?
+    var onLongCaptureCancelTrigger: (() -> Void)?
     
     private let selectionHotkeyID: UInt32 = 1
     private let fullScreenHotkeyID: UInt32 = 2
+    private let longCaptureFinishHotkeyID: UInt32 = 3
+    private let longCaptureCancelHotkeyID: UInt32 = 4
+    private let longScreenshotHotkeyID: UInt32 = 5
     
     private init() {
         installEventHandler()
@@ -56,6 +60,12 @@ class HotkeyService {
             onSelectionTrigger?()
         } else if id == fullScreenHotkeyID {
             onFullScreenTrigger?()
+        } else if id == longScreenshotHotkeyID {
+            onLongScreenshotTrigger?()
+        } else if id == longCaptureFinishHotkeyID {
+            onLongCaptureFinishTrigger?()
+        } else if id == longCaptureCancelHotkeyID {
+            onLongCaptureCancelTrigger?()
         }
     }
     
@@ -69,6 +79,11 @@ class HotkeyService {
         return registerHotkey(id: fullScreenHotkeyID, keyCode: keyCode, modifiers: modifiers)
     }
     
+    @discardableResult
+    func registerLongScreenshotHotkey(keyCode: Int, modifiers: Int) -> Bool {
+        return registerHotkey(id: longScreenshotHotkeyID, keyCode: keyCode, modifiers: modifiers)
+    }
+    
     func unregisterSelectionHotkey() {
         unregisterHotkey(id: selectionHotkeyID)
     }
@@ -77,8 +92,31 @@ class HotkeyService {
         unregisterHotkey(id: fullScreenHotkeyID)
     }
     
+    func unregisterLongScreenshotHotkey() {
+        unregisterHotkey(id: longScreenshotHotkeyID)
+    }
+    
+    @discardableResult
+    func registerLongCaptureHotkeys(onFinish: @escaping () -> Void, onCancel: @escaping () -> Void) -> Bool {
+        onLongCaptureFinishTrigger = onFinish
+        onLongCaptureCancelTrigger = onCancel
+        let finishRegistered = registerHotkey(id: longCaptureFinishHotkeyID, keyCode: kVK_Return, modifiers: 0)
+        let cancelRegistered = registerHotkey(id: longCaptureCancelHotkeyID, keyCode: kVK_Escape, modifiers: 0)
+        if finishRegistered && cancelRegistered {
+            return true
+        }
+        unregisterLongCaptureHotkeys()
+        return false
+    }
+    
+    func unregisterLongCaptureHotkeys() {
+        unregisterHotkey(id: longCaptureFinishHotkeyID)
+        unregisterHotkey(id: longCaptureCancelHotkeyID)
+        onLongCaptureFinishTrigger = nil
+        onLongCaptureCancelTrigger = nil
+    }
+    
     private func registerHotkey(id: UInt32, keyCode: Int, modifiers: Int) -> Bool {
-        // Unregister existing one with same ID first
         unregisterHotkey(id: id)
         
         guard keyCode >= 0 else { return false }

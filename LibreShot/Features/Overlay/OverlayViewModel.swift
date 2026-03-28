@@ -8,6 +8,8 @@ enum OverlayState {
     case idle
     case selecting
     case editing
+    case longCaptureReady
+    case longCapturing
 }
 
 enum CaptureAction {
@@ -15,6 +17,11 @@ enum CaptureAction {
     case save
     case pin
     case ocr
+}
+
+enum CaptureMode: Equatable {
+    case normal
+    case longScreenshot
 }
 
 enum SelectionHandle: CaseIterable {
@@ -45,10 +52,13 @@ class OverlayViewModel: ObservableObject {
     @Published var previewImage: CGImage?
     @Published var previewScale: CGFloat = 1.0
     var previewBitmap: NSBitmapImageRep?
+    @Published var captureMode: CaptureMode = .normal
+    @Published var longCaptureStatusText: String = "拖动选择滚动区域"
     
     // Actions
     var onCapture: ((CGRect, [Annotation], CaptureAction, CGImage?) -> Void)?
     var onCancel: (() -> Void)?
+    var onLongCaptureStart: ((CGRect) -> Void)?
     
     // MARK: - Finalize
     
@@ -72,6 +82,24 @@ class OverlayViewModel: ObservableObject {
         onCancel?()
     }
 
+    func confirmLongCaptureRegion() {
+        state = .longCapturing
+        longCaptureStatusText = "滚动目标区域，按回车完成，按 Esc 取消"
+        onLongCaptureStart?(selectionRect)
+    }
+    
+    func startLongCaptureFromToolbar() {
+        guard state == .editing, captureMode == .normal, !selectionRect.isEmpty else { return }
+        
+        annotations = []
+        currentAnnotation = nil
+        selectedTool = nil
+        selectedAnnotationID = nil
+        cancelTextInput()
+        
+        confirmLongCaptureRegion()
+    }
+
     func updatePreviewImage(_ image: CGImage?, scale: CGFloat = 1.0) {
         previewImage = image
         previewScale = scale
@@ -85,7 +113,7 @@ class OverlayViewModel: ObservableObject {
     // MARK: - Selection Logic
     
     func startSelection(at point: CGPoint) {
-        guard state != .editing else { return }
+        guard state != .editing, state != .longCaptureReady, state != .longCapturing else { return }
         startPoint = point
         currentPoint = point
         selectionRect = .zero
@@ -106,7 +134,11 @@ class OverlayViewModel: ObservableObject {
         if selectionRect.width < 10 || selectionRect.height < 10 {
             reset()
         } else {
-            state = .editing
+            if captureMode == .longScreenshot {
+                confirmLongCaptureRegion()
+            } else {
+                state = .editing
+            }
         }
     }
     
@@ -233,6 +265,8 @@ class OverlayViewModel: ObservableObject {
         previewImage = nil
         previewScale = 1.0
         previewBitmap = nil
+        captureMode = .normal
+        longCaptureStatusText = "拖动选择滚动区域"
     }
     
     // MARK: - Text Input State
@@ -361,7 +395,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     func beginMoveSelection(at point: CGPoint) {
-        guard state == .editing, selectionRect != .zero else { return }
+        guard (state == .editing || state == .longCaptureReady), selectionRect != .zero else { return }
         isMovingSelection = true
         selectionDragStartPoint = point
         selectionDragStartRect = selectionRect
@@ -387,7 +421,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     func beginResizeSelection(handle: SelectionHandle, at point: CGPoint) {
-        guard state == .editing, selectionRect != .zero else { return }
+        guard (state == .editing || state == .longCaptureReady), selectionRect != .zero else { return }
         activeSelectionHandle = handle
         selectionDragStartPoint = point
         selectionDragStartRect = selectionRect

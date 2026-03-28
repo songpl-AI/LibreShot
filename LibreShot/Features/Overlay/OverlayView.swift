@@ -64,11 +64,11 @@ struct OverlayView: View {
                     let rect = viewModel.selectionRect
                     ZStack {
                         Rectangle()
-                            .stroke(Color.white, lineWidth: 1)
+                            .stroke(viewModel.state == .longCapturing ? Color.blue : Color.white, lineWidth: viewModel.state == .longCapturing ? 2 : 1)
                             .frame(width: rect.width, height: rect.height)
                             .position(x: rect.midX, y: rect.midY)
                         
-                        if viewModel.state == .editing && viewModel.selectedTool == nil {
+                        if (viewModel.state == .editing || viewModel.state == .longCaptureReady) && viewModel.selectedTool == nil {
                             let handleSize: CGFloat = 8
                             let handleHitSize: CGFloat = 20
                             ForEach(SelectionHandle.allCases, id: \.self) { handle in
@@ -111,6 +111,10 @@ struct OverlayView: View {
                             viewModel.commitTextInput()
                         }
                     }
+                } else if viewModel.state == .longCapturing {
+                    let statusPos = calculateLongCaptureStatusPosition(screenSize: geometry.size)
+                    LongCaptureInlineStatusView(viewModel: viewModel)
+                        .position(x: statusPos.x, y: statusPos.y)
                 }
             }
             .coordinateSpace(name: "overlay")
@@ -129,7 +133,7 @@ struct OverlayView: View {
                                 viewModel.startSelection(at: value.startLocation)
                             }
                             viewModel.updateSelection(to: value.location)
-                        } else if viewModel.state == .editing {
+                        } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {
                             // 1. Text Tool Logic
                             if viewModel.selectedTool == .text {
                                 // Do nothing on drag, wait for click (ended)
@@ -164,10 +168,16 @@ struct OverlayView: View {
                                         return
                                     }
                                     
-                                    viewModel.startDrawing(at: value.location)
+                                    if viewModel.state == .editing {
+                                        viewModel.startDrawing(at: value.location)
+                                    }
                                 } else {
                                     if viewModel.isMovingSelection {
                                         viewModel.updateMoveSelection(to: value.location, within: bounds)
+                                        return
+                                    }
+                                    
+                                    if viewModel.state != .editing {
                                         return
                                     }
                                     
@@ -186,7 +196,7 @@ struct OverlayView: View {
                             }
                             
                             // 3. Drawing Logic
-                            if viewModel.selectedTool != nil {
+                            if viewModel.state == .editing, viewModel.selectedTool != nil {
                                 if viewModel.currentAnnotation == nil {
                                     viewModel.startDrawing(at: value.location)
                                 }
@@ -197,7 +207,7 @@ struct OverlayView: View {
                     .onEnded { value in
                         if viewModel.state == .selecting {
                             viewModel.endSelection()
-                        } else if viewModel.state == .editing {
+                        } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {
                             
                             // Text Tool Click
                             if viewModel.selectedTool == .text {
@@ -219,7 +229,7 @@ struct OverlayView: View {
                                 viewModel.currentPoint = nil
                             }
                             // Drawing Mode
-                            else {
+                            else if viewModel.state == .editing {
                                 if viewModel.currentAnnotation != nil {
                                     viewModel.endDrawing()
                                 }
@@ -245,6 +255,16 @@ struct OverlayView: View {
         }
          
         return CGPoint(x: rect.midX, y: y)
+    }
+    
+    func calculateLongCaptureStatusPosition(screenSize: CGSize) -> CGPoint {
+        let rect = viewModel.selectionRect
+        let horizontalPadding: CGFloat = 20
+        let verticalPadding: CGFloat = 18
+        let preferredY = rect.minY - verticalPadding
+        let clampedY = max(preferredY, 44)
+        let clampedX = min(max(rect.midX, horizontalPadding), max(screenSize.width - horizontalPadding, horizontalPadding))
+        return CGPoint(x: clampedX, y: clampedY)
     }
 
     func drawAnnotation(context: GraphicsContext, annotation: Annotation, canvasSize: CGSize) {
@@ -415,5 +435,31 @@ struct OverlayView: View {
             }
         }
         return nil
+    }
+}
+
+struct LongCaptureInlineStatusView: View {
+    @ObservedObject var viewModel: OverlayViewModel
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 8, height: 8)
+            Text(viewModel.longCaptureStatusText)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.92))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.black.opacity(0.72))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 4)
     }
 }

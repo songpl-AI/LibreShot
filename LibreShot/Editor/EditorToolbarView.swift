@@ -111,6 +111,29 @@ struct EditorToolbarView: View {
             .buttonStyle(.plain)
             .help("识别文字")
             
+            if viewModel.captureMode == .normal {
+                Button(action: {
+                    viewModel.startLongCaptureFromToolbar()
+                }) {
+                    Image(systemName: "rectangle.on.rectangle")
+                        .font(.system(size: 16, weight: .medium))
+                        .padding(7)
+                        .foregroundColor(.purple)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.white)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!viewModel.annotations.isEmpty || viewModel.isEditingText)
+                .opacity((!viewModel.annotations.isEmpty || viewModel.isEditingText) ? 0.5 : 1.0)
+                .help("开始长截图")
+            }
+            
             Button(action: {
                 viewModel.confirmCopy()
             }) {

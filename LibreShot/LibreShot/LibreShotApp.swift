@@ -25,17 +25,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var captureSelectionMenuItem: NSMenuItem?
     private var captureFullScreenMenuItem: NSMenuItem?
+    private var longCaptureMenuItem: NSMenuItem?
     private var overlayWindowController: OverlayWindowController?
     private var settingsWindowController: NSWindowController?
     private var hotkeyObserver: NSObjectProtocol?
+    private var keepAliveWindow: NSWindow?
 
     private var pinnedWindows: [PinnedImageWindowController] = []
     private var ocrWindowController: OCRResultWindowController?
+    private var isUserInitiatedTermination = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
+        setupKeepAliveWindow()
         setupStatusItem()
         setupHotkeys()
+    }
+    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+    
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        isUserInitiatedTermination ? .terminateNow : .terminateCancel
     }
     
     private func setupStatusItem() {
@@ -54,6 +66,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(selectionItem)
         captureSelectionMenuItem = selectionItem
         
+        let longCaptureItem = NSMenuItem(title: "长截图", action: #selector(captureLongScreenshot), keyEquivalent: "")
+        menu.addItem(longCaptureItem)
+        longCaptureMenuItem = longCaptureItem
+        
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
@@ -62,6 +78,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+    }
+    
+    private func setupKeepAliveWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: -10_000, y: -10_000, width: 1, height: 1),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.alphaValue = 0
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
+        window.orderOut(nil)
+        keepAliveWindow = window
     }
     
     private func setupHotkeys() {
@@ -75,6 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         HotkeyService.shared.onFullScreenTrigger = { [weak self] in
             self?.captureFullScreen()
+        }
+        
+        HotkeyService.shared.onLongScreenshotTrigger = { [weak self] in
+            self?.captureLongScreenshot()
         }
         
         // Listen for hotkey changes from settings
@@ -114,6 +150,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HotkeyService.shared.unregisterFullScreenHotkey()
             captureFullScreenMenuItem?.title = "全屏截图"
         }
+        
+        let longKey = SettingsService.shared.longScreenshotShortcutKey
+        let longMods = SettingsService.shared.longScreenshotShortcutModifiers
+        
+        if longKey != -1 {
+            HotkeyService.shared.registerLongScreenshotHotkey(keyCode: longKey, modifiers: longMods)
+            let shortcutString = ShortcutUtils.string(for: longKey, modifiers: longMods)
+            longCaptureMenuItem?.title = "长截图 (\(shortcutString))"
+        } else {
+            HotkeyService.shared.unregisterLongScreenshotHotkey()
+            longCaptureMenuItem?.title = "长截图"
+        }
     }
     
     deinit {
@@ -148,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quitApp() {
+        isUserInitiatedTermination = true
         NSApplication.shared.terminate(nil)
     }
 
@@ -190,11 +239,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             
             // Cleanup: Release the controller to free memory
             self?.overlayWindowController = nil
+        }, onLongCapture: { [weak self] image in
+            Task { [weak self] in
+                await self?.handleLongCaptureResult(image)
+            }
+        }, onLongCaptureError: { [weak self] error in
+            Task { [weak self] in
+                await self?.handleCaptureError(error)
+                await MainActor.run {
+                    self?.overlayWindowController = nil
+                }
+            }
         }, onCancel: { [weak self] in
             print("Selection cancelled")
             // Cleanup: Release the controller to free memory
             self?.overlayWindowController = nil
         })
+    }
+    
+    @objc private func captureLongScreenshot() {
+        if let existing = overlayWindowController {
+            existing.close()
+            overlayWindowController = nil
+        }
+        
+        let controller = OverlayWindowController()
+        overlayWindowController = controller
+        
+        controller.show(captureMode: .longScreenshot, onCapture: { _, _, _, _ in
+        }, onLongCapture: { [weak self] image in
+            Task { [weak self] in
+                await self?.handleLongCaptureResult(image)
+            }
+        }, onLongCaptureError: { [weak self] error in
+            Task { [weak self] in
+                await self?.handleCaptureError(error)
+                await MainActor.run {
+                    self?.overlayWindowController = nil
+                }
+            }
+        }, onCancel: { [weak self] in
+            self?.overlayWindowController = nil
+        })
+    }
+    
+    private func handleLongCaptureResult(_ image: NSImage) async {
+        await MainActor.run {
+            SoundService.shared.playCaptureSound()
+            var previewWindow: PinnedImageWindowController?
+            previewWindow = PinnedImageWindowController(
+                image: image,
+                displayMode: .longCapturePreview,
+                onCopyAction: {
+                    CaptureService.shared.copyToClipboard(image)
+                    previewWindow?.close()
+                },
+                onSaveAction: { [weak self] in
+                    Task { [weak self] in
+                        do {
+                            _ = try await CaptureService.shared.saveImageWithFallback(image)
+                        } catch is CancellationError {
+                        } catch {
+                            await self?.handleCaptureError(error)
+                        }
+                    }
+                }
+            )
+            previewWindow?.onClose = { [weak self, weak previewWindow] in
+                if let previewWindow {
+                    self?.pinnedWindows.removeAll { $0 === previewWindow }
+                }
+            }
+            if let previewWindow {
+                pinnedWindows.append(previewWindow)
+                previewWindow.showWindow(nil)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            self.overlayWindowController = nil
+        }
     }
 
     private func performAreaCapture(rect: CGRect, annotations: [Annotation], displayID: CGDirectDisplayID?, action: CaptureAction, existingImage: CGImage? = nil) {
@@ -301,7 +423,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
-
+    
     private func handleCaptureError(_ error: Error) async {
         await showAlert(title: "错误", message: error.localizedDescription)
     }

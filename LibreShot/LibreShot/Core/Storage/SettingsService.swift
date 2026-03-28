@@ -39,6 +39,18 @@ class SettingsService: ObservableObject {
         }
     }
     
+    @Published var longScreenshotShortcutKey: Int {
+        didSet {
+            UserDefaults.standard.set(longScreenshotShortcutKey, forKey: "longScreenshotShortcutKey")
+        }
+    }
+    
+    @Published var longScreenshotShortcutModifiers: Int {
+        didSet {
+            UserDefaults.standard.set(longScreenshotShortcutModifiers, forKey: "longScreenshotShortcutModifiers")
+        }
+    }
+    
     @Published var launchAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(launchAtLogin, forKey: "launchAtLogin")
@@ -68,6 +80,9 @@ class SettingsService: ObservableObject {
         
         self.fullScreenShortcutKey = UserDefaults.standard.object(forKey: "fullScreenShortcutKey") as? Int ?? 0
         self.fullScreenShortcutModifiers = UserDefaults.standard.object(forKey: "fullScreenShortcutModifiers") as? Int ?? 768
+        
+        self.longScreenshotShortcutKey = UserDefaults.standard.object(forKey: "longScreenshotShortcutKey") as? Int ?? 37
+        self.longScreenshotShortcutModifiers = UserDefaults.standard.object(forKey: "longScreenshotShortcutModifiers") as? Int ?? 768
         
         self.launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         self.useRoundedCorners = UserDefaults.standard.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
@@ -134,6 +149,15 @@ class SettingsService: ObservableObject {
     func saveFullScreenShortcut(keyCode: Int, modifiers: Int) -> Bool {
         fullScreenShortcutKey = keyCode
         fullScreenShortcutModifiers = modifiers
+        
+        NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
+        return true
+    }
+    
+    @discardableResult
+    func saveLongScreenshotShortcut(keyCode: Int, modifiers: Int) -> Bool {
+        longScreenshotShortcutKey = keyCode
+        longScreenshotShortcutModifiers = modifiers
         
         NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
         return true

@@ -229,6 +229,18 @@ struct ShortcutSettingsView: View {
                         onClear: { saveFullScreenShortcut(keyCode: -1, modifiers: 0) }
                     )
                     
+                    Divider()
+                        .padding(.horizontal, 16)
+                    
+                    ShortcutRow(
+                        title: "长截图",
+                        description: "框选滚动区域后开始长截图，完成后自动复制并可继续保存。",
+                        keyCode: $settings.longScreenshotShortcutKey,
+                        modifiers: $settings.longScreenshotShortcutModifiers,
+                        onSave: { k, m in saveLongScreenshotShortcut(keyCode: k, modifiers: m) },
+                        onClear: { saveLongScreenshotShortcut(keyCode: -1, modifiers: 0) }
+                    )
+                    
                     if registerError {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -263,6 +275,16 @@ struct ShortcutSettingsView: View {
         }
         registerError = false
         _ = settings.saveFullScreenShortcut(keyCode: -1, modifiers: 0)
+    }
+    
+    private func saveLongScreenshotShortcut(keyCode: Int, modifiers: Int) {
+        if keyCode != -1 {
+            let success = settings.saveLongScreenshotShortcut(keyCode: keyCode, modifiers: modifiers)
+            registerError = !success
+            return
+        }
+        registerError = false
+        _ = settings.saveLongScreenshotShortcut(keyCode: -1, modifiers: 0)
     }
 }
 
@@ -325,7 +347,7 @@ struct AboutSettingsView: View {
                     .font(.title)
                     .fontWeight(.bold)
                 
-                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.2")")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .monospacedDigit()
