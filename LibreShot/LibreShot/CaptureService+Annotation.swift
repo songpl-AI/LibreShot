@@ -10,268 +10,27 @@ extension CaptureService {
     ///   - annotations: List of annotations to draw.
     /// - Returns: A new NSImage with annotations drawn.
     func composite(image: NSImage, annotations: [Annotation], displayID: CGDirectDisplayID? = nil) -> NSImage {
+        _ = displayID
         let baseImage = applyAnnotationEffects(image: image, annotations: annotations, cropRect: nil)
-        // Create a new image with the same size
-        let newImage = NSImage(size: baseImage.size)
-        
-        newImage.lockFocus()
-        // 1. Draw the original image
-        baseImage.draw(in: NSRect(origin: .zero, size: baseImage.size),
-                   from: NSRect(origin: .zero, size: baseImage.size),
-                   operation: .copy, 
-                   fraction: 1.0)
-        
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            newImage.unlockFocus()
-            return image
-        }
-        
-        // 2. Setup Coordinate System for Annotations
-        context.saveGState()
-        
-        // Calculate scale factor (Retina pixels vs Logical points)
-        let scaleX: CGFloat
-        let scaleY: CGFloat
-        
-        // Find the target screen
-        var targetScreen: NSScreen?
-        if let id = displayID {
-            targetScreen = NSScreen.screens.first { 
-                ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == id 
-            }
-        }
-        // Fallback to main if not found or id is nil
-        if targetScreen == nil {
-            targetScreen = NSScreen.main
-        }
-        
-        if let screen = targetScreen {
-            scaleX = baseImage.size.width / screen.frame.width
-            scaleY = baseImage.size.height / screen.frame.height
-        } else {
-            scaleX = 1.0
-            scaleY = 1.0
-        }
-        
-        // Transform:
-        // 1. Scale up to match pixels
-        context.scaleBy(x: scaleX, y: scaleY)
-        
-        // 2. Flip vertically: Move origin to top-left
-        let heightInPoints = baseImage.size.height / scaleY
-        context.translateBy(x: 0, y: heightInPoints)
-        context.scaleBy(x: 1.0, y: -1.0)
-        
-        // 3. Draw Annotations
-        for annotation in annotations {
-            context.setStrokeColor(NSColor(annotation.color).cgColor)
-            context.setLineWidth(annotation.lineWidth)
-            context.setLineCap(.round)
-            context.setLineJoin(.round)
-            
-            let path = CGMutablePath()
-            switch annotation.type {
-            case .pen:
-                if let first = annotation.points.first {
-                    path.move(to: first)
-                    for point in annotation.points.dropFirst() {
-                        path.addLine(to: point)
-                    }
-                }
-            case .rectangle:
-                // Create CGRect manually to avoid ambiguity/extension issues
-                let x = min(annotation.startPoint.x, annotation.endPoint.x)
-                let y = min(annotation.startPoint.y, annotation.endPoint.y)
-                let width = abs(annotation.endPoint.x - annotation.startPoint.x)
-                let height = abs(annotation.endPoint.y - annotation.startPoint.y)
-                let rect = CGRect(x: x, y: y, width: width, height: height)
-                path.addRect(rect)
-            case .arrow:
-                let start = annotation.startPoint
-                let end = annotation.endPoint
-                path.move(to: start)
-                path.addLine(to: end)
-                
-                let angle = atan2(end.y - start.y, end.x - start.x)
-                let arrowLength: CGFloat = 15.0
-                let arrowAngle: CGFloat = .pi / 6
-                
-                let p1 = CGPoint(
-                    x: end.x - arrowLength * cos(angle - arrowAngle),
-                    y: end.y - arrowLength * sin(angle - arrowAngle)
-                )
-                let p2 = CGPoint(
-                    x: end.x - arrowLength * cos(angle + arrowAngle),
-                    y: end.y - arrowLength * sin(angle + arrowAngle)
-                )
-                
-                path.move(to: end)
-                path.addLine(to: p1)
-                path.move(to: end)
-                path.addLine(to: p2)
-            case .ellipse:
-                let x = min(annotation.startPoint.x, annotation.endPoint.x)
-                let y = min(annotation.startPoint.y, annotation.endPoint.y)
-                let width = abs(annotation.endPoint.x - annotation.startPoint.x)
-                let height = abs(annotation.endPoint.y - annotation.startPoint.y)
-                let rect = CGRect(x: x, y: y, width: width, height: height)
-                path.addEllipse(in: rect)
-            case .mosaic, .blur:
-                continue
-            case .text:
-                // Text is drawn separately below via string drawing
-                continue
-            }
-            
-            context.addPath(path)
-            context.strokePath()
-        }
-        
-        
-        context.restoreGState()
-        
-        // 4. Draw Text Annotations in standard coordinate system
-        // We restored GState, so we are back to NSImage default (y-up, origin bottom-left).
-        // need to convert annotation coordinates (y-down, origin top-left) to this system.
-        
-        for annotation in annotations where annotation.type == .text {
-            let text = annotation.text as NSString
-            let finalFontSize = annotation.fontSize * scaleX
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: finalFontSize),
-                .foregroundColor: NSColor(annotation.color)
-            ]
-            let size = text.size(withAttributes: attributes)
-            
-            // Calculate position
-            // Annotation y is from top.
-            // Image y is from bottom.
-            // We want top of text to be at annotation.y
-            // So bottom of text should be at: (ImageHeight - (annotation.y * scale) - textHeight)
-            
-            let drawPoint = CGPoint(
-                x: annotation.startPoint.x * scaleX,
-                y: baseImage.size.height - (annotation.startPoint.y * scaleY) - size.height
-            )
-            
-            text.draw(at: drawPoint, withAttributes: attributes)
-        }
-        
-        // Context state is already restored to base
-        newImage.unlockFocus()
-        
-        return newImage
+        return renderCompositeImage(baseImage: baseImage, annotations: annotations)
     }
 
     func compositeCropped(image: NSImage, annotations: [Annotation], cropRect: CGRect, displayID: CGDirectDisplayID? = nil) -> NSImage {
         _ = displayID
         if annotations.isEmpty { return image }
         let baseImage = applyAnnotationEffects(image: image, annotations: annotations, cropRect: cropRect)
-        let newImage = NSImage(size: baseImage.size)
-        newImage.lockFocus()
-        baseImage.draw(in: NSRect(origin: .zero, size: baseImage.size),
-                   from: NSRect(origin: .zero, size: baseImage.size),
-                   operation: .copy,
-                   fraction: 1.0)
-
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            newImage.unlockFocus()
-            return image
-        }
-
-        context.saveGState()
-        context.translateBy(x: 0, y: image.size.height)
-        context.scaleBy(x: 1.0, y: -1.0)
-
-        for annotation in annotations {
-            if !annotationIntersectsCrop(annotation, cropRect: cropRect) { continue }
-            context.setStrokeColor(NSColor(annotation.color).cgColor)
-            context.setLineWidth(annotation.lineWidth)
-            context.setLineCap(.round)
-            context.setLineJoin(.round)
-
-            let path = CGMutablePath()
-            switch annotation.type {
-            case .pen:
-                let localPoints = annotation.points.map { CGPoint(x: $0.x - cropRect.origin.x, y: $0.y - cropRect.origin.y) }
-                if let first = localPoints.first {
-                    path.move(to: first)
-                    for point in localPoints.dropFirst() {
-                        path.addLine(to: point)
-                    }
-                }
-            case .rectangle:
-                let start = CGPoint(x: annotation.startPoint.x - cropRect.origin.x, y: annotation.startPoint.y - cropRect.origin.y)
-                let end = CGPoint(x: annotation.endPoint.x - cropRect.origin.x, y: annotation.endPoint.y - cropRect.origin.y)
-                let x = min(start.x, end.x)
-                let y = min(start.y, end.y)
-                let width = abs(end.x - start.x)
-                let height = abs(end.y - start.y)
-                let rect = CGRect(x: x, y: y, width: width, height: height)
-                path.addRect(rect)
-            case .arrow:
-                let start = CGPoint(x: annotation.startPoint.x - cropRect.origin.x, y: annotation.startPoint.y - cropRect.origin.y)
-                let end = CGPoint(x: annotation.endPoint.x - cropRect.origin.x, y: annotation.endPoint.y - cropRect.origin.y)
-                path.move(to: start)
-                path.addLine(to: end)
-
-                let angle = atan2(end.y - start.y, end.x - start.x)
-                let arrowLength: CGFloat = 15.0
-                let arrowAngle: CGFloat = .pi / 6
-
-                let p1 = CGPoint(
-                    x: end.x - arrowLength * cos(angle - arrowAngle),
-                    y: end.y - arrowLength * sin(angle - arrowAngle)
-                )
-                let p2 = CGPoint(
-                    x: end.x - arrowLength * cos(angle + arrowAngle),
-                    y: end.y - arrowLength * sin(angle + arrowAngle)
-                )
-
-                path.move(to: end)
-                path.addLine(to: p1)
-                path.move(to: end)
-                path.addLine(to: p2)
-            case .ellipse:
-                let start = CGPoint(x: annotation.startPoint.x - cropRect.origin.x, y: annotation.startPoint.y - cropRect.origin.y)
-                let end = CGPoint(x: annotation.endPoint.x - cropRect.origin.x, y: annotation.endPoint.y - cropRect.origin.y)
-                let x = min(start.x, end.x)
-                let y = min(start.y, end.y)
-                let width = abs(end.x - start.x)
-                let height = abs(end.y - start.y)
-                let rect = CGRect(x: x, y: y, width: width, height: height)
-                path.addEllipse(in: rect)
-            case .mosaic, .blur:
-                continue
-            case .text:
-                continue
+        let localAnnotations = annotations.compactMap { annotation -> Annotation? in
+            if !annotationIntersectsCrop(annotation, cropRect: cropRect) {
+                return nil
             }
-
-            context.addPath(path)
-            context.strokePath()
+            var localAnnotation = annotation
+            localAnnotation.startPoint = CGPoint(x: annotation.startPoint.x - cropRect.origin.x, y: annotation.startPoint.y - cropRect.origin.y)
+            localAnnotation.endPoint = CGPoint(x: annotation.endPoint.x - cropRect.origin.x, y: annotation.endPoint.y - cropRect.origin.y)
+            localAnnotation.points = annotation.points.map { CGPoint(x: $0.x - cropRect.origin.x, y: $0.y - cropRect.origin.y) }
+            return localAnnotation
         }
-
-        context.restoreGState()
-
-        for annotation in annotations where annotation.type == .text {
-            if !annotationIntersectsCrop(annotation, cropRect: cropRect) { continue }
-            let text = annotation.text as NSString
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: annotation.fontSize),
-                .foregroundColor: NSColor(annotation.color)
-            ]
-            let size = text.size(withAttributes: attributes)
-            let localX = annotation.startPoint.x - cropRect.origin.x
-            let localY = annotation.startPoint.y - cropRect.origin.y
-            let drawPoint = CGPoint(
-                x: localX,
-                y: baseImage.size.height - localY - size.height
-            )
-            text.draw(at: drawPoint, withAttributes: attributes)
-        }
-
-        newImage.unlockFocus()
-        return newImage
+        
+        return renderCompositeImage(baseImage: baseImage, annotations: localAnnotations)
     }
 
     private func annotationIntersectsCrop(_ annotation: Annotation, cropRect: CGRect) -> Bool {
@@ -299,6 +58,128 @@ extension CaptureService {
             let rect = CGRect(x: minX - padding, y: minY - padding, width: maxX - minX + padding * 2, height: maxY - minY + padding * 2)
             return rect.intersects(cropRect)
         }
+    }
+
+    private func renderCompositeImage(baseImage: NSImage, annotations: [Annotation]) -> NSImage {
+        guard let bitmapRep = bitmapRep(from: baseImage, opaque: true),
+              let cgImage = bitmapRep.cgImage else {
+            return baseImage
+        }
+        
+        let pixelSize = CGSize(width: cgImage.width, height: cgImage.height)
+        let logicalSize = baseImage.size
+        let scaleX = logicalSize.width > 0 ? pixelSize.width / logicalSize.width : 1
+        let scaleY = logicalSize.height > 0 ? pixelSize.height / logicalSize.height : 1
+        
+        guard let bitmapContext = CGContext(
+            data: nil,
+            width: cgImage.width,
+            height: cgImage.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return baseImage
+        }
+        
+        bitmapContext.interpolationQuality = .high
+        bitmapContext.draw(cgImage, in: CGRect(origin: .zero, size: pixelSize))
+        bitmapContext.saveGState()
+        bitmapContext.scaleBy(x: scaleX, y: scaleY)
+        bitmapContext.translateBy(x: 0, y: logicalSize.height)
+        bitmapContext.scaleBy(x: 1, y: -1)
+        drawVectorAnnotations(annotations, in: bitmapContext)
+        bitmapContext.restoreGState()
+        drawTextAnnotations(annotations, in: bitmapContext, scaleX: scaleX, scaleY: scaleY, logicalSize: logicalSize)
+        
+        guard let outputImage = bitmapContext.makeImage() else {
+            return baseImage
+        }
+        
+        return NSImage(cgImage: outputImage, size: logicalSize)
+    }
+    
+    private func drawVectorAnnotations(_ annotations: [Annotation], in context: CGContext) {
+        for annotation in annotations {
+            context.setStrokeColor(NSColor(annotation.color).cgColor)
+            context.setLineWidth(annotation.lineWidth)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            
+            let path = CGMutablePath()
+            switch annotation.type {
+            case .pen:
+                if let first = annotation.points.first {
+                    path.move(to: first)
+                    for point in annotation.points.dropFirst() {
+                        path.addLine(to: point)
+                    }
+                }
+            case .rectangle:
+                let x = min(annotation.startPoint.x, annotation.endPoint.x)
+                let y = min(annotation.startPoint.y, annotation.endPoint.y)
+                let width = abs(annotation.endPoint.x - annotation.startPoint.x)
+                let height = abs(annotation.endPoint.y - annotation.startPoint.y)
+                path.addRect(CGRect(x: x, y: y, width: width, height: height))
+            case .arrow:
+                let start = annotation.startPoint
+                let end = annotation.endPoint
+                path.move(to: start)
+                path.addLine(to: end)
+                
+                let angle = atan2(end.y - start.y, end.x - start.x)
+                let arrowLength: CGFloat = 15.0
+                let arrowAngle: CGFloat = .pi / 6
+                let p1 = CGPoint(
+                    x: end.x - arrowLength * cos(angle - arrowAngle),
+                    y: end.y - arrowLength * sin(angle - arrowAngle)
+                )
+                let p2 = CGPoint(
+                    x: end.x - arrowLength * cos(angle + arrowAngle),
+                    y: end.y - arrowLength * sin(angle + arrowAngle)
+                )
+                
+                path.move(to: end)
+                path.addLine(to: p1)
+                path.move(to: end)
+                path.addLine(to: p2)
+            case .ellipse:
+                let x = min(annotation.startPoint.x, annotation.endPoint.x)
+                let y = min(annotation.startPoint.y, annotation.endPoint.y)
+                let width = abs(annotation.endPoint.x - annotation.startPoint.x)
+                let height = abs(annotation.endPoint.y - annotation.startPoint.y)
+                path.addEllipse(in: CGRect(x: x, y: y, width: width, height: height))
+            case .mosaic, .blur, .text:
+                continue
+            }
+            
+            context.addPath(path)
+            context.strokePath()
+        }
+    }
+    
+    private func drawTextAnnotations(_ annotations: [Annotation], in context: CGContext, scaleX: CGFloat, scaleY: CGFloat, logicalSize: CGSize) {
+        let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        
+        for annotation in annotations where annotation.type == .text {
+            let text = annotation.text as NSString
+            let fontSize = annotation.fontSize * scaleY
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: fontSize),
+                .foregroundColor: NSColor(annotation.color)
+            ]
+            let size = text.size(withAttributes: attributes)
+            let drawPoint = CGPoint(
+                x: annotation.startPoint.x * scaleX,
+                y: logicalSize.height * scaleY - (annotation.startPoint.y * scaleY) - size.height
+            )
+            text.draw(at: drawPoint, withAttributes: attributes)
+        }
+        
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func applyAnnotationEffects(image: NSImage, annotations: [Annotation], cropRect: CGRect?) -> NSImage {

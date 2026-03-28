@@ -16,6 +16,7 @@ class CaptureService {
     static let shared = CaptureService()
     
     let context = CIContext()
+    private let exportColorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
     private var stream: SCStream?
     private var streamOutput: CaptureStreamOutput?
     private let outputQueue = DispatchQueue(label: "com.libreshot.capture")
@@ -51,9 +52,7 @@ class CaptureService {
                 throw CancellationError()
             }
             
-            guard let tiffData = image.tiffRepresentation,
-                  let bitmapImage = NSBitmapImageRep(data: tiffData),
-                  let pngData = bitmapImage.representation(using: .png, properties: [:]) else {
+            guard let pngData = pngData(from: image) else {
                 throw CaptureServiceError.imageConversionFailed
             }
             
@@ -63,8 +62,24 @@ class CaptureService {
     }
     
     func copyToClipboard(_ image: NSImage) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([image])
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        
+        guard let pngData = pngData(from: image) else {
+            pasteboard.writeObjects([image])
+            return
+        }
+        
+        pasteboard.setData(pngData, forType: .png)
+        
+        if let normalizedImage = NSImage(data: pngData),
+           let tiffData = normalizedImage.tiffRepresentation {
+            pasteboard.setData(tiffData, forType: .tiff)
+        }
+        
+        if let normalizedImage = NSImage(data: pngData) {
+            pasteboard.writeObjects([normalizedImage])
+        }
     }
     
     func crop(image: NSImage, to rect: CGRect, displayID: CGDirectDisplayID? = nil) -> NSImage? {
@@ -259,6 +274,48 @@ class CaptureService {
             self?.streamOutput = nil
             self?.isStopping = false
         }
+    }
+
+    func bitmapRep(from image: NSImage, opaque: Bool = true) -> NSBitmapImageRep? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        
+        let alphaInfo: CGImageAlphaInfo = opaque ? .noneSkipLast : .premultipliedLast
+        guard let bitmapContext = CGContext(
+            data: nil,
+            width: cgImage.width,
+            height: cgImage.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: exportColorSpace,
+            bitmapInfo: alphaInfo.rawValue
+        ) else {
+            return nil
+        }
+        
+        bitmapContext.interpolationQuality = .high
+        
+        if opaque {
+            bitmapContext.setFillColor(NSColor.white.cgColor)
+            bitmapContext.fill(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        } else {
+            bitmapContext.clear(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        }
+        
+        bitmapContext.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        
+        guard let normalizedImage = bitmapContext.makeImage() else {
+            return nil
+        }
+        
+        let bitmapRep = NSBitmapImageRep(cgImage: normalizedImage)
+        bitmapRep.size = image.size
+        return bitmapRep
+    }
+    
+    func pngData(from image: NSImage) -> Data? {
+        bitmapRep(from: image)?.representation(using: .png, properties: [:])
     }
 }
 
