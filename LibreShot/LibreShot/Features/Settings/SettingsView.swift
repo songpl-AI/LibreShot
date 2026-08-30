@@ -128,6 +128,13 @@ struct GeneralSettingsView: View {
                         }
                     }
                     .padding(8)
+
+                    Divider()
+
+                    SettingsRow("自动保存:") {
+                        Toggle("截图后自动保存", isOn: $settings.autoSaveEnabled)
+                    }
+                    .padding(8)
                 }
             } label: {
                 Text("存储")

@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Default to main display for full screen shortcut
                 let image = try await CaptureService.shared.captureDisplayImage()
                 SoundService.shared.playCaptureSound()
-                _ = try await CaptureService.shared.saveImageWithFallback(image)
+                _ = try await saveImage(image)
             } catch is CancellationError {
                 // User cancelled, do nothing
             } catch {
@@ -297,6 +297,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onSaveAction: { [weak self] in
                     Task { [weak self] in
                         do {
+                            guard let self else { return }
+                            _ = try await self.saveImage(image)
+                        } catch is CancellationError {
+                        } catch {
+                            await self?.handleCaptureError(error)
+                        }
+                    }
+                },
+                onSaveAsAction: { [weak self] in
+                    Task { [weak self] in
+                        do {
                             _ = try await CaptureService.shared.saveImageWithFallback(image)
                         } catch is CancellationError {
                         } catch {
@@ -382,6 +393,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch action {
                 case .save:
                     do {
+                        _ = try await saveImage(outputImage)
+                    } catch is CancellationError {
+                        // User cancelled, do nothing
+                    } catch {
+                        throw error
+                    }
+                case .saveAs:
+                    do {
                         _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
                     } catch is CancellationError {
                         // User cancelled, do nothing
@@ -424,6 +443,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// 统一保存入口：自动保存开关开启时直接写盘，否则弹保存面板。
+    private func saveImage(_ image: NSImage) async throws -> URL {
+        if SettingsService.shared.autoSaveEnabled {
+            return try await CaptureService.shared.saveImageDirectly(image)
+        } else {
+            return try await CaptureService.shared.saveImageWithFallback(image)
+        }
+    }
+
     private func handleCaptureError(_ error: Error) async {
         await showAlert(title: "错误", message: error.localizedDescription)
     }

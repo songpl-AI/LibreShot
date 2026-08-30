@@ -35,12 +35,13 @@ extension CaptureService {
 
     private func annotationIntersectsCrop(_ annotation: Annotation, cropRect: CGRect) -> Bool {
         switch annotation.type {
-        case .rectangle, .ellipse, .text:
+        case .rectangle, .ellipse, .text, .number:
             let rect: CGRect
             if annotation.type == .text {
-                let width = CGFloat(annotation.text.count) * annotation.fontSize * 0.6
-                let height = annotation.fontSize * 1.5
-                rect = CGRect(x: annotation.startPoint.x, y: annotation.startPoint.y, width: width, height: height)
+                rect = annotation.textBoundingRect
+            } else if annotation.type == .number {
+                let radius = annotation.fontSize / 2 + 4
+                rect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
             } else {
                 let x = min(annotation.startPoint.x, annotation.endPoint.x)
                 let y = min(annotation.startPoint.y, annotation.endPoint.y)
@@ -150,6 +151,9 @@ extension CaptureService {
                 let width = abs(annotation.endPoint.x - annotation.startPoint.x)
                 let height = abs(annotation.endPoint.y - annotation.startPoint.y)
                 path.addEllipse(in: CGRect(x: x, y: y, width: width, height: height))
+            case .number:
+                let radius = annotation.fontSize / 2 + 4
+                path.addEllipse(in: CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2))
             case .mosaic, .blur, .text:
                 continue
             }
@@ -164,7 +168,7 @@ extension CaptureService {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = graphicsContext
         
-        for annotation in annotations where annotation.type == .text {
+        for annotation in annotations where annotation.type == .text || annotation.type == .number {
             let text = annotation.text as NSString
             let fontSize = annotation.fontSize * scaleY
             let attributes: [NSAttributedString.Key: Any] = [
@@ -172,10 +176,19 @@ extension CaptureService {
                 .foregroundColor: NSColor(annotation.color)
             ]
             let size = text.size(withAttributes: attributes)
-            let drawPoint = CGPoint(
-                x: annotation.startPoint.x * scaleX,
-                y: logicalSize.height * scaleY - (annotation.startPoint.y * scaleY) - size.height
-            )
+            let drawPoint: CGPoint
+            if annotation.type == .number {
+                // 序号文字居中于圆圈
+                drawPoint = CGPoint(
+                    x: annotation.startPoint.x * scaleX - size.width / 2,
+                    y: logicalSize.height * scaleY - (annotation.startPoint.y * scaleY) - size.height / 2
+                )
+            } else {
+                drawPoint = CGPoint(
+                    x: annotation.startPoint.x * scaleX,
+                    y: logicalSize.height * scaleY - (annotation.startPoint.y * scaleY) - size.height
+                )
+            }
             text.draw(at: drawPoint, withAttributes: attributes)
         }
         

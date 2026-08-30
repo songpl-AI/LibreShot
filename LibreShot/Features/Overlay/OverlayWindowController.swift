@@ -118,7 +118,20 @@ class OverlayWindowController: NSWindowController {
         }
         viewModel.onCancel = cancelAction
         
-        overlayWindow.onEscapeKey = cancelAction
+        // Esc 分层：先退文字输入 → 再退工具到选择模式 → 无工具时取消截图
+        overlayWindow.onEscapeKey = { [weak self] in
+            guard let self else {
+                cancelAction()
+                return
+            }
+            if self.viewModel.isEditingText {
+                self.viewModel.cancelTextInput()
+            } else if self.viewModel.selectedTool != nil {
+                self.viewModel.selectTool(nil)
+            } else {
+                cancelAction()
+            }
+        }
         overlayWindow.onConfirmKey = nil
         
         // 3. Determine Screen

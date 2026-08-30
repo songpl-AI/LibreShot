@@ -12,18 +12,21 @@ class PinnedImageWindowController: NSWindowController {
     private let displayMode: DisplayMode
     private let onCopyAction: (() -> Void)?
     private let onSaveAction: (() -> Void)?
+    private let onSaveAsAction: (() -> Void)?
     var onClose: (() -> Void)?
-    
+
     init(
         image: NSImage,
         displayMode: DisplayMode = .pinned,
         onCopyAction: (() -> Void)? = nil,
-        onSaveAction: (() -> Void)? = nil
+        onSaveAction: (() -> Void)? = nil,
+        onSaveAsAction: (() -> Void)? = nil
     ) {
         self.image = image
         self.displayMode = displayMode
         self.onCopyAction = onCopyAction
         self.onSaveAction = onSaveAction
+        self.onSaveAsAction = onSaveAsAction
         
         let initialFrame = Self.initialWindowFrame(for: image.size)
         
@@ -54,6 +57,9 @@ class PinnedImageWindowController: NSWindowController {
             },
             onSave: { [weak self] in
                 self?.handleSave()
+            },
+            onSaveAs: { [weak self] in
+                self?.handleSaveAs()
             }
         )
         window.contentView = NSHostingView(rootView: contentView)
@@ -105,6 +111,22 @@ class PinnedImageWindowController: NSWindowController {
             }
         }
     }
+
+    private func handleSaveAs() {
+        if let onSaveAsAction {
+            if displayMode == .longCapturePreview {
+                close()
+                DispatchQueue.main.async {
+                    onSaveAsAction()
+                }
+            } else {
+                onSaveAsAction()
+            }
+            return
+        }
+        // 未提供回调时，退回到默认保存面板
+        handleSave()
+    }
     
     private static func initialWindowFrame(for imageSize: NSSize) -> NSRect {
         let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
@@ -139,6 +161,7 @@ struct PinnedImageView: View {
     var onClose: () -> Void
     var onCopy: () -> Void
     var onSave: () -> Void
+    var onSaveAs: () -> Void
     
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
@@ -184,7 +207,12 @@ struct PinnedImageView: View {
                         Label("保存", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(.bordered)
-                    
+
+                    Button(action: onSaveAs) {
+                        Label("另存为", systemImage: "square.and.arrow.down.on.square")
+                    }
+                    .buttonStyle(.bordered)
+
                     Button(action: onClose) {
                         Image(systemName: "xmark")
                             .font(.system(size: 12, weight: .semibold))

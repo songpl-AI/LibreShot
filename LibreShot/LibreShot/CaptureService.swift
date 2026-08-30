@@ -67,7 +67,40 @@ class CaptureService {
             return url
         }
     }
-    
+
+    /// 直接保存到预设目录（不弹保存面板）。目录优先级：设置里的「保存位置」→ ~/Pictures。
+    func saveImageDirectly(_ image: NSImage) async throws -> URL {
+        let directory = SettingsService.shared.saveDirectory
+            ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+
+        guard let pngData = pngData(from: image) else {
+            throw CaptureServiceError.imageConversionFailed
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let baseName = "Screenshot \(formatter.string(from: Date()))"
+
+        var url = directory.appendingPathComponent("\(baseName).png")
+        var counter = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = directory.appendingPathComponent("\(baseName) (\(counter)).png")
+            counter += 1
+        }
+
+        let accessed = SettingsService.shared.saveDirectory != nil && directory.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                directory.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        try pngData.write(to: url)
+        return url
+    }
+
     func copyToClipboard(_ image: NSImage) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

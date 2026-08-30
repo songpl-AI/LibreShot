@@ -15,6 +15,7 @@ enum OverlayState {
 enum CaptureAction {
     case copy
     case save
+    case saveAs
     case pin
     case ocr
 }
@@ -47,6 +48,7 @@ class OverlayViewModel: ObservableObject {
     @Published var annotations: [Annotation] = []
     @Published var currentAnnotation: Annotation?
     @Published var selectedColor: Color = .red
+    @Published var selectedFontSize: CGFloat = Annotation.textInputFontSize
     @Published var activeSelectionHandle: SelectionHandle?
     @Published var isMovingSelection: Bool = false
     @Published var previewImage: CGImage?
@@ -76,6 +78,10 @@ class OverlayViewModel: ObservableObject {
 
     func confirmOCR() {
         onCapture?(selectionRect, annotations, .ocr, previewImage)
+    }
+
+    func confirmSaveAs() {
+        onCapture?(selectionRect, annotations, .saveAs, previewImage)
     }
     
     func cancel() {
@@ -129,7 +135,11 @@ class OverlayViewModel: ObservableObject {
     func endSelection() {
         guard state == .selecting else { return }
         selectionRect = selectionRect.standardized
-        
+        // 清除选区拖拽残留的 currentPoint/startPoint，
+        // 否则后续拖动标注时会把旧坐标当成「上一次位置」算出巨大偏移，导致文字跳飞
+        currentPoint = nil
+        startPoint = nil
+
         // If selection is too small, cancel/reset
         if selectionRect.width < 10 || selectionRect.height < 10 {
             reset()
@@ -138,6 +148,8 @@ class OverlayViewModel: ObservableObject {
                 confirmLongCaptureRegion()
             } else {
                 state = .editing
+                // 进入编辑态默认选中矩形框（许愿功能 1）
+                selectedTool = .rectangle
             }
         }
     }
@@ -160,10 +172,28 @@ class OverlayViewModel: ObservableObject {
                 // Update selected properties to match annotation
                 if let annotation = annotations.first(where: { $0.id == id }) {
                     selectedColor = annotation.color
-                    // You might want to update a FontSize publisher here too if you had one
+                }
+                // 双击文字标注 → 重新编辑
+                if let annotation = annotations.first(where: { $0.id == id }),
+                   annotation.type == .text {
+                    if lastTextTapAnnotationID == id,
+                       let last = lastTextTapDate,
+                       Date().timeIntervalSince(last) < 0.35 {
+                        startTextEdit(annotationID: id)
+                        lastTextTapAnnotationID = nil
+                        lastTextTapDate = nil
+                    } else {
+                        lastTextTapAnnotationID = id
+                        lastTextTapDate = Date()
+                    }
+                } else {
+                    lastTextTapAnnotationID = nil
+                    lastTextTapDate = nil
                 }
             } else {
                 selectedAnnotationID = nil
+                lastTextTapAnnotationID = nil
+                lastTextTapDate = nil
             }
             return
         }
@@ -260,8 +290,12 @@ class OverlayViewModel: ObservableObject {
         selectedTool = nil
         selectedAnnotationID = nil
         cancelTextInput()
+        nextNumber = 1
+        lastTextTapAnnotationID = nil
+        lastTextTapDate = nil
         activeSelectionHandle = nil
         isMovingSelection = false
+        isResizingText = false
         previewImage = nil
         previewScale = 1.0
         previewBitmap = nil
@@ -273,41 +307,103 @@ class OverlayViewModel: ObservableObject {
     @Published var isEditingText: Bool = false
     @Published var editingTextPosition: CGPoint = .zero
     @Published var editingTextContent: String = ""
-    
+    private(set) var editingTextAnnotationID: UUID?
+    private var lastTextTapAnnotationID: UUID?
+    private var lastTextTapDate: Date?
+
+    /// 文字编辑器当前尺寸（由视图上报，随内容自动增长，用于定位与外部点击判定）
+    @Published var editingTextSize: CGSize = CGSize(width: 120, height: 34)
+
+    /// 当前文字编辑器的 frame（左上角对齐点击位置）
+    var editingTextEditorFrame: CGRect {
+        CGRect(origin: editingTextPosition, size: editingTextSize)
+    }
+
     func startTextInput(at point: CGPoint) {
         guard state == .editing, selectedTool == .text else { return }
-        
+
         // Restriction: Input must be inside selection rect
         if !selectionRect.contains(point) {
              return
         }
-        
+
         isEditingText = true
         editingTextPosition = point
         editingTextContent = ""
-        selectedAnnotationID = nil 
+        editingTextAnnotationID = nil
+        selectedAnnotationID = nil
+    }
+
+    /// 重新编辑已有文字标注
+    func startTextEdit(annotationID: UUID) {
+        guard state == .editing,
+              let annotation = annotations.first(where: { $0.id == annotationID }),
+              annotation.type == .text else { return }
+
+        isEditingText = true
+        editingTextPosition = annotation.startPoint
+        editingTextContent = annotation.text
+        editingTextAnnotationID = annotationID
+        selectedAnnotationID = annotationID
     }
     
     func commitTextInput() {
         guard isEditingText else { return }
-        
-        if !editingTextContent.isEmpty {
+
+        if let editingID = editingTextAnnotationID,
+           let index = annotations.firstIndex(where: { $0.id == editingID }) {
+            // 编辑已有文字：更新内容与位置；清空则删除
+            if editingTextContent.isEmpty {
+                annotations.remove(at: index)
+            } else {
+                annotations[index].text = editingTextContent
+                annotations[index].startPoint = editingTextPosition
+            }
+        } else if !editingTextContent.isEmpty {
+            // 新增文字
             var annotation = Annotation(type: .text, color: selectedColor)
             annotation.startPoint = editingTextPosition
             annotation.text = editingTextContent
-            annotation.fontSize = 24.0 // Default font size
+            annotation.fontSize = selectedFontSize
             annotations.append(annotation)
         }
-        
+
         isEditingText = false
         editingTextContent = ""
-        // Optional: Deselect tool after text entry? 
-        // selectedTool = nil 
+        editingTextAnnotationID = nil
+        // 提交后回到选择模式（不自动选中，避免出现多余蓝框）；可直接拖拽或双击编辑
+        selectedAnnotationID = nil
+        selectedTool = nil
     }
     
     func cancelTextInput() {
         isEditingText = false
         editingTextContent = ""
+        editingTextAnnotationID = nil
+    }
+
+    /// 切换标注工具。切离文字工具时取消未完成的文字输入（连带 bug 1）。
+    func selectTool(_ tool: AnnotationType?) {
+        selectedTool = tool
+        if tool != .text {
+            cancelTextInput()
+        }
+    }
+
+    // MARK: - Number Annotation
+    private var nextNumber = 1
+
+    func placeNumber(at point: CGPoint) {
+        guard state == .editing, selectedTool == .number else { return }
+        guard selectionRect.contains(point) else { return }
+
+        var annotation = Annotation(type: .number, color: selectedColor)
+        annotation.startPoint = point
+        annotation.text = String(nextNumber)
+        annotation.fontSize = Annotation.numberFontSize
+        annotations.append(annotation)
+        nextNumber += 1
+        selectedAnnotationID = nil
     }
     
     // MARK: - Hit Testing
@@ -324,14 +420,13 @@ class OverlayViewModel: ObservableObject {
     private func isPoint(_ point: CGPoint, in annotation: Annotation) -> Bool {
         let padding: CGFloat = 10.0
         switch annotation.type {
-        case .rectangle, .ellipse, .text:
+        case .rectangle, .ellipse, .text, .number:
             var rect: CGRect
             if annotation.type == .text {
-                 // Est text size since we don't have font metrics here easily without NSFont
-                 // Simple approximation: length * fontSize * 0.6
-                 let width = CGFloat(annotation.text.count) * annotation.fontSize * 0.6
-                 let height = annotation.fontSize * 1.5
-                 rect = CGRect(x: annotation.startPoint.x, y: annotation.startPoint.y, width: width, height: height)
+                 rect = annotation.textBoundingRect
+            } else if annotation.type == .number {
+                 let radius = annotation.fontSize / 2 + 4
+                 rect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
             } else {
                  rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
             }
@@ -385,13 +480,65 @@ class OverlayViewModel: ObservableObject {
     // MARK: - Style Updates
     func updateSelectedStyle(color: Color? = nil, fontSize: CGFloat? = nil) {
         guard let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
-        
+
         if let color = color {
             annotations[index].color = color
         }
         if let fontSize = fontSize, annotations[index].type == .text {
             annotations[index].fontSize = fontSize
         }
+    }
+
+    /// 设置当前颜色：更新 selectedColor，并立即重染选中的标注（若有）
+    func setColor(_ color: Color) {
+        selectedColor = color
+        updateSelectedStyle(color: color)
+    }
+
+    /// 设置字号：更新 selectedFontSize，并立即应用到选中的文字标注（若有）
+    func setFontSize(_ size: CGFloat) {
+        selectedFontSize = size
+        updateSelectedStyle(fontSize: size)
+    }
+
+    // MARK: - Text Resize（拖拽角标缩放字号）
+    @Published var isResizingText: Bool = false
+    private var textResizeAnchor: CGPoint = .zero
+    private var textResizeStartFontSize: CGFloat = 24
+    private var textResizeStartDiag: CGFloat = 1
+
+    /// 选中文字标注的右下角缩放手柄位置（无选中/非文字返回 nil）
+    var selectedTextResizeHandle: CGPoint? {
+        guard let id = selectedAnnotationID,
+              let annotation = annotations.first(where: { $0.id == id }),
+              annotation.type == .text else { return nil }
+        let rect = annotation.textBoundingRect
+        return CGPoint(x: rect.maxX, y: rect.maxY)
+    }
+
+    func beginTextResize(at point: CGPoint) {
+        guard let id = selectedAnnotationID,
+              let annotation = annotations.first(where: { $0.id == id }),
+              annotation.type == .text else { return }
+        isResizingText = true
+        textResizeAnchor = annotation.startPoint
+        textResizeStartFontSize = annotation.fontSize
+        let size = annotation.textBoundingSize
+        textResizeStartDiag = max(hypot(size.width, size.height), 1)
+    }
+
+    func updateTextResize(to point: CGPoint) {
+        guard isResizingText, let id = selectedAnnotationID,
+              let index = annotations.firstIndex(where: { $0.id == id }) else { return }
+        let diag = hypot(point.x - textResizeAnchor.x, point.y - textResizeAnchor.y)
+        let scale = diag / max(textResizeStartDiag, 1)
+        let newSize = min(max(textResizeStartFontSize * scale, 8), 96)
+        annotations[index].fontSize = newSize
+        selectedFontSize = newSize
+    }
+
+    func endTextResize() {
+        isResizingText = false
     }
 
     func beginMoveSelection(at point: CGPoint) {

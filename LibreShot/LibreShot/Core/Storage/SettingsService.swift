@@ -68,7 +68,13 @@ class SettingsService: ObservableObject {
             UserDefaults.standard.set(playSound, forKey: "playSound")
         }
     }
-    
+
+    @Published var autoSaveEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(autoSaveEnabled, forKey: "autoSaveEnabled")
+        }
+    }
+
     private init() {
         self.saveDirectoryBookmark = UserDefaults.standard.data(forKey: "saveDirectoryBookmark")
         
@@ -87,6 +93,7 @@ class SettingsService: ObservableObject {
         self.launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         self.useRoundedCorners = UserDefaults.standard.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
         self.playSound = UserDefaults.standard.object(forKey: "playSound") as? Bool ?? true // Default to true
+        self.autoSaveEnabled = UserDefaults.standard.object(forKey: "autoSaveEnabled") as? Bool ?? true // Default to true
     }
     
     var saveDirectory: URL? {

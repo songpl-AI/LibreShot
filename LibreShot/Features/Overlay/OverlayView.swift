@@ -2,7 +2,7 @@ import SwiftUI
 
 struct OverlayView: View {
     @ObservedObject var viewModel: OverlayViewModel
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -30,15 +30,19 @@ struct OverlayView: View {
                     Canvas { context, size in
                         // Draw existing annotations
                         for annotation in viewModel.annotations {
+                            // 正在编辑的文字标注不渲染（避免与编辑器重叠显示）
+                            if annotation.id == viewModel.editingTextAnnotationID {
+                                continue
+                            }
                             // Highlight selected annotation
                             if annotation.id == viewModel.selectedAnnotationID {
                                 // Draw selection halo/border
                                 let rect: CGRect
                                 if annotation.type == .text {
-                                     // Approx text rect for halo
-                                     let width = CGFloat(annotation.text.count) * annotation.fontSize * 0.6
-                                     let height = annotation.fontSize * 1.5
-                                     rect = CGRect(x: annotation.startPoint.x, y: annotation.startPoint.y, width: width, height: height)
+                                     rect = annotation.textBoundingRect
+                                } else if annotation.type == .number {
+                                     let radius = annotation.fontSize / 2 + 4
+                                     rect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
                                 } else {
                                      rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
                                 }
@@ -46,6 +50,14 @@ struct OverlayView: View {
                                 // Draw Halo
                                 let haloPath = Path(rect.insetBy(dx: -5, dy: -5))
                                 context.stroke(haloPath, with: .color(.blue.opacity(0.5)), lineWidth: 2)
+
+                                // 文字选中：右下角缩放手柄
+                                if annotation.type == .text {
+                                    let handlePos = CGPoint(x: rect.maxX, y: rect.maxY)
+                                    let handleRect = CGRect(x: handlePos.x - 5, y: handlePos.y - 5, width: 10, height: 10)
+                                    context.fill(Path(ellipseIn: handleRect), with: .color(.white))
+                                    context.stroke(Path(ellipseIn: handleRect), with: .color(.blue), lineWidth: 1.5)
+                                }
                             }
                             
                             drawAnnotation(context: context, annotation: annotation, canvasSize: size)
@@ -92,24 +104,32 @@ struct OverlayView: View {
                     EditorToolbarView(viewModel: viewModel)
                         .position(x: toolbarPos.x, y: toolbarPos.y)
                         
-                    // Text Input Overlay
+                    // Text Input Overlay（内联编辑：所见即所得，随内容动态调整大小）
                     if viewModel.isEditingText {
-                        TextField("输入文字", text: $viewModel.editingTextContent, onCommit: {
-                            viewModel.commitTextInput()
-                        })
-                        .textFieldStyle(.plain)
-                        .font(.system(size: viewModel.selectedColor == .clear ? 24 : 24, weight: .medium)) // Use actual font size logic if bound
-                        // Note: For now using binding to VM content.
-                        .font(.system(size: 24)) // Todo: Bind to viewModel.activeFontSize
-                        .foregroundColor(viewModel.selectedColor)
-                        .padding(4)
-                        .background(Color.black.opacity(0.6)) // Darker background for visibility
-                        .cornerRadius(4)
-                        .frame(width: 200)
-                        .position(viewModel.editingTextPosition)
-                        .onSubmit {
-                            viewModel.commitTextInput()
-                        }
+                        InlineTextEditor(
+                            text: $viewModel.editingTextContent,
+                            fontSize: viewModel.selectedFontSize,
+                            color: NSColor(viewModel.selectedColor),
+                            cursorAtEnd: viewModel.editingTextAnnotationID != nil,
+                            onSizeChange: { size in
+                                if size != viewModel.editingTextSize {
+                                    viewModel.editingTextSize = size
+                                }
+                            }
+                        )
+                        .frame(
+                            width: max(viewModel.editingTextSize.width, 2),
+                            height: max(viewModel.editingTextSize.height, viewModel.selectedFontSize * 1.4)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(Color.blue.opacity(0.55), lineWidth: 1.5)
+                                .padding(-3)
+                        )
+                        .position(
+                            x: viewModel.editingTextPosition.x + viewModel.editingTextSize.width / 2,
+                            y: viewModel.editingTextPosition.y + viewModel.editingTextSize.height / 2
+                        )
                     }
                 } else if viewModel.state == .longCapturing {
                     let statusPos = calculateLongCaptureStatusPosition(screenSize: geometry.size)
@@ -123,8 +143,11 @@ struct OverlayView: View {
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
                         if viewModel.isEditingText {
-                            // Click outside commits text
-                            viewModel.commitTextInput()
+                            // 点击编辑器外部提交
+                            let editorRect = viewModel.editingTextEditorFrame
+                            if !editorRect.contains(value.location) {
+                                viewModel.commitTextInput()
+                            }
                             return
                         }
                         
@@ -134,8 +157,8 @@ struct OverlayView: View {
                             }
                             viewModel.updateSelection(to: value.location)
                         } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {
-                            // 1. Text Tool Logic
-                            if viewModel.selectedTool == .text {
+                            // 1. Text / Number Tool Logic
+                            if viewModel.selectedTool == .text || viewModel.selectedTool == .number {
                                 // Do nothing on drag, wait for click (ended)
                                 return
                             }
@@ -160,6 +183,14 @@ struct OverlayView: View {
                                         viewModel.updateResizeSelection(to: value.location, within: bounds)
                                         return
                                     }
+
+                                    // 文字缩放手柄
+                                    if let textHandle = viewModel.selectedTextResizeHandle,
+                                       abs(value.startLocation.x - textHandle.x) <= 8,
+                                       abs(value.startLocation.y - textHandle.y) <= 8 {
+                                        viewModel.beginTextResize(at: value.startLocation)
+                                        return
+                                    }
                                     
                                     if rect.contains(value.startLocation),
                                        viewModel.annotationID(at: value.startLocation) == nil {
@@ -172,6 +203,11 @@ struct OverlayView: View {
                                         viewModel.startDrawing(at: value.location)
                                     }
                                 } else {
+                                    if viewModel.isResizingText {
+                                        viewModel.updateTextResize(to: value.location)
+                                        return
+                                    }
+
                                     if viewModel.isMovingSelection {
                                         viewModel.updateMoveSelection(to: value.location, within: bounds)
                                         return
@@ -217,9 +253,18 @@ struct OverlayView: View {
                                         viewModel.startTextInput(at: value.location)
                                     }
                                 }
-                            } 
+                            }
+                            // Number Tool Click
+                            else if viewModel.selectedTool == .number {
+                                if abs(value.translation.width) < 5 && abs(value.translation.height) < 5 {
+                                    viewModel.placeNumber(at: value.location)
+                                }
+                            }
                             // Selection Mode
                             else if viewModel.selectedTool == nil {
+                                if viewModel.isResizingText {
+                                    viewModel.endTextResize()
+                                }
                                 if viewModel.isMovingSelection {
                                     viewModel.endMoveSelection()
                                 }
@@ -387,21 +432,32 @@ struct OverlayView: View {
         case .ellipse:
             let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
             path.addEllipse(in: rect)
+        case .number:
+            let radius = annotation.fontSize / 2 + 4
+            let circleRect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
+            path.addEllipse(in: circleRect)
         case .mosaic, .blur:
             break
         case .text:
             break
         }
-        
+
         if annotation.type != .text {
             context.stroke(path, with: .color(annotation.color), lineWidth: annotation.lineWidth)
         }
-        
+
         if annotation.type == .text && !annotation.text.isEmpty {
             let text = Text(annotation.text)
                 .font(.system(size: annotation.fontSize, weight: .medium))
                 .foregroundColor(annotation.color)
             context.draw(text, at: annotation.startPoint, anchor: .topLeading)
+        }
+
+        if annotation.type == .number && !annotation.text.isEmpty {
+            let text = Text(annotation.text)
+                .font(.system(size: annotation.fontSize, weight: .semibold))
+                .foregroundColor(annotation.color)
+            context.draw(text, at: annotation.startPoint, anchor: .center)
         }
     }
 
