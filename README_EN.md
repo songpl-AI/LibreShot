@@ -11,9 +11,12 @@ LibreShot is a lightweight, modern screenshot and annotation tool for macOS, bui
   - 🖊️ **Pen**: Freehand drawing.
   - ⬜ **Rectangle/Ellipse**: Quickly highlight areas.
   - ↖️ **Arrow**: Point out details precisely.
-  - 📝 **Text**: Add text explanations.
+  - 📝 **Text**: Inline WYSIWYG editing with multiline, font size and color.
+  - 🔢 **Numbered Annotation**: Circled auto-incrementing numbers to highlight points of interest.
   - 💧 **Blur/Mosaic**: Easily hide sensitive information (like faces, accounts).
-- **OCR Text Recognition**: Built-in offline OCR engine to extract text from screenshots (supports Chinese & English) with one click. No internet connection required, protecting your privacy.
+- **OCR Text Recognition & Translation**: Built-in offline OCR engine to extract text from screenshots (supports Chinese & English), plus offline translation (macOS 26+). No internet connection required, protecting your privacy.
+- **Long Screenshot**: Capture scrolling content into one long image, with a preview before copy or save.
+- **Auto Save**: Automatically save screenshots to a chosen folder (toggleable), with a manual "Save As" option.
 - **Pin to Screen**: Support "pinning" screenshots to the top of the screen for easy reference or cross-app collaboration.
 - **Global Shortcuts**: Customizable global shortcuts to trigger screenshots instantly.
 - **Privacy First**: Runs completely offline, no data is uploaded.
@@ -75,20 +78,22 @@ Click the "Scissors" icon in the menu bar to select functions:
 ### 3. Annotation & Editing
 After taking a screenshot, it will automatically enter edit mode. The top toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.
+- **Numbered Annotation**: Click the number icon to place a circled auto-incrementing number.
 - **Mosaic/Blur**: Click the drop icon to select areas to blur.
-- **Text**: Click the "T" icon to insert text.
-- **Color/Stroke**: Adjust color and line width when an annotation object is selected.
+- **Text**: Click the "T" icon and click on the image to type inline (WYSIWYG); press Enter for a new line, click elsewhere to commit.
+- **Color & Font Size**: Click the colored dot in the toolbar to open a panel for color (presets + system picker) and font size; drag the bottom-right handle of selected text to scale it proportionally.
 
 ### 4. Pin to Screen
 Click the **📌 (Pin)** icon on the toolbar to pin the current screenshot as a floating window on top of the screen. You can drag it around and double-click to close it. This is very useful for code comparison or reference.
 
-### 5. OCR
-Click the **OCR** icon on the toolbar. The software will automatically recognize text in the screenshot and show the result in a popup window, supporting one-click copy.
+### 5. OCR & Translation
+Click the **OCR** icon on the toolbar. The software will automatically recognize text in the screenshot and show the result in a popup window, supporting one-click copy; you can also translate the result offline by choosing a target language (macOS 26+).
 
 ### 6. Settings
 Click the icon in the menu bar and select "Settings..." to:
 - **Set Shortcuts**: Customize global shortcuts for "Area Screenshot" and "Full Screen Screenshot".
 - **Save Path**: Customize the default save location for screenshots.
+- **Auto Save**: When enabled, screenshots are saved directly to the chosen location without confirmation.
 - **Launch Settings**: Set whether to launch at login.
 
 ## ❤️ Support
