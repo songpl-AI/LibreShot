@@ -1,7 +1,9 @@
 import Cocoa
+import Combine
 import SwiftUI
+import Translation
 
-class OCRResultWindowController: NSWindowController {
+class OCRResultWindowController: NSWindowController, NSWindowDelegate {
     
     convenience init(text: String) {
         let window = NSWindow(
@@ -17,28 +19,21 @@ class OCRResultWindowController: NSWindowController {
         window.contentView = NSHostingView(rootView: contentView)
         
         self.init(window: window)
+        window.delegate = self
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Tear down the hosting view so SwiftUI cancels its translation task,
+        // even while AppDelegate still retains this window controller.
+        window?.contentView = nil
     }
 }
 
 struct OCRResultView: View {
     let text: String
     @State private var copied = false
-    @State private var targetLanguageID = "zh-Hans"
     @State private var translatedText: String = ""
-    @State private var isTranslating = false
     @State private var translateError: String?
-
-    private struct TargetLanguage: Identifiable {
-        let id: String
-        let name: String
-    }
-
-    private let targetLanguages: [TargetLanguage] = [
-        TargetLanguage(id: "zh-Hans", name: "简体中文"),
-        TargetLanguage(id: "en", name: "English"),
-        TargetLanguage(id: "ja", name: "日本語"),
-        TargetLanguage(id: "ko", name: "한국어"),
-    ]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -57,22 +52,9 @@ struct OCRResultView: View {
                 Spacer()
 
                 if #available(macOS 26.0, *) {
-                    Picker("", selection: $targetLanguageID) {
-                        ForEach(targetLanguages) { lang in
-                            Text(lang.name).tag(lang.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 110)
-
-                    Button(action: translate) {
-                        if isTranslating {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Label("翻译", systemImage: "character.bubble")
-                        }
-                    }
-                    .disabled(isTranslating || text.isEmpty)
+                    OCRTranslationControls(text: text,
+                                           translatedText: $translatedText,
+                                           translateError: $translateError)
                 }
 
                 Button(action: {
@@ -105,30 +87,6 @@ struct OCRResultView: View {
         .frame(minWidth: 480, minHeight: 360)
     }
 
-    @available(macOS 26.0, *)
-    private func translate() {
-        guard !text.isEmpty else { return }
-        isTranslating = true
-        translateError = nil
-        translatedText = ""
-
-        Task {
-            do {
-                let target = Locale.Language(identifier: targetLanguageID)
-                let result = try await TranslationService.translate(text, target: target)
-                await MainActor.run {
-                    translatedText = result
-                    isTranslating = false
-                }
-            } catch {
-                await MainActor.run {
-                    translateError = error.localizedDescription
-                    isTranslating = false
-                }
-            }
-        }
-    }
-
     private func copyToClipboard() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
@@ -142,5 +100,113 @@ struct OCRResultView: View {
                 copied = false
             }
         }
+    }
+}
+
+
+@available(macOS 26.0, *)
+private struct OCRTranslationControls: View {
+    let text: String
+    @Binding var translatedText: String
+    @Binding var translateError: String?
+    @StateObject private var model = OCRTranslationModel()
+
+    var body: some View {
+        HStack {
+            Picker("翻译为", selection: $model.targetLanguageID) {
+                Text("简体中文").tag("zh-Hans")
+                Text("English").tag("en")
+                Text("日本語").tag("ja")
+                Text("한국어").tag("ko")
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 110)
+            .disabled(model.isTranslating)
+
+            Button {
+                model.start(text: text)
+            } label: {
+                if model.isTranslating {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("翻译", systemImage: "character.bubble")
+                }
+            }
+            .disabled(model.isTranslating || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .help("首次翻译可能需要联网下载免费语言包，系统会询问是否下载；安装后可离线翻译。")
+        }
+        .translationTask(model.configuration) { session in
+            await model.run { text in
+                try await TranslationService.translate(text, using: session)
+            }
+        }
+        .onChange(of: model.translatedText) { _, value in translatedText = value }
+        .onChange(of: model.errorMessage) { _, value in translateError = value }
+        .onDisappear { model.cancel() }
+    }
+}
+
+/// Stores only request/UI state, never a TranslationSession or language model.
+@available(macOS 26.0, *)
+@MainActor
+final class OCRTranslationModel: ObservableObject {
+    @Published var targetLanguageID = "zh-Hans"
+    @Published private(set) var configuration: TranslationSession.Configuration?
+    @Published private(set) var isTranslating = false
+    @Published private(set) var translatedText = ""
+    @Published private(set) var errorMessage: String?
+    private var request: (id: UUID, text: String)?
+    // A value only: changing its version makes same-language retries start a new task.
+    private var lastConfiguration = TranslationSession.Configuration()
+
+    func start(text: String) {
+        guard !isTranslating, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        errorMessage = nil
+        translatedText = ""
+        let source = TranslationService.detectLanguage(of: text)
+        let target = Locale.Language(identifier: targetLanguageID)
+        if source == target {
+            translatedText = text
+            return
+        }
+        request = (UUID(), text)
+        isTranslating = true
+        lastConfiguration.source = source
+        lastConfiguration.target = target
+        lastConfiguration.invalidate()
+        configuration = lastConfiguration
+    }
+
+    func run(translate: (String) async throws -> String) async {
+        guard let current = request else { return }
+        defer {
+            if request?.id == current.id {
+                request = nil
+                configuration = nil
+                isTranslating = false
+            }
+        }
+        do {
+            try Task.checkCancellation()
+            let result = try await translate(current.text)
+            try Task.checkCancellation()
+            guard request?.id == current.id else { return }
+            translatedText = result
+        } catch {
+            guard request?.id == current.id else { return }
+            if error is CancellationError || TranslationError.alreadyCancelled ~= error ||
+                ((error as NSError).domain == NSCocoaErrorDomain && (error as NSError).code == NSUserCancelledError) {
+                errorMessage = "已取消翻译，可再次点击翻译重试。"
+            } else {
+                errorMessage = "翻译未完成：\(error.localizedDescription) 可再次点击翻译重试。"
+            }
+        }
+    }
+
+    func cancel() {
+        request = nil
+        configuration = nil
+        isTranslating = false
     }
 }

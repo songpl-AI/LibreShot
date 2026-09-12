@@ -9,6 +9,7 @@ struct ToolbarRegressionChecks {
     static func main() async throws {
         checkEscapeCancellation()
         try await checkOCRAndTranslation()
+        if #available(macOS 26.0, *) { await checkTranslationLifecycle() }
         let displayConfiguration = CaptureService.displayConfiguration(width: 3024, height: 1964)
         precondition(!displayConfiguration.showsCursor, "Captured pixels must exclude the system cursor in both frozen previews and exported screenshots")
         precondition(displayConfiguration.width == 3024 && displayConfiguration.height == 1964)
@@ -304,6 +305,53 @@ struct ToolbarRegressionChecks {
         } else {
             print("NOT RUN: system translation requires macOS 26 or later")
         }
+    }
+
+    @available(macOS 26.0, *)
+    @MainActor
+    private static func checkTranslationLifecycle() async {
+        let model = OCRTranslationModel()
+        precondition(model.configuration == nil && !model.isTranslating)
+        model.start(text: "  \n")
+        precondition(model.configuration == nil)
+        model.targetLanguageID = "en"
+        model.start(text: "Hello world. This is a screenshot test.")
+        precondition(model.configuration == nil && model.translatedText.contains("Hello"))
+        model.targetLanguageID = "zh-Hans"
+        model.start(text: "Hello world. This is a screenshot test.")
+        precondition(model.configuration?.source?.languageCode?.identifier == "en")
+        precondition(model.configuration?.target == Locale.Language(identifier: "zh-Hans"))
+        precondition(model.isTranslating)
+        let firstConfiguration = model.configuration
+        await model.run { _ in throw CancellationError() }
+        precondition(model.configuration == nil && !model.isTranslating && model.errorMessage!.contains("取消"))
+        model.start(text: "Hello world. This is a screenshot test.")
+        precondition(model.configuration != firstConfiguration, "Same-language retry must invalidate the previous task configuration")
+        await model.run { _ in throw NSError(domain: "TranslationCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "网络不可用"]) }
+        precondition(model.errorMessage!.contains("网络不可用") && !model.isTranslating && model.configuration == nil)
+        model.start(text: "Hello world. This is a screenshot test.")
+        await model.run { _ in "你好，世界。" }
+        precondition(model.translatedText == "你好，世界。" && model.errorMessage == nil && model.configuration == nil)
+
+        // Closing a window and starting a new request must discard the old result.
+        model.start(text: "Old request.")
+        await model.run { _ in
+            model.cancel()
+            model.start(text: "New request.")
+            return "旧结果"
+        }
+        precondition(model.translatedText.isEmpty && model.isTranslating)
+        await model.run { text in
+            precondition(text == "New request.")
+            return "新结果"
+        }
+        precondition(model.translatedText == "新结果" && model.configuration == nil)
+        let controller = OCRResultWindowController(text: "Hello world.")
+        controller.showWindow(nil)
+        precondition(controller.window?.contentView != nil)
+        controller.close()
+        precondition(controller.window?.contentView == nil, "Closing OCR must tear down the view that owns the translation task")
+        print("PASS: translation is on demand; cancellation/failure can retry; success and close release request state; stale results are ignored")
     }
 
     @MainActor

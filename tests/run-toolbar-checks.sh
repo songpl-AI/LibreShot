@@ -13,6 +13,7 @@ xcrun swiftc -parse-as-library \
   LibreShot/LibreShot/Core/OverlayWindow.swift \
   LibreShot/LibreShot/Core/OCR/OCRService.swift \
   LibreShot/LibreShot/Core/OCR/TranslationService.swift \
+  LibreShot/LibreShot/Core/OCR/OCRResultWindowController.swift \
   LibreShot/LibreShot/Core/Storage/ToolbarConfiguration.swift \
   LibreShot/LibreShot/Core/Storage/SettingsService.swift \
   LibreShot/LibreShot/Core/Hotkey/HotkeyService.swift \

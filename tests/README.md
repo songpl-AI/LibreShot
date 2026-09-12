@@ -35,6 +35,8 @@ LIBRESHOT_QA_OUTPUT=/tmp/LibreShot-toolbar-qa tests/run-toolbar-checks.sh
 
 系统 Vision OCR 和同语言翻译路径会实际运行；跨语言翻译只在语言模型已安装时执行，否则输出 `NOT RUN`。测试不会为此自动下载模型。
 
+翻译还覆盖按需启动、取消和失败后重试、相同语言配置更新、过期结果隔离及关闭 OCR 窗口时释放视图。系统下载弹窗的独立 UI 入口为 `TranslationUITestApp.swift`，验收步骤见 [1.1.1 翻译验收](../docs/qa/1.1.1.md)。
+
 选区控制点原生渲染检查：
 
 ```bash

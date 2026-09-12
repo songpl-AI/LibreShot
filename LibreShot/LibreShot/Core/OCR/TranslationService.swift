@@ -5,16 +5,13 @@ import Translation
 enum TranslationServiceError: LocalizedError {
     case unsupportedLanguage
     case languageNotInstalled
-    case translationFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .unsupportedLanguage:
             return "不支持该语言组合"
         case .languageNotInstalled:
-            return "语言包未安装，首次使用需联网下载语言包后重试"
-        case .translationFailed(let message):
-            return "翻译失败：\(message)"
+            return "语言包尚未安装。请在系统设置 → 通用 → 语言与地区 → 翻译语言中下载所需语言后重试。"
         }
     }
 }
@@ -36,33 +33,31 @@ enum TranslationService {
         let availability = LanguageAvailability()
         let status = await availability.status(from: source, to: target)
 
-        let session = TranslationSession(installedSource: source, target: target)
         switch status {
         case .unsupported:
             throw TranslationServiceError.unsupportedLanguage
         case .supported:
-            // 支持但未安装：先下载语言包
-            do {
-                try await session.prepareTranslation()
-            } catch {
-                throw TranslationServiceError.languageNotInstalled
-            }
-            return try await runTranslate(session, text)
+            // Headless sessions cannot request downloads. Interactive callers must
+            // use the session supplied by SwiftUI's translationTask instead.
+            throw TranslationServiceError.languageNotInstalled
         case .installed:
-            return try await runTranslate(session, text)
+            return try await translate(text, using: TranslationSession(installedSource: source, target: target))
+        @unknown default:
+            throw TranslationServiceError.unsupportedLanguage
         }
     }
 
-    private static func runTranslate(_ session: TranslationSession, _ text: String) async throws -> String {
-        do {
-            let response = try await session.translate(text)
-            return response.targetText
-        } catch {
-            throw TranslationServiceError.translationFailed(error.localizedDescription)
-        }
+    /// Keep the supplied session inside the lifetime of its translationTask.
+    static func translate(_ text: String, using session: TranslationSession) async throws -> String {
+        try Task.checkCancellation()
+        // translate() presents the system download consent/progress UI if needed,
+        // then continues translation. Installed languages skip that prompt.
+        let response = try await session.translate(text)
+        try Task.checkCancellation()
+        return response.targetText
     }
 
-    private static func detectLanguage(of text: String) -> Locale.Language {
+    static func detectLanguage(of text: String) -> Locale.Language {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
         if let dominant = recognizer.dominantLanguage {
