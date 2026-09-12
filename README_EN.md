@@ -14,9 +14,10 @@ LibreShot is a lightweight, modern screenshot and annotation tool for macOS, bui
   - 📝 **Text**: Inline WYSIWYG editing with multiline, font size and color.
   - 🔢 **Numbered Annotation**: Circled auto-incrementing numbers to highlight points of interest.
   - 💧 **Blur/Mosaic**: Easily hide sensitive information (like faces, accounts).
-- **OCR Text Recognition & Translation**: Built-in offline OCR engine to extract text from screenshots (supports Chinese & English), plus offline translation (macOS 26+). No internet connection required, protecting your privacy.
+- **OCR Text Recognition & Translation**: Built-in offline OCR engine to extract text from screenshots (supports Chinese & English), plus offline translation after language packs are installed (macOS 26+; the initial download requires internet access).
 - **Long Screenshot**: Capture scrolling content into one long image, with a preview before copy or save.
-- **Auto Save**: Automatically save screenshots to a chosen folder (toggleable), with a manual "Save As" option.
+- **Auto Save**: Finishing an area capture with ✅ copies the image and also saves it to your chosen folder when Auto Save is enabled. A manual "Save As" option remains available.
+- **Custom Toolbar**: Choose which tools appear in Settings and reorder them by dragging rows or using the up/down arrows, with a one-click restore to defaults.
 - **Pin to Screen**: Support "pinning" screenshots to the top of the screen for easy reference or cross-app collaboration.
 - **Global Shortcuts**: Customizable global shortcuts to trigger screenshots instantly.
 - **Privacy First**: Runs completely offline, no data is uploaded.
@@ -54,11 +55,13 @@ git clone https://github.com/songpl-AI/LibreShot.git
 
 # 2. Open the project
 cd LibreShot
-open LibreShot.xcodeproj
+open LibreShot/LibreShot.xcodeproj
 
 # 3. Build and Run using Xcode (Cmd + R)
 ```
-*Requirements: Xcode 14.0+, macOS 13.0+*
+*The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
+
+Run `bash build_release.sh` to create a locally signed app, DMG, and SHA256 checksum in a new `dist/` subdirectory. The script preserves existing outputs and does not notarize or upload. See [regression checks](tests/README.md) and the [1.1.0 release notes](docs/releases/1.1.0.md).
 
 ## 🚀 Usage Guide
 
@@ -76,12 +79,12 @@ Click the "Scissors" icon in the menu bar to select functions:
 *(Note: The global shortcut currently bound will be displayed next to the menu item for easy reference)*
 
 ### 3. Annotation & Editing
-After taking a screenshot, it will automatically enter edit mode. The top toolbar provides the following functions:
+After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.
 - **Numbered Annotation**: Click the number icon to place a circled auto-incrementing number.
 - **Mosaic/Blur**: Click the drop icon to select areas to blur.
 - **Text**: Click the "T" icon and click on the image to type inline (WYSIWYG); press Enter for a new line, click elsewhere to commit.
-- **Color & Font Size**: Click the colored dot in the toolbar to open a panel for color (presets + system picker) and font size; drag the bottom-right handle of selected text to scale it proportionally.
+- **Color & Font Size**: Click the four-color palette (red, yellow, blue, green) to open color presets, the system color picker, and font sizes. The thin bar below the palette shows the current color; drag the bottom-right handle of selected text to scale it proportionally.
 
 ### 4. Pin to Screen
 Click the **📌 (Pin)** icon on the toolbar to pin the current screenshot as a floating window on top of the screen. You can drag it around and double-click to close it. This is very useful for code comparison or reference.
@@ -90,10 +93,11 @@ Click the **📌 (Pin)** icon on the toolbar to pin the current screenshot as a 
 Click the **OCR** icon on the toolbar. The software will automatically recognize text in the screenshot and show the result in a popup window, supporting one-click copy; you can also translate the result offline by choosing a target language (macOS 26+).
 
 ### 6. Settings
-Click the icon in the menu bar and select "Settings..." to:
+Click the scissors icon in the menu bar and select "Settings...", or press `Cmd + ,` while LibreShot is active, to:
 - **Set Shortcuts**: Customize global shortcuts for "Area Screenshot" and "Full Screen Screenshot".
 - **Save Path**: Customize the default save location for screenshots.
-- **Auto Save**: When enabled, screenshots are saved directly to the chosen location without confirmation.
+- **Auto Save**: When enabled, ✅ copies and saves an area capture. When disabled, it only copies. If saving fails, an alert appears and the screenshot remains on the clipboard.
+- **Toolbar**: Show or hide buttons and reorder them by dragging rows or clicking the up/down arrows. Hidden tools retain their positions; Complete and Cancel can move but always remain visible. Changes are saved automatically and apply to the next capture. Restore Defaults restores both visibility and order. Hiding Rectangle starts in selection mode; click the active tool again to return to selection mode if its button is hidden. `Esc` always cancels the capture.
 - **Launch Settings**: Set whether to launch at login.
 
 ## ❤️ Support

@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LibreShot capture checks</title>
+<style>
+  body { margin: 0; background: #f3f5f8; color: #182335; font: 24px -apple-system, sans-serif; }
+  main { width: 760px; margin: 36px auto; }
+  h1 { font-size: 36px; }
+  article { margin: 16px 0; padding: 20px 28px; border-left: 12px solid; background: white; }
+  small { font-size: 18px; }
+  .bar { height: 10px; margin-top: 15px; border-radius: 4px; }
+</style>
+<main>
+  <h1>LibreShot Capture Test</h1>
+  <p>Hello world. This is a screenshot test.</p>
+  <p>截图测试：颜色、文字与滚动拼接。</p>
+  <div id="rows"></div>
+</main>
+<script>
+  for (let i = 1; i <= 30; i++) {
+    const hue = (i * 137) % 360;
+    const row = document.createElement('article');
+    row.style.borderColor = `hsl(${hue}, 65%, 45%)`;
+    row.innerHTML = `<strong>Section ${String(i).padStart(2, '0')} — Screenshot checklist</strong>
+      <p>滚动测试第 ${i} 段 · Unique reference ${1000 + i * 79}</p>
+      <small>Text should appear once, in order, without repeated seams.</small>
+      <div class="bar" style="width:${35 + (i * 19) % 65}%;background:hsl(${hue},65%,45%)"></div>`;
+    document.querySelector('#rows').append(row);
+  }
+</script>
