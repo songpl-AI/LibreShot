@@ -1,0 +1,20 @@
+# 更新日志 / Changelog
+
+## [1.1.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.1.1) — 2026-09-13
+
+包含此前本地试用的 1.1.0 改动。相对 v1.0.4：
+
+- 工具栏显示、隐藏、排序及恢复默认；悬停名称提示和统一按钮区域。
+- 红黄蓝绿四色入口；截图选区立即可缩放；一次 Esc 取消。
+- 修复设置入口、截图错误说明、保存失败时剪贴板保留，以及完成操作提交输入中的文字。
+- 普通截图采集不合成鼠标指针。
+- OCR 翻译按需显示系统语言包下载提示，修复取消后的同语言重试。
+
+[详细更新、安装说明及已知边界](docs/releases/1.1.1.md)。
+
+## [1.0.4](https://github.com/songpl-AI/LibreShot/releases/tag/v1.0.4) — 2026-08-30
+
+- 修复文字标注输入，改为内联编辑。
+- 默认矩形工具、序号标注、OCR 系统翻译、自动保存设置、颜色和字号调整。
+
+更早版本见 [GitHub Releases](https://github.com/songpl-AI/LibreShot/releases)。
