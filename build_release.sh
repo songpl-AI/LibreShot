@@ -1,65 +1,36 @@
 #!/bin/bash
-
-# Ensure script is executed from its own directory
+set -euo pipefail
 cd "$(dirname "$0")"
 
-# 设置项目路径和名称
-PROJECT_ROOT="LibreShot"
-PROJECT_NAME="LibreShot"
-SCHEME_NAME="LibreShot"
-BUILD_DIR="$(pwd)/build"
-DMG_NAME="${PROJECT_NAME}.dmg"
+# Use a fresh destination. Never erase tracked build/ artifacts or previous packages.
+release_output="${1:-$(pwd)/dist/LibreShot-$(date +%Y%m%d-%H%M%S)}"
+mkdir -p "$(dirname "$release_output")"
+mkdir "$release_output"
+release_output="$(cd "$release_output" && pwd)"
+archive_path="$release_output/LibreShot.xcarchive"
 
-# 清理旧构建
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
-
-echo "🚀 开始构建 ${PROJECT_NAME}..."
-
-# 1. 归档 (Archive)
-# 使用 CODE_SIGN_IDENTITY="-" 进行临时签名，或者依赖 Xcode 项目中的设置
+echo "Building signed Release archive..."
 xcodebuild archive \
-  -project "${PROJECT_ROOT}/${PROJECT_NAME}.xcodeproj" \
-  -scheme "${SCHEME_NAME}" \
+  -project LibreShot/LibreShot.xcodeproj \
+  -scheme LibreShot \
   -configuration Release \
-  -archivePath "${BUILD_DIR}/${PROJECT_NAME}.xcarchive" \
-  -quiet || { echo "❌ 构建失败"; exit 1; }
+  -archivePath "$archive_path" \
+  -destination 'generic/platform=macOS' \
+  -quiet
 
-echo "✅ 归档完成"
-
-# 2. 导出 .app
-# 直接从归档中提取 .app
-APP_PATH="${BUILD_DIR}/${PROJECT_NAME}.xcarchive/Products/Applications/${PROJECT_NAME}.app"
-
-if [ ! -d "$APP_PATH" ]; then
-    echo "❌ 未找到 .app 文件: $APP_PATH"
-    exit 1
-fi
-
-cp -R "$APP_PATH" "$BUILD_DIR/"
-
-echo "✅ 已导出 ${PROJECT_NAME}.app"
-
-# 3. 创建 DMG
-echo "📦 正在创建 DMG 安装包..."
-
-# 创建临时文件夹用于生成 DMG
-DMG_SRC_DIR="${BUILD_DIR}/dmg_source"
-mkdir -p "$DMG_SRC_DIR"
-cp -R "${BUILD_DIR}/${PROJECT_NAME}.app" "$DMG_SRC_DIR/"
-ln -s /Applications "$DMG_SRC_DIR/Applications"
-
-# 使用 hdiutil 创建 DMG
-hdiutil create \
-  -volname "${PROJECT_NAME}" \
-  -srcfolder "$DMG_SRC_DIR" \
-  -ov -format UDZO \
-  "${BUILD_DIR}/${DMG_NAME}" \
-  -quiet || { echo "❌ DMG 创建失败"; exit 1; }
-
-# 清理临时文件
-rm -rf "$DMG_SRC_DIR"
-
-echo "🎉 构建成功！"
-echo "📂 安装包位置: ${BUILD_DIR}/${DMG_NAME}"
-echo "   (你可以将此文件上传到 GitHub Releases)"
+app_path="$release_output/LibreShot.app"
+ditto "$archive_path/Products/Applications/LibreShot.app" "$app_path"
+codesign --verify --deep --strict "$app_path"
+version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")
+build_number=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Contents/Info.plist")
+dmg_name="LibreShot-${version}-${build_number}.dmg"
+dmg_source=$(mktemp -d "$release_output/dmg-source.XXXXXX")
+trap 'rm -rf "$dmg_source"' EXIT
+ditto "$app_path" "$dmg_source/LibreShot.app"
+ln -s /Applications "$dmg_source/Applications"
+hdiutil create -volname "LibreShot $version" -srcfolder "$dmg_source" \
+  -format UDZO "$release_output/$dmg_name" -quiet
+hdiutil verify "$release_output/$dmg_name" -quiet
+(cd "$release_output" && shasum -a 256 "$dmg_name" > SHA256SUMS)
+echo "Package: $release_output/$dmg_name"
+echo "Signed with this Mac's configured identity; notarization is a separate distribution step."
