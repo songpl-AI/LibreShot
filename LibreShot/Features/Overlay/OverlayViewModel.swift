@@ -34,6 +34,19 @@ enum SelectionHandle: CaseIterable {
     case bottom
     case bottomLeft
     case left
+
+    func position(in rect: CGRect) -> CGPoint {
+        switch self {
+        case .topLeft: return CGPoint(x: rect.minX, y: rect.minY)
+        case .top: return CGPoint(x: rect.midX, y: rect.minY)
+        case .topRight: return CGPoint(x: rect.maxX, y: rect.minY)
+        case .right: return CGPoint(x: rect.maxX, y: rect.midY)
+        case .bottomRight: return CGPoint(x: rect.maxX, y: rect.maxY)
+        case .bottom: return CGPoint(x: rect.midX, y: rect.maxY)
+        case .bottomLeft: return CGPoint(x: rect.minX, y: rect.maxY)
+        case .left: return CGPoint(x: rect.minX, y: rect.midY)
+        }
+    }
 }
 
 class OverlayViewModel: ObservableObject {
@@ -43,6 +56,19 @@ class OverlayViewModel: ObservableObject {
     @Published var selectionRect: CGRect = .zero
     @Published var state: OverlayState = .idle
     
+    // Freeze visibility for the current capture session.
+    @Published private(set) var toolbarConfiguration: ToolbarConfiguration
+    private let settings: SettingsService
+
+    init(settings: SettingsService = .shared) {
+        self.settings = settings
+        self.toolbarConfiguration = settings.toolbarConfiguration
+    }
+
+    var visibleToolbarItems: [ToolbarItem] {
+        toolbarConfiguration.visibleItems.filter { $0 != .longCapture || captureMode == .normal }
+    }
+
     // Editor State
     @Published var selectedTool: AnnotationType?
     @Published var annotations: [Annotation] = []
@@ -65,22 +91,27 @@ class OverlayViewModel: ObservableObject {
     // MARK: - Finalize
     
     func confirmCopy() {
+        commitTextInput()
         onCapture?(selectionRect, annotations, .copy, previewImage)
     }
     
     func confirmSave() {
+        commitTextInput()
         onCapture?(selectionRect, annotations, .save, previewImage)
     }
     
     func confirmPin() {
+        commitTextInput()
         onCapture?(selectionRect, annotations, .pin, previewImage)
     }
 
     func confirmOCR() {
+        commitTextInput()
         onCapture?(selectionRect, annotations, .ocr, previewImage)
     }
 
     func confirmSaveAs() {
+        commitTextInput()
         onCapture?(selectionRect, annotations, .saveAs, previewImage)
     }
     
@@ -148,8 +179,8 @@ class OverlayViewModel: ObservableObject {
                 confirmLongCaptureRegion()
             } else {
                 state = .editing
-                // 进入编辑态默认选中矩形框（许愿功能 1）
-                selectedTool = .rectangle
+                // 默认使用矩形；用户隐藏矩形后进入选择模式。
+                selectedTool = toolbarConfiguration.isVisible(.rectangle) ? .rectangle : nil
             }
         }
     }
@@ -281,6 +312,7 @@ class OverlayViewModel: ObservableObject {
     }
     
     func reset() {
+        toolbarConfiguration = settings.toolbarConfiguration
         startPoint = nil
         currentPoint = nil
         selectionRect = .zero
@@ -565,6 +597,34 @@ class OverlayViewModel: ObservableObject {
 
     func endMoveSelection() {
         isMovingSelection = false
+    }
+
+    var canResizeSelection: Bool {
+        (state == .editing || state == .longCaptureReady) && !selectionRect.isEmpty
+    }
+
+    /// Resize handles take priority over annotation tools for the entire drag.
+    /// Use the gesture's start point so crossing a handle while drawing cannot resize the crop.
+    @discardableResult
+    func handleSelectionResizeDrag(from start: CGPoint, to point: CGPoint, within bounds: CGRect) -> Bool {
+        guard canResizeSelection, !isMovingSelection, !isResizingText, currentAnnotation == nil else { return false }
+        if activeSelectionHandle == nil {
+            let candidates = SelectionHandle.allCases.filter {
+                let position = $0.position(in: selectionRect)
+                return abs(start.x - position.x) <= 10 && abs(start.y - position.y) <= 10
+            }
+            // Hit areas overlap for small selections; use the nearest visible handle.
+            guard let handle = candidates.min(by: {
+                let a = $0.position(in: selectionRect), b = $1.position(in: selectionRect)
+                return hypot(start.x - a.x, start.y - a.y) < hypot(start.x - b.x, start.y - b.y)
+            }) else { return false }
+            let tool = selectedTool
+            commitTextInput()
+            selectedTool = tool
+            beginResizeSelection(handle: handle, at: start)
+        }
+        updateResizeSelection(to: point, within: bounds)
+        return true
     }
 
     func beginResizeSelection(handle: SelectionHandle, at point: CGPoint) {

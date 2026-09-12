@@ -5,11 +5,50 @@ import CoreGraphics
 import Vision
 import Combine
 
-enum CaptureServiceError: Error {
+enum CaptureServiceError: LocalizedError {
     case noDisplay
     case permissionDenied
     case captureFailed
     case imageConversionFailed
+    case screenContentUnavailable(underlying: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .noDisplay:
+            return "未找到可截图的显示器，请确认显示器已连接后重试。"
+        case .permissionDenied:
+            return "LibreShot 尚未获得屏幕录制权限。请前往“系统设置 → 隐私与安全性 → 录屏与系统录音”（旧版 macOS 为“屏幕录制”），允许 LibreShot 后退出并重新打开应用。若已开启，请确认当前运行的是获得授权的版本。"
+        case .captureFailed:
+            return "截图失败，请重新选择截图区域后重试。"
+        case .imageConversionFailed:
+            return "无法生成截图图片，请重新截图后重试。"
+        case .screenContentUnavailable(let underlying):
+            let error = underlying as NSError
+            let reason = error.domain == SCStreamErrorDomain && error.code == SCStreamError.Code.userDeclined.rawValue
+                ? CaptureServiceError.permissionDenied.localizedDescription
+                : "无法读取可截图的屏幕内容，请稍后重试。"
+            return "\(reason)\n\n系统错误：\(error.localizedDescription)\n\(error.domain)（\(error.code)）"
+        }
+    }
+}
+
+/// Shared by ordinary and scrolling capture, keeping permission and system failures distinct.
+@MainActor
+enum ScreenCaptureAccess {
+    static func content(
+        preflight: () -> Bool = CGPreflightScreenCaptureAccess,
+        request: () -> Bool = CGRequestScreenCaptureAccess,
+        load: () async throws -> SCShareableContent
+    ) async throws -> SCShareableContent {
+        if !preflight(), !request() {
+            throw CaptureServiceError.permissionDenied
+        }
+        do {
+            return try await load()
+        } catch {
+            throw CaptureServiceError.screenContentUnavailable(underlying: error)
+        }
+    }
 }
 
 
@@ -27,7 +66,21 @@ class CaptureService {
     private var isStopping = false
     private var currentScale: CGFloat = 1.0
     
-    init() {}
+    private let settings: SettingsService
+    private let pasteboard: NSPasteboard
+
+    init(settings: SettingsService = .shared, pasteboard: NSPasteboard = .general) {
+        self.settings = settings
+        self.pasteboard = pasteboard
+    }
+
+    /// Copy first so a failed automatic save never discards the completed screenshot.
+    @MainActor
+    func completeCapture(_ image: NSImage) async throws -> URL? {
+        copyToClipboard(image)
+        guard settings.autoSaveEnabled else { return nil }
+        return try await saveImageDirectly(image)
+    }
     
     func saveImageWithFallback(_ image: NSImage) async throws -> URL {
         return try await MainActor.run {
@@ -70,7 +123,7 @@ class CaptureService {
 
     /// 直接保存到预设目录（不弹保存面板）。目录优先级：设置里的「保存位置」→ ~/Pictures。
     func saveImageDirectly(_ image: NSImage) async throws -> URL {
-        let directory = SettingsService.shared.saveDirectory
+        let directory = settings.saveDirectory
             ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
 
@@ -90,7 +143,7 @@ class CaptureService {
             counter += 1
         }
 
-        let accessed = SettingsService.shared.saveDirectory != nil && directory.startAccessingSecurityScopedResource()
+        let accessed = settings.saveDirectory != nil && directory.startAccessingSecurityScopedResource()
         defer {
             if accessed {
                 directory.stopAccessingSecurityScopedResource()
@@ -102,7 +155,6 @@ class CaptureService {
     }
 
     func copyToClipboard(_ image: NSImage) {
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         
         guard let pngData = pngData(from: image) else {
@@ -174,15 +226,8 @@ class CaptureService {
     // Updated to accept optional displayID. If nil, captures main display.
     func captureDisplayImage(displayID: CGDirectDisplayID? = nil) async throws -> NSImage {
         isStopping = false
-        if !CGPreflightScreenCaptureAccess() {
-            _ = CGRequestScreenCaptureAccess()
-            throw CaptureServiceError.permissionDenied
-        }
-        let content: SCShareableContent
-        do {
-            content = try await SCShareableContent.current
-        } catch {
-            throw CaptureServiceError.permissionDenied
+        let content = try await ScreenCaptureAccess.content {
+            try await SCShareableContent.current
         }
         
         let display: SCDisplay
@@ -216,16 +261,7 @@ class CaptureService {
         self.currentScale = scale
         
         let filter = SCContentFilter(display: display, excludingWindows: [])
-        let configuration = SCStreamConfiguration()
-        
-        // Ensure we capture at physical resolution
-        configuration.width = physicalWidth
-        configuration.height = physicalHeight
-        configuration.scalesToFit = false // Ensure no automatic scaling occurs
-        
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.showsCursor = true
-        configuration.capturesAudio = false
+        let configuration = Self.displayConfiguration(width: physicalWidth, height: physicalHeight)
 
         return try await withCheckedThrowingContinuation { continuation in
             continuationLock.lock()
@@ -248,6 +284,20 @@ class CaptureService {
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    static func displayConfiguration(width: Int, height: Int) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        // Preserve physical resolution without automatic scaling.
+        configuration.width = width
+        configuration.height = height
+        configuration.scalesToFit = false
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        // Exclude the system cursor from both frozen previews and final screenshots.
+        // The live overlay cursor remains visible for selection and annotation.
+        configuration.showsCursor = false
+        configuration.capturesAudio = false
+        return configuration
     }
 
     private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
@@ -866,11 +916,9 @@ private final class LongCaptureStreamService {
     private var isPaused = false
     
     func start(region: LongCaptureRegion, onFrame: @escaping (LongCaptureFrame) -> Void) async throws {
-        if !CGPreflightScreenCaptureAccess() {
-            _ = CGRequestScreenCaptureAccess()
-            throw CaptureServiceError.permissionDenied
+        let content = try await ScreenCaptureAccess.content {
+            try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         }
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == region.displayID }) else {
             throw CaptureServiceError.noDisplay
         }

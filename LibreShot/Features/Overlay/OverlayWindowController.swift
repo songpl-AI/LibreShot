@@ -2,26 +2,6 @@ import Cocoa
 import Combine
 import SwiftUI
 
-class OverlayWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-    
-    var onEscapeKey: (() -> Void)?
-    var onConfirmKey: (() -> Void)?
-    
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            onEscapeKey?()
-            return
-        }
-        if event.keyCode == 36 || event.keyCode == 76 {
-            onConfirmKey?()
-            return
-        }
-        super.keyDown(with: event)
-    }
-}
-
 class OverlayWindowController: NSWindowController {
     private var cursorPushed = false
     private let viewModel = OverlayViewModel()
@@ -63,6 +43,7 @@ class OverlayWindowController: NSWindowController {
         window.hasShadow = false
         window.level = .screenSaver
         window.ignoresMouseEvents = false
+        window.acceptsMouseMovedEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
         self.init(window: window)
@@ -118,20 +99,8 @@ class OverlayWindowController: NSWindowController {
         }
         viewModel.onCancel = cancelAction
         
-        // Esc 分层：先退文字输入 → 再退工具到选择模式 → 无工具时取消截图
-        overlayWindow.onEscapeKey = { [weak self] in
-            guard let self else {
-                cancelAction()
-                return
-            }
-            if self.viewModel.isEditingText {
-                self.viewModel.cancelTextInput()
-            } else if self.viewModel.selectedTool != nil {
-                self.viewModel.selectTool(nil)
-            } else {
-                cancelAction()
-            }
-        }
+        // Escape always cancels the capture, just like the toolbar's Cancel button.
+        overlayWindow.onEscapeKey = cancelAction
         overlayWindow.onConfirmKey = nil
         
         // 3. Determine Screen

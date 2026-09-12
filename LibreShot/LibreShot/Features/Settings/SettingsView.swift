@@ -19,14 +19,105 @@ struct SettingsView: View {
                 }
                 .tag(1)
             
+            ToolbarSettingsView(settings: settings)
+                .tabItem {
+                    Label("工具栏", systemImage: "slider.horizontal.3")
+                }
+                .tag(2)
+
             AboutSettingsView()
                 .tabItem {
                     Label("关于", systemImage: "info.circle")
                 }
-                .tag(2)
+                .tag(3)
         }
-        .frame(width: 520, height: 360)
+        .frame(width: 560, height: 430)
         .padding()
+    }
+}
+
+struct ToolbarSettingsView: View {
+    @ObservedObject var settings: SettingsService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("自定义截图工具栏")
+                .font(.headline)
+            Text("拖动工具行或点击箭头调整顺序，勾选要显示的工具。")
+                .font(.callout)
+                .foregroundColor(.secondary)
+
+            List {
+                ForEach(settings.toolbarConfiguration.orderedItems) { item in
+                    HStack(spacing: 10) {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundColor(.secondary)
+                            .accessibilityHidden(true)
+                        Toggle(isOn: Binding(
+                            get: { settings.toolbarConfiguration.isVisible(item) },
+                            set: { settings.setToolbarItem(item, visible: $0) }
+                        )) {
+                            Label {
+                                Text(item.title)
+                            } icon: {
+                                if item == .style {
+                                    ToolbarColorIcon().frame(width: 20)
+                                } else {
+                                    Image(systemName: item.iconName).frame(width: 20)
+                                }
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .disabled(item.isRequired)
+                        .help(item.isRequired ? "始终显示，确保可以完成或取消截图" : item.title)
+                        Spacer()
+                        if item.isRequired {
+                            Text("始终显示").font(.caption).foregroundColor(.secondary)
+                        }
+                        Button { move(item, upwards: true) } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .disabled(item == settings.toolbarConfiguration.orderedItems.first)
+                        .accessibilityLabel("上移\(item.title)")
+                        .help("上移\(item.title)")
+                        Button { move(item, upwards: false) } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .disabled(item == settings.toolbarConfiguration.orderedItems.last)
+                        .accessibilityLabel("下移\(item.title)")
+                        .help("下移\(item.title)")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .padding(.vertical, 3)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityAction(named: Text("上移")) { move(item, upwards: true) }
+                    .accessibilityAction(named: Text("下移")) { move(item, upwards: false) }
+                }
+                .onMove(perform: settings.moveToolbarItems)
+            }
+            .listStyle(.bordered)
+
+            Text("从下一次截图开始生效。按 Esc 直接取消截图。\n隐藏选择按钮后，可再次点击当前工具，切回选择模式。")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Text("已显示 \(settings.toolbarConfiguration.visibleItems.count) 个按钮")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("恢复默认") { settings.restoreDefaultToolbar() }
+                    .help("恢复全部工具的显示和默认顺序")
+            }
+        }
+        .padding()
+    }
+
+    private func move(_ item: ToolbarItem, upwards: Bool) {
+        guard let index = settings.toolbarConfiguration.orderedItems.firstIndex(of: item) else { return }
+        settings.moveToolbarItems(fromOffsets: IndexSet(integer: index), toOffset: upwards ? index - 1 : index + 2)
     }
 }
 
@@ -104,7 +195,7 @@ struct GeneralSettingsView: View {
                                 Image(systemName: "folder.fill")
                                     .foregroundColor(.blue)
                                     .font(.system(size: 14))
-                                Text(settings.saveDirectory?.path ?? "桌面 (默认)")
+                                Text(settings.saveDirectory?.path ?? "图片 (默认)")
                                     .font(.system(size: 13))
                                     .lineLimit(1)
                                     .truncationMode(.middle)
@@ -133,6 +224,7 @@ struct GeneralSettingsView: View {
 
                     SettingsRow("自动保存:") {
                         Toggle("截图后自动保存", isOn: $settings.autoSaveEnabled)
+                            .help("区域截图点击完成时，复制并保存到指定目录；关闭后完成仅复制。全屏截图及长截图的保存按钮也遵循此设置。")
                     }
                     .padding(8)
                 }

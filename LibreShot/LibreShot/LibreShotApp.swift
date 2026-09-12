@@ -14,9 +14,19 @@ struct LibreShotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // No visible scenes, app is managed by AppDelegate
         Settings {
-            EmptyView()
+            SettingsView()
+        }
+        .commands {
+            // The app menu and status-bar menu share the same settings window.
+            CommandGroup(replacing: .appSettings) {
+                Button("设置…") { appDelegate.openSettings() }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+            CommandGroup(replacing: .appTermination) {
+                Button("退出 LibreShot") { appDelegate.quitApp() }
+                    .keyboardShortcut("q", modifiers: .command)
+            }
         }
     }
 }
@@ -45,6 +55,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openSettings()
+        return false
+    }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         isUserInitiatedTermination ? .terminateNow : .terminateCancel
@@ -71,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         longCaptureMenuItem = longCaptureItem
         
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ","))
+        let settingsItem = NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "检查更新...", action: #selector(checkForUpdates), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
@@ -170,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    @objc private func openSettings() {
+    @objc func openSettings() {
         if settingsWindowController == nil {
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 450, height: 250),
@@ -179,8 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 defer: false
             )
             window.title = "偏好设置"
-            window.center()
             window.contentView = NSHostingView(rootView: SettingsView())
+            window.center()
             settingsWindowController = NSWindowController(window: window)
         }
         
@@ -195,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func quitApp() {
+    @objc func quitApp() {
         isUserInitiatedTermination = true
         NSApplication.shared.terminate(nil)
     }
@@ -408,7 +425,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         throw error
                     }
                 case .copy:
-                    CaptureService.shared.copyToClipboard(outputImage)
+                    do {
+                        _ = try await CaptureService.shared.completeCapture(outputImage)
+                    } catch {
+                        showAlert(title: "已复制，但自动保存失败", message: "截图仍在剪贴板中，可粘贴使用。\n\(error.localizedDescription)")
+                    }
                 case .pin:
                     // Create and show pinned window
                     await MainActor.run {

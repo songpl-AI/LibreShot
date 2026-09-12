@@ -11,91 +11,117 @@ class SettingsService: ObservableObject {
     
     @Published var saveDirectoryBookmark: Data? {
         didSet {
-            UserDefaults.standard.set(saveDirectoryBookmark, forKey: "saveDirectoryBookmark")
+            defaults.set(saveDirectoryBookmark, forKey: "saveDirectoryBookmark")
         }
     }
     
     @Published var shortcutKey: Int {
         didSet {
-            UserDefaults.standard.set(shortcutKey, forKey: "shortcutKey")
+            defaults.set(shortcutKey, forKey: "shortcutKey")
         }
     }
     
     @Published var shortcutModifiers: Int {
         didSet {
-            UserDefaults.standard.set(shortcutModifiers, forKey: "shortcutModifiers")
+            defaults.set(shortcutModifiers, forKey: "shortcutModifiers")
         }
     }
 
     @Published var fullScreenShortcutKey: Int {
         didSet {
-            UserDefaults.standard.set(fullScreenShortcutKey, forKey: "fullScreenShortcutKey")
+            defaults.set(fullScreenShortcutKey, forKey: "fullScreenShortcutKey")
         }
     }
     
     @Published var fullScreenShortcutModifiers: Int {
         didSet {
-            UserDefaults.standard.set(fullScreenShortcutModifiers, forKey: "fullScreenShortcutModifiers")
+            defaults.set(fullScreenShortcutModifiers, forKey: "fullScreenShortcutModifiers")
         }
     }
     
     @Published var longScreenshotShortcutKey: Int {
         didSet {
-            UserDefaults.standard.set(longScreenshotShortcutKey, forKey: "longScreenshotShortcutKey")
+            defaults.set(longScreenshotShortcutKey, forKey: "longScreenshotShortcutKey")
         }
     }
     
     @Published var longScreenshotShortcutModifiers: Int {
         didSet {
-            UserDefaults.standard.set(longScreenshotShortcutModifiers, forKey: "longScreenshotShortcutModifiers")
+            defaults.set(longScreenshotShortcutModifiers, forKey: "longScreenshotShortcutModifiers")
         }
     }
     
     @Published var launchAtLogin: Bool {
         didSet {
-            UserDefaults.standard.set(launchAtLogin, forKey: "launchAtLogin")
+            defaults.set(launchAtLogin, forKey: "launchAtLogin")
         }
     }
     
     @Published var useRoundedCorners: Bool {
         didSet {
-            UserDefaults.standard.set(useRoundedCorners, forKey: "useRoundedCorners")
+            defaults.set(useRoundedCorners, forKey: "useRoundedCorners")
         }
     }
     
     @Published var playSound: Bool {
         didSet {
-            UserDefaults.standard.set(playSound, forKey: "playSound")
+            defaults.set(playSound, forKey: "playSound")
         }
     }
 
     @Published var autoSaveEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(autoSaveEnabled, forKey: "autoSaveEnabled")
+            defaults.set(autoSaveEnabled, forKey: "autoSaveEnabled")
         }
     }
 
-    private init() {
-        self.saveDirectoryBookmark = UserDefaults.standard.data(forKey: "saveDirectoryBookmark")
+    @Published private(set) var toolbarConfiguration: ToolbarConfiguration {
+        didSet {
+            defaults.set(toolbarConfiguration.hiddenItems.sorted(), forKey: "hiddenToolbarItems")
+            defaults.set(toolbarConfiguration.orderedItems.map(\.rawValue), forKey: "toolbarItemOrder")
+        }
+    }
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        self.toolbarConfiguration = ToolbarConfiguration(
+            hiddenItems: Set(defaults.stringArray(forKey: "hiddenToolbarItems") ?? []),
+            itemOrder: defaults.stringArray(forKey: "toolbarItemOrder") ?? []
+        )
+        self.saveDirectoryBookmark = defaults.data(forKey: "saveDirectoryBookmark")
         
         // Defaults:
         // Area Capture: Cmd + Shift + X (KeyCode: 7, Modifiers: 768)
         // Full Screen: Cmd + Shift + A (KeyCode: 0, Modifiers: 768)
-        self.shortcutKey = UserDefaults.standard.object(forKey: "shortcutKey") as? Int ?? 7
-        self.shortcutModifiers = UserDefaults.standard.object(forKey: "shortcutModifiers") as? Int ?? 768
+        self.shortcutKey = defaults.object(forKey: "shortcutKey") as? Int ?? 7
+        self.shortcutModifiers = defaults.object(forKey: "shortcutModifiers") as? Int ?? 768
         
-        self.fullScreenShortcutKey = UserDefaults.standard.object(forKey: "fullScreenShortcutKey") as? Int ?? 0
-        self.fullScreenShortcutModifiers = UserDefaults.standard.object(forKey: "fullScreenShortcutModifiers") as? Int ?? 768
+        self.fullScreenShortcutKey = defaults.object(forKey: "fullScreenShortcutKey") as? Int ?? 0
+        self.fullScreenShortcutModifiers = defaults.object(forKey: "fullScreenShortcutModifiers") as? Int ?? 768
         
-        self.longScreenshotShortcutKey = UserDefaults.standard.object(forKey: "longScreenshotShortcutKey") as? Int ?? 37
-        self.longScreenshotShortcutModifiers = UserDefaults.standard.object(forKey: "longScreenshotShortcutModifiers") as? Int ?? 768
+        self.longScreenshotShortcutKey = defaults.object(forKey: "longScreenshotShortcutKey") as? Int ?? 37
+        self.longScreenshotShortcutModifiers = defaults.object(forKey: "longScreenshotShortcutModifiers") as? Int ?? 768
         
-        self.launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
-        self.useRoundedCorners = UserDefaults.standard.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
-        self.playSound = UserDefaults.standard.object(forKey: "playSound") as? Bool ?? true // Default to true
-        self.autoSaveEnabled = UserDefaults.standard.object(forKey: "autoSaveEnabled") as? Bool ?? true // Default to true
+        self.launchAtLogin = defaults.bool(forKey: "launchAtLogin")
+        self.useRoundedCorners = defaults.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
+        self.playSound = defaults.object(forKey: "playSound") as? Bool ?? true // Default to true
+        self.autoSaveEnabled = defaults.object(forKey: "autoSaveEnabled") as? Bool ?? true // Default to true
     }
     
+    func setToolbarItem(_ item: ToolbarItem, visible: Bool) {
+        toolbarConfiguration.setVisible(visible, for: item)
+    }
+
+    func restoreDefaultToolbar() {
+        toolbarConfiguration = ToolbarConfiguration()
+    }
+
+    func moveToolbarItems(fromOffsets source: IndexSet, toOffset destination: Int) {
+        toolbarConfiguration.moveItems(fromOffsets: source, toOffset: destination)
+    }
+
     var saveDirectory: URL? {
         get {
             guard let data = saveDirectoryBookmark else { return nil }

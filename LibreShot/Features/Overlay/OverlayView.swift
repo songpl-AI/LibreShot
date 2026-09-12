@@ -80,7 +80,7 @@ struct OverlayView: View {
                             .frame(width: rect.width, height: rect.height)
                             .position(x: rect.midX, y: rect.midY)
                         
-                        if (viewModel.state == .editing || viewModel.state == .longCaptureReady) && viewModel.selectedTool == nil {
+                        if viewModel.canResizeSelection {
                             let handleSize: CGFloat = 8
                             let handleHitSize: CGFloat = 20
                             ForEach(SelectionHandle.allCases, id: \.self) { handle in
@@ -90,7 +90,7 @@ struct OverlayView: View {
                                         .frame(width: handleSize, height: handleSize)
                                 }
                                 .frame(width: handleHitSize, height: handleHitSize)
-                                .position(handlePosition(for: handle, in: rect))
+                                .position(handle.position(in: rect))
                                 .allowsHitTesting(false)
                             }
                         }
@@ -100,9 +100,11 @@ struct OverlayView: View {
                 
                 // Layer 4: Toolbar (Only in Editing mode)
                 if viewModel.state == .editing {
-                    let toolbarPos = calculateToolbarPosition(screenSize: geometry.size)
-                    EditorToolbarView(viewModel: viewModel)
+                    let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
+                    let toolbarPos = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size)
+                    EditorToolbarView(viewModel: viewModel, layout: layout, toolbarPosition: toolbarPos, screenSize: geometry.size)
                         .position(x: toolbarPos.x, y: toolbarPos.y)
+                        .zIndex(1)
                         
                     // Text Input Overlay（内联编辑：所见即所得，随内容动态调整大小）
                     if viewModel.isEditingText {
@@ -142,6 +144,12 @@ struct OverlayView: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
+                        if viewModel.handleSelectionResizeDrag(
+                            from: value.startLocation, to: value.location,
+                            within: geometry.frame(in: .named("overlay"))
+                        ) {
+                            return
+                        }
                         if viewModel.isEditingText {
                             // 点击编辑器外部提交
                             let editorRect = viewModel.editingTextEditorFrame
@@ -168,22 +176,12 @@ struct OverlayView: View {
                                 let bounds = geometry.frame(in: .named("overlay"))
                                 let rect = viewModel.selectionRect
                                 
-                                if viewModel.isManipulatingSelection {
-                                    if viewModel.activeSelectionHandle != nil {
-                                        viewModel.updateResizeSelection(to: value.location, within: bounds)
-                                    } else if viewModel.isMovingSelection {
-                                        viewModel.updateMoveSelection(to: value.location, within: bounds)
-                                    }
+                                if viewModel.isMovingSelection {
+                                    viewModel.updateMoveSelection(to: value.location, within: bounds)
                                     return
                                 }
                                 
                                 if value.translation == .zero {
-                                    if let handle = selectionHandle(at: value.startLocation, in: rect, hitSize: 20) {
-                                        viewModel.beginResizeSelection(handle: handle, at: value.startLocation)
-                                        viewModel.updateResizeSelection(to: value.location, within: bounds)
-                                        return
-                                    }
-
                                     // 文字缩放手柄
                                     if let textHandle = viewModel.selectedTextResizeHandle,
                                        abs(value.startLocation.x - textHandle.x) <= 8,
@@ -244,6 +242,11 @@ struct OverlayView: View {
                         if viewModel.state == .selecting {
                             viewModel.endSelection()
                         } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {
+                            if viewModel.activeSelectionHandle != nil {
+                                viewModel.endResizeSelection()
+                                viewModel.currentPoint = nil
+                                return
+                            }
                             
                             // Text Tool Click
                             if viewModel.selectedTool == .text {
@@ -268,9 +271,6 @@ struct OverlayView: View {
                                 if viewModel.isMovingSelection {
                                     viewModel.endMoveSelection()
                                 }
-                                if viewModel.activeSelectionHandle != nil {
-                                    viewModel.endResizeSelection()
-                                }
                                 viewModel.currentPoint = nil
                             }
                             // Drawing Mode
@@ -284,22 +284,6 @@ struct OverlayView: View {
             )
         }
         .background(Color.clear)
-    }
-    
-    // Calculate toolbar position based on selection and screen bounds
-    func calculateToolbarPosition(screenSize: CGSize) -> CGPoint {
-        let rect = viewModel.selectionRect
-        let padding: CGFloat = 10
-        let toolbarHeight: CGFloat = 80 // Increased height for color picker
-        
-        var y = rect.maxY + padding + toolbarHeight / 2
-        
-        // If toolbar would be off-screen at bottom, move it above selection
-        if y > screenSize.height - 80 {
-            y = rect.minY - padding - toolbarHeight / 2
-        }
-         
-        return CGPoint(x: rect.midX, y: y)
     }
     
     func calculateLongCaptureStatusPosition(screenSize: CGSize) -> CGPoint {
@@ -461,37 +445,6 @@ struct OverlayView: View {
         }
     }
 
-    func handlePosition(for handle: SelectionHandle, in rect: CGRect) -> CGPoint {
-        switch handle {
-        case .topLeft:
-            return CGPoint(x: rect.minX, y: rect.minY)
-        case .top:
-            return CGPoint(x: rect.midX, y: rect.minY)
-        case .topRight:
-            return CGPoint(x: rect.maxX, y: rect.minY)
-        case .right:
-            return CGPoint(x: rect.maxX, y: rect.midY)
-        case .bottomRight:
-            return CGPoint(x: rect.maxX, y: rect.maxY)
-        case .bottom:
-            return CGPoint(x: rect.midX, y: rect.maxY)
-        case .bottomLeft:
-            return CGPoint(x: rect.minX, y: rect.maxY)
-        case .left:
-            return CGPoint(x: rect.minX, y: rect.midY)
-        }
-    }
-
-    func selectionHandle(at point: CGPoint, in rect: CGRect, hitSize: CGFloat) -> SelectionHandle? {
-        let half = hitSize / 2
-        for handle in SelectionHandle.allCases {
-            let position = handlePosition(for: handle, in: rect)
-            if abs(point.x - position.x) <= half && abs(point.y - position.y) <= half {
-                return handle
-            }
-        }
-        return nil
-    }
 }
 
 struct LongCaptureInlineStatusView: View {

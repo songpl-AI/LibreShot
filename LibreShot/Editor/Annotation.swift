@@ -20,8 +20,8 @@ enum AnnotationType: String, CaseIterable, Identifiable {
         case .arrow: return "arrow.up.right"
         case .ellipse: return "oval"
         case .text: return "textformat"
-        case .number: return "number.circle"
-        case .mosaic: return "square.grid.3x3"
+        case .number: return "1.circle"
+        case .mosaic: return "square.grid.3x3.fill"
         case .blur: return "drop"
         }
     }
