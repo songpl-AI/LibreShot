@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.1.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.1.1) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.2.0](https://github.com/songpl-AI/LibreShot/releases/tag/v1.2.0) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -56,7 +56,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-Run `bash build_release.sh` to create a locally signed app, DMG, and SHA256 checksum in a new `dist/` subdirectory. The script preserves existing outputs and does not notarize or upload. See [regression checks](tests/README.md) and the [1.1.1 release notes](docs/releases/1.1.1.md).
+Run `bash build_release.sh` to create a locally signed app, DMG, and SHA256 checksum in a new `dist/` subdirectory. The script preserves existing outputs and does not notarize or upload. See [regression checks](tests/README.md) and the [1.2.0 release notes](docs/releases/1.2.0.md).
 
 ## 🚀 Usage Guide
 
@@ -76,7 +76,7 @@ Click the "Scissors" icon in the menu bar to select functions:
 
 ### 3. Annotation & Editing
 
-**New in the local 1.2.0 trial**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it. These features are not included in the public 1.1.1 release.
+**New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it.
 
 After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.
@@ -114,7 +114,7 @@ Or support via [GitHub Sponsors](https://github.com/sponsors/songpl-AI).
 
 ## Follow-ups and Validation
 
-Automatic annotation selection and rectangle/ellipse resizing are implemented in the local 1.2.0 trial. See the [trial notes](docs/releases/1.2.0.md) and [annotation checks](docs/qa/1.2.0.md). Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
+Automatic annotation selection and rectangle/ellipse resizing are available in 1.2.0. See the [release notes](docs/releases/1.2.0.md) and [annotation checks](docs/qa/1.2.0.md). Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
 
 Validated on Apple Silicon with macOS 26.5.2. Other macOS versions and Intel hardware still need feedback. See the [capture checks](docs/qa/1.1.0.md) and [translation checks](docs/qa/1.1.1.md).
 
