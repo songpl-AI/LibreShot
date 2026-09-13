@@ -45,6 +45,53 @@ extension Annotation {
     var textBoundingRect: CGRect {
         CGRect(origin: startPoint, size: textBoundingSize)
     }
+
+    /// Hit visible strokes rather than their empty bounding-box interiors.
+    /// Called on pointer-down, never from a hover timer or a rendering loop.
+    func containsSelectionPoint(_ point: CGPoint) -> Bool {
+        let tolerance: CGFloat = 6
+        let rect = CGRect(from: startPoint, to: endPoint)
+        let path = CGMutablePath()
+        switch type {
+        case .text:
+            return textBoundingRect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+        case .number:
+            return hypot(point.x - startPoint.x, point.y - startPoint.y) <= fontSize / 2 + 4 + tolerance
+        case .mosaic:
+            let all = points + [startPoint, endPoint]
+            let minX = all.map(\.x).min()!, maxX = all.map(\.x).max()!
+            let minY = all.map(\.y).min()!, maxY = all.map(\.y).max()!
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                .insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+        case .rectangle:
+            path.addRect(rect)
+        case .ellipse:
+            path.addEllipse(in: rect)
+        case .arrow:
+            path.move(to: startPoint)
+            path.addLine(to: endPoint)
+            let angle = atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x)
+            for offset in [-CGFloat.pi / 6, CGFloat.pi / 6] {
+                path.move(to: endPoint)
+                path.addLine(to: CGPoint(x: endPoint.x - 15 * cos(angle + offset),
+                                        y: endPoint.y - 15 * sin(angle + offset)))
+            }
+        case .pen, .blur:
+            if let first = points.first {
+                if points.allSatisfy({ $0 == first }) {
+                    return hypot(point.x - first.x, point.y - first.y) <= lineWidth / 2 + tolerance
+                }
+                path.move(to: first)
+                for next in points.dropFirst() { path.addLine(to: next) }
+            } else if type == .blur {
+                path.addRect(rect)
+            } else {
+                return false
+            }
+        }
+        return path.copy(strokingWithWidth: lineWidth + tolerance * 2,
+                         lineCap: .round, lineJoin: .round, miterLimit: 10).contains(point)
+    }
 }
 
 struct Annotation: Identifiable {

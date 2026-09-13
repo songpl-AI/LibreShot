@@ -8,6 +8,7 @@ struct ToolbarRegressionChecks {
     @MainActor
     static func main() async throws {
         checkEscapeCancellation()
+        checkAutomaticAnnotationSelection()
         try await checkOCRAndTranslation()
         if #available(macOS 26.0, *) { await checkTranslationLifecycle() }
         let displayConfiguration = CaptureService.displayConfiguration(width: 3024, height: 1964)
@@ -352,6 +353,153 @@ struct ToolbarRegressionChecks {
         controller.close()
         precondition(controller.window?.contentView == nil, "Closing OCR must tear down the view that owns the translation task")
         print("PASS: translation is on demand; cancellation/failure can retry; success and close release request state; stale results are ignored")
+    }
+
+    @MainActor
+    private static func checkAutomaticAnnotationSelection() {
+        let suite = "LibreShot.AutoSelection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsService(defaults: defaults)
+        let crop = CGRect(x: 50, y: 50, width: 550, height: 450)
+        func fixture(_ type: AnnotationType) -> (Annotation, CGPoint) {
+            var a = Annotation(type: type, color: .blue)
+            a.startPoint = CGPoint(x: 150, y: 150)
+            a.endPoint = CGPoint(x: 350, y: 300)
+            a.text = "Hello world"
+            a.fontSize = 24
+            switch type {
+            case .rectangle, .ellipse: return (a, CGPoint(x: 250, y: 150))
+            case .text, .number: return (a, a.startPoint)
+            case .mosaic: return (a, CGPoint(x: 250, y: 225))
+            case .arrow: return (a, CGPoint(x: 250, y: 225))
+            case .pen, .blur:
+                a.points = [a.startPoint, CGPoint(x: 250, y: 300), CGPoint(x: 350, y: 150)]
+                return (a, a.points[1])
+            }
+        }
+        func model(_ tool: AnnotationType, _ a: Annotation) -> OverlayViewModel {
+            let vm = OverlayViewModel(settings: settings)
+            vm.state = .editing
+            vm.selectionRect = crop
+            vm.selectedTool = tool
+            vm.annotations = [a]
+            return vm
+        }
+        for target in AnnotationType.allCases {
+            let (a, point) = fixture(target)
+            for tool in AnnotationType.allCases {
+                let vm = model(tool, a)
+                precondition(vm.handleAnnotationPressChanged(from: point, to: point))
+                precondition(vm.currentAnnotation == nil && vm.annotations.count == 1 && vm.selectedTool == tool)
+                precondition(vm.handleAnnotationPressEnded(from: point, to: CGPoint(x: point.x + 1, y: point.y + 1)))
+                vm.clearAnnotationPress()
+                precondition(vm.selectedAnnotationID == a.id && vm.selectedTool == nil && vm.annotations.count == 1)
+                vm.moveSelectedAnnotation(offset: CGSize(width: 12, height: 9))
+                precondition(vm.annotations[0].startPoint == CGPoint(x: a.startPoint.x + 12, y: a.startPoint.y + 9))
+            }
+        }
+        let (rect, point) = fixture(.rectangle)
+        for tool in AnnotationType.allCases {
+            let vm = model(tool, rect)
+            let end = CGPoint(x: point.x + 80, y: point.y + 40)
+            // First callback may already have moved; keep the actual down position.
+            precondition(vm.handleAnnotationPressChanged(from: point, to: end))
+            precondition(vm.handleAnnotationPressEnded(from: point, to: end))
+            vm.clearAnnotationPress()
+            precondition(vm.selectedTool == tool && vm.selectedAnnotationID == nil)
+            precondition(vm.annotations[0].startPoint == rect.startPoint)
+            if tool == .text || tool == .number {
+                precondition(vm.annotations.count == 1 && !vm.isEditingText)
+            } else {
+                precondition(vm.annotations.count == 2 && vm.annotations[1].type == tool)
+                precondition(vm.annotations[1].startPoint == point && vm.annotations[1].endPoint == end)
+            }
+        }
+        let vm = model(.pen, rect)
+        _ = vm.handleAnnotationPressChanged(from: point, to: CGPoint(x: point.x + 20, y: point.y))
+        _ = vm.handleAnnotationPressChanged(from: point, to: point)
+        _ = vm.handleAnnotationPressEnded(from: point, to: point)
+        vm.clearAnnotationPress()
+        precondition(vm.selectedTool == .pen && vm.annotations.count == 2, "Moving away and back is still drawing")
+        precondition(!rect.containsSelectionPoint(CGPoint(x: 250, y: 220)), "Rectangle interior is not a stroke")
+        let (ellipse, _) = fixture(.ellipse)
+        precondition(!ellipse.containsSelectionPoint(CGPoint(x: 250, y: 225)))
+        let (arrow, _) = fixture(.arrow)
+        precondition(!arrow.containsSelectionPoint(CGPoint(x: 160, y: 285)))
+        let (pen, _) = fixture(.pen)
+        precondition(!pen.containsSelectionPoint(CGPoint(x: 250, y: 180)))
+        let (label, labelPoint) = fixture(.text)
+        let overlap = model(.number, rect)
+        overlap.annotations = [rect, label]
+        _ = overlap.handleAnnotationPressChanged(from: labelPoint, to: labelPoint)
+        _ = overlap.handleAnnotationPressEnded(from: labelPoint, to: labelPoint)
+        overlap.clearAnnotationPress()
+        precondition(overlap.selectedAnnotationID == label.id && overlap.selectedFontSize == 24)
+        overlap.startDrawing(at: labelPoint)
+        precondition(overlap.isEditingText && overlap.editingTextAnnotationID == label.id, "Double-click still edits text")
+        // A hollow rectangle on top must not cover visible text in its interior.
+        var innerText = label
+        innerText.startPoint = CGPoint(x: 200, y: 200)
+        let hollowOverlap = model(.pen, rect)
+        hollowOverlap.annotations = [innerText, rect]
+        precondition(hollowOverlap.annotationID(at: innerText.startPoint) == innerText.id)
+        let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+        for type in [AnnotationType.rectangle, .ellipse] {
+            let (shape, _) = fixture(type)
+            for handle in SelectionHandle.allCases {
+                let resize = model(.arrow, shape)
+                resize.selectedTool = nil
+                resize.selectedAnnotationID = shape.id
+                let original = CGRect(from: shape.startPoint, to: shape.endPoint)
+                let grab = handle.position(in: original)
+                precondition(resize.handleSelectedShapeDrag(from: grab, to: CGPoint(x: grab.x + 15, y: grab.y + 10), within: bounds))
+                let changed = CGRect(from: resize.annotations[0].startPoint, to: resize.annotations[0].endPoint)
+                precondition(changed != original && resize.selectionRect == crop && resize.annotations.count == 1)
+                precondition(changed.width >= 12 && changed.height >= 12)
+                resize.endSelectedShapeDrag()
+                precondition(!resize.isTransformingShape)
+            }
+        }
+        let move = model(.arrow, rect)
+        move.selectedTool = nil
+        move.selectedAnnotationID = rect.id
+        let inside = CGPoint(x: 240, y: 230)
+        precondition(move.handleSelectedShapeDrag(from: inside, to: CGPoint(x: inside.x + 20, y: inside.y + 15), within: bounds))
+        // Absolute movement from pointer-down, independent of callbacks at zero translation.
+        precondition(move.handleSelectedShapeDrag(from: inside, to: CGPoint(x: inside.x + 40, y: inside.y + 30), within: bounds))
+        precondition(move.annotations[0].startPoint == CGPoint(x: rect.startPoint.x + 40, y: rect.startPoint.y + 30))
+        precondition(move.selectionRect == crop)
+        move.endSelectedShapeDrag()
+        move.annotations = [rect, innerText]
+        precondition(!move.handleSelectedShapeDrag(from: innerText.startPoint, to: innerText.startPoint, within: bounds))
+        move.beginMoveSelection(at: CGPoint(x: 500, y: 400))
+        precondition(!move.handleSelectedShapeDrag(from: inside, to: inside, within: bounds), "Moving a crop must not turn into moving a shape")
+        move.endMoveSelection()
+        let corner = CGPoint(x: 150, y: 150)
+        _ = move.handleSelectedShapeDrag(from: corner, to: CGPoint(x: 900, y: 900), within: bounds)
+        precondition(move.selectedShapeRect?.size == CGSize(width: 12, height: 12))
+        move.endSelectedShapeDrag()
+        move.annotations = [rect]
+        // White crop handles win when they overlap a blue annotation handle.
+        move.selectionRect = CGRect(from: rect.startPoint, to: rect.endPoint)
+        precondition(move.handleSelectionResizeDrag(from: corner, to: CGPoint(x: 130, y: 130), within: bounds))
+        precondition(!move.handleSelectedShapeDrag(from: corner, to: CGPoint(x: 130, y: 130), within: bounds))
+        precondition(move.annotations[0].startPoint == rect.startPoint)
+        move.endResizeSelection()
+        let blank = model(.text, rect)
+        precondition(!blank.handleAnnotationPressChanged(from: CGPoint(x: 400, y: 400), to: point))
+        precondition(!blank.handleAnnotationPressEnded(from: CGPoint(x: 400, y: 400), to: point), "Crossing an annotation must not arm selection")
+        blank.clearAnnotationPress()
+        blank.startTextInput(at: CGPoint(x: 400, y: 400))
+        blank.editingTextContent = "未提交文字"
+        precondition(!blank.handleAnnotationPressChanged(from: point, to: point))
+        precondition(blank.isEditingText && blank.editingTextContent == "未提交文字")
+        blank.clearAnnotationPress()
+        blank.reset()
+        precondition(!blank.handleAnnotationPressChanged(from: point, to: point))
+        blank.clearAnnotationPress()
+        print("PASS: 64 tool/annotation click combinations; direct drawing, drag-out-and-back, visible-stroke hit tests, overlap, text editing, shape movement/16 resize handles and crop priority")
     }
 
     @MainActor

@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest release: [v1.1.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.1.1) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.1.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.1.1) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -75,6 +75,9 @@ Click the "Scissors" icon in the menu bar to select functions:
 *(Note: The global shortcut currently bound will be displayed next to the menu item for easy reference)*
 
 ### 3. Annotation & Editing
+
+**New in the local 1.2.0 trial**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it. These features are not included in the public 1.1.1 release.
+
 After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.
 - **Numbered Annotation**: Click the number icon to place a circled auto-incrementing number.
@@ -111,7 +114,7 @@ Or support via [GitHub Sponsors](https://github.com/sponsors/songpl-AI).
 
 ## Follow-ups and Validation
 
-Automatic selection when clicking an existing annotation is deferred. Use Select/Move, or click the active tool again to enter selection mode. Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
+Automatic annotation selection and rectangle/ellipse resizing are implemented in the local 1.2.0 trial. See the [trial notes](docs/releases/1.2.0.md) and [annotation checks](docs/qa/1.2.0.md). Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
 
 Validated on Apple Silicon with macOS 26.5.2. Other macOS versions and Intel hardware still need feedback. See the [capture checks](docs/qa/1.1.0.md) and [translation checks](docs/qa/1.1.1.md).
 

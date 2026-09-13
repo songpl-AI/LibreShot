@@ -34,6 +34,7 @@ struct OverlayView: View {
                             if annotation.id == viewModel.editingTextAnnotationID {
                                 continue
                             }
+                            drawAnnotation(context: context, annotation: annotation, canvasSize: size)
                             // Highlight selected annotation
                             if annotation.id == viewModel.selectedAnnotationID {
                                 // Draw selection halo/border
@@ -51,6 +52,14 @@ struct OverlayView: View {
                                 let haloPath = Path(rect.insetBy(dx: -5, dy: -5))
                                 context.stroke(haloPath, with: .color(.blue.opacity(0.5)), lineWidth: 2)
 
+                                if let shapeRect = viewModel.selectedShapeRect {
+                                    for handle in SelectionHandle.allCases {
+                                        let position = handle.position(in: shapeRect)
+                                        let box = CGRect(x: position.x - 4, y: position.y - 4, width: 8, height: 8)
+                                        context.fill(Path(box), with: .color(.white))
+                                        context.stroke(Path(box), with: .color(.blue), lineWidth: 1.5)
+                                    }
+                                }
                                 // 文字选中：右下角缩放手柄
                                 if annotation.type == .text {
                                     let handlePos = CGPoint(x: rect.maxX, y: rect.maxY)
@@ -59,8 +68,6 @@ struct OverlayView: View {
                                     context.stroke(Path(ellipseIn: handleRect), with: .color(.blue), lineWidth: 1.5)
                                 }
                             }
-                            
-                            drawAnnotation(context: context, annotation: annotation, canvasSize: size)
                         }
                         // Draw current annotation being dragged
                         if let current = viewModel.currentAnnotation {
@@ -148,6 +155,13 @@ struct OverlayView: View {
                             from: value.startLocation, to: value.location,
                             within: geometry.frame(in: .named("overlay"))
                         ) {
+                            return
+                        }
+                        if viewModel.handleSelectedShapeDrag(from: value.startLocation, to: value.location,
+                                                             within: geometry.frame(in: .named("overlay"))) {
+                            return
+                        }
+                        if viewModel.handleAnnotationPressChanged(from: value.startLocation, to: value.location) {
                             return
                         }
                         if viewModel.isEditingText {
@@ -239,6 +253,7 @@ struct OverlayView: View {
                         }
                     }
                     .onEnded { value in
+                        defer { viewModel.clearAnnotationPress() }
                         if viewModel.state == .selecting {
                             viewModel.endSelection()
                         } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {
@@ -248,6 +263,15 @@ struct OverlayView: View {
                                 return
                             }
                             
+                            if viewModel.isTransformingShape {
+                                viewModel.handleSelectedShapeDrag(from: value.startLocation, to: value.location,
+                                                                  within: geometry.frame(in: .named("overlay")))
+                                viewModel.endSelectedShapeDrag()
+                                return
+                            }
+                            if viewModel.handleAnnotationPressEnded(from: value.startLocation, to: value.location) {
+                                return
+                            }
                             // Text Tool Click
                             if viewModel.selectedTool == .text {
                                 if !viewModel.isEditingText {

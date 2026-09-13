@@ -195,32 +195,151 @@ class OverlayViewModel: ObservableObject {
         hitTest(at: point)
     }
     
+    private struct AnnotationPress {
+        var candidate: UUID?
+        var tool: AnnotationType?
+        var dragged = false
+    }
+    private var annotationPress: AnnotationPress?
+    private let annotationClickTolerance: CGFloat = 5
+
+    /// Decide once at pointer-down. Wait for pointer-up before stealing a drawing
+    /// gesture; moving away and back remains a drag, never a click.
+    @discardableResult
+    func handleAnnotationPressChanged(from start: CGPoint, to point: CGPoint) -> Bool {
+        if annotationPress == nil {
+            let canSelect = state == .editing && selectedTool != nil && !isEditingText
+                && currentAnnotation == nil && activeSelectionHandle == nil && selectionRect.contains(start)
+            annotationPress = AnnotationPress(candidate: canSelect ? hitTest(at: start) : nil, tool: selectedTool)
+        }
+        guard var press = annotationPress, press.candidate != nil else { return false }
+        press.dragged = press.dragged || hypot(point.x - start.x, point.y - start.y) >= annotationClickTolerance
+        annotationPress = press
+        if press.dragged, press.tool != .text, press.tool != .number {
+            if currentAnnotation == nil { startDrawing(at: start) }
+            updateDrawing(to: point)
+        }
+        return true
+    }
+
+    @discardableResult
+    func handleAnnotationPressEnded(from start: CGPoint, to point: CGPoint) -> Bool {
+        guard let press = annotationPress, let id = press.candidate else { return false }
+        let dragged = press.dragged || hypot(point.x - start.x, point.y - start.y) >= annotationClickTolerance
+        if dragged {
+            if press.tool != .text, press.tool != .number {
+                if currentAnnotation == nil { startDrawing(at: start) }
+                updateDrawing(to: point)
+                endDrawing()
+            }
+        } else if state == .editing, selectionRect.contains(point), annotations.contains(where: { $0.id == id }) {
+            selectedTool = nil
+            selectExistingAnnotation(id: id)
+        }
+        currentPoint = nil
+        return true
+    }
+
+    func clearAnnotationPress() {
+        annotationPress = nil
+    }
+
+    private struct ShapeDrag {
+        let annotation: Annotation
+        let start: CGPoint
+        let handle: SelectionHandle?
+    }
+    private var shapeDrag: ShapeDrag?
+    var isTransformingShape: Bool { shapeDrag != nil }
+
+    var selectedShapeRect: CGRect? {
+        guard state == .editing, selectedTool == nil, !isEditingText,
+              let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
+              annotation.type == .rectangle || annotation.type == .ellipse else { return nil }
+        return CGRect(from: annotation.startPoint, to: annotation.endPoint)
+    }
+
+    /// After a shape is selected, its empty interior can move it. Visible content
+    /// from another annotation still takes precedence, and crop handles run first.
+    @discardableResult
+    func handleSelectedShapeDrag(from start: CGPoint, to point: CGPoint, within bounds: CGRect) -> Bool {
+        if shapeDrag == nil {
+            guard !isMovingSelection, !isResizingText, activeSelectionHandle == nil,
+                  let rect = selectedShapeRect,
+                  let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) else { return false }
+            let handle = SelectionHandle.allCases.filter {
+                let p = $0.position(in: rect)
+                return abs(start.x - p.x) <= 8 && abs(start.y - p.y) <= 8
+            }.min {
+                let a = $0.position(in: rect), b = $1.position(in: rect)
+                return hypot(start.x - a.x, start.y - a.y) < hypot(start.x - b.x, start.y - b.y)
+            }
+            if handle == nil {
+                let hit = hitTest(at: start)
+                guard hit == annotation.id || (hit == nil && rect.contains(start)) else { return false }
+            }
+            shapeDrag = ShapeDrag(annotation: annotation, start: start, handle: handle)
+        }
+        guard let drag = shapeDrag, let index = annotations.firstIndex(where: { $0.id == drag.annotation.id }) else { return false }
+        let original = CGRect(from: drag.annotation.startPoint, to: drag.annotation.endPoint)
+        let dx = point.x - drag.start.x, dy = point.y - drag.start.y
+        let updated: CGRect
+        if let handle = drag.handle {
+            let minimum: CGFloat = 12
+            var left = original.minX, right = original.maxX
+            var top = original.minY, bottom = original.maxY
+            if [.left, .topLeft, .bottomLeft].contains(handle) {
+                left = min(max(left + dx, bounds.minX), right - minimum)
+            }
+            if [.right, .topRight, .bottomRight].contains(handle) {
+                right = max(min(right + dx, bounds.maxX), left + minimum)
+            }
+            if [.top, .topLeft, .topRight].contains(handle) {
+                top = min(max(top + dy, bounds.minY), bottom - minimum)
+            }
+            if [.bottom, .bottomLeft, .bottomRight].contains(handle) {
+                bottom = max(min(bottom + dy, bounds.maxY), top + minimum)
+            }
+            updated = CGRect(x: left, y: top, width: right - left, height: bottom - top)
+        } else {
+            updated = original.offsetBy(dx: dx, dy: dy)
+        }
+        annotations[index].startPoint = updated.origin
+        annotations[index].endPoint = CGPoint(x: updated.maxX, y: updated.maxY)
+        return true
+    }
+
+    func endSelectedShapeDrag() {
+        shapeDrag = nil
+        currentPoint = nil
+    }
+
+    private func selectExistingAnnotation(id: UUID) {
+        guard let annotation = annotations.first(where: { $0.id == id }) else { return }
+        selectedAnnotationID = id
+        selectedColor = annotation.color
+        if annotation.type == .text {
+            selectedFontSize = annotation.fontSize
+            if lastTextTapAnnotationID == id, let last = lastTextTapDate,
+               Date().timeIntervalSince(last) < 0.35 {
+                startTextEdit(annotationID: id)
+                lastTextTapAnnotationID = nil
+                lastTextTapDate = nil
+            } else {
+                lastTextTapAnnotationID = id
+                lastTextTapDate = Date()
+            }
+        } else {
+            lastTextTapAnnotationID = nil
+            lastTextTapDate = nil
+        }
+    }
+
     func startDrawing(at point: CGPoint) {
         // If no tool selected, try to select an annotation
         if selectedTool == nil {
             if let id = hitTest(at: point) {
-                selectedAnnotationID = id
-                // Update selected properties to match annotation
-                if let annotation = annotations.first(where: { $0.id == id }) {
-                    selectedColor = annotation.color
-                }
-                // 双击文字标注 → 重新编辑
-                if let annotation = annotations.first(where: { $0.id == id }),
-                   annotation.type == .text {
-                    if lastTextTapAnnotationID == id,
-                       let last = lastTextTapDate,
-                       Date().timeIntervalSince(last) < 0.35 {
-                        startTextEdit(annotationID: id)
-                        lastTextTapAnnotationID = nil
-                        lastTextTapDate = nil
-                    } else {
-                        lastTextTapAnnotationID = id
-                        lastTextTapDate = Date()
-                    }
-                } else {
-                    lastTextTapAnnotationID = nil
-                    lastTextTapDate = nil
-                }
+                selectExistingAnnotation(id: id)
             } else {
                 selectedAnnotationID = nil
                 lastTextTapAnnotationID = nil
@@ -312,6 +431,8 @@ class OverlayViewModel: ObservableObject {
     }
     
     func reset() {
+        endSelectedShapeDrag()
+        clearAnnotationPress()
         toolbarConfiguration = settings.toolbarConfiguration
         startPoint = nil
         currentPoint = nil
@@ -416,6 +537,8 @@ class OverlayViewModel: ObservableObject {
 
     /// 切换标注工具。切离文字工具时取消未完成的文字输入（连带 bug 1）。
     func selectTool(_ tool: AnnotationType?) {
+        endSelectedShapeDrag()
+        clearAnnotationPress()
         selectedTool = tool
         if tool != .text {
             cancelTextInput()
@@ -450,32 +573,7 @@ class OverlayViewModel: ObservableObject {
     }
     
     private func isPoint(_ point: CGPoint, in annotation: Annotation) -> Bool {
-        let padding: CGFloat = 10.0
-        switch annotation.type {
-        case .rectangle, .ellipse, .text, .number:
-            var rect: CGRect
-            if annotation.type == .text {
-                 rect = annotation.textBoundingRect
-            } else if annotation.type == .number {
-                 let radius = annotation.fontSize / 2 + 4
-                 rect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
-            } else {
-                 rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
-            }
-            return rect.insetBy(dx: -padding, dy: -padding).contains(point)
-            
-        case .mosaic, .blur, .pen, .arrow:
-             // Simple bounding box check for now
-             // Ideal: path hit testing
-             let xs = annotation.points.map { $0.x } + [annotation.startPoint.x, annotation.endPoint.x]
-             let ys = annotation.points.map { $0.y } + [annotation.startPoint.y, annotation.endPoint.y]
-             
-             guard let minX = xs.min(), let maxX = xs.max(),
-                   let minY = ys.min(), let maxY = ys.max() else { return false }
-             
-             let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-             return rect.insetBy(dx: -padding, dy: -padding).contains(point)
-        }
+        annotation.containsSelectionPoint(point)
     }
 
     private func clampPoint(_ point: CGPoint, to rect: CGRect) -> CGPoint {
