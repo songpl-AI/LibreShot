@@ -168,10 +168,8 @@ class CaptureService {
            let tiffData = normalizedImage.tiffRepresentation {
             pasteboard.setData(tiffData, forType: .tiff)
         }
-        
-        if let normalizedImage = NSImage(data: pngData) {
-            pasteboard.writeObjects([normalizedImage])
-        }
+        // Both representations already belong to the same pasteboard item.
+        // Writing NSImage again adds a second item and another decoded image.
     }
     
     func crop(image: NSImage, to rect: CGRect, displayID: CGDirectDisplayID? = nil) -> NSImage? {
@@ -366,7 +364,7 @@ class CaptureService {
         }
     }
 
-    func bitmapRep(from image: NSImage, opaque: Bool = true) -> NSBitmapImageRep? {
+    func bitmapRep(from image: NSImage, opaque: Bool = false) -> NSBitmapImageRep? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
@@ -404,8 +402,26 @@ class CaptureService {
         return bitmapRep
     }
     
+    /// Apply the final outline after annotation compositing, in physical pixels.
+    func styledImage(_ image: NSImage) -> NSImage {
+        guard settings.useRoundedCorners,
+              let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              image.size.width > 0, image.size.height > 0,
+              let context = CGContext(data: nil, width: source.width, height: source.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0, space: exportColorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
+        let rect = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+        let radiusX = min(8, image.size.width / 2) * CGFloat(source.width) / image.size.width
+        let radiusY = min(8, image.size.height / 2) * CGFloat(source.height) / image.size.height
+        context.addPath(CGPath(roundedRect: rect, cornerWidth: radiusX, cornerHeight: radiusY, transform: nil))
+        context.clip()
+        context.draw(source, in: rect)
+        guard let result = context.makeImage() else { return image }
+        return NSImage(cgImage: result, size: image.size)
+    }
+
     func pngData(from image: NSImage) -> Data? {
-        bitmapRep(from: image)?.representation(using: .png, properties: [:])
+        bitmapRep(from: styledImage(image))?.representation(using: .png, properties: [:])
     }
 }
 
@@ -432,6 +448,7 @@ struct LongCaptureRegion {
 struct LongCaptureProgress {
     let acceptedFrameCount: Int
     let appendedPixelHeight: Int
+    var warning: String? = nil
 }
 
 enum LongCaptureStatus: Equatable {
@@ -447,6 +464,7 @@ enum LongCaptureStatus: Equatable {
 enum LongCaptureError: LocalizedError {
     case noStableFrame
     case rendererFailed
+    case incompleteCapture
     
     var errorDescription: String? {
         switch self {
@@ -454,6 +472,8 @@ enum LongCaptureError: LocalizedError {
             return "未采集到有效的滚动帧，请重试"
         case .rendererFailed:
             return "长截图拼接失败"
+        case .incompleteCapture:
+            return "有滚动画面未能接上，本次未生成完整长截图。请重新框选可滚动内容，缓慢向下滚动，保留至少三分之一的重叠区域。"
         }
     }
 }
@@ -474,8 +494,7 @@ final class LongCaptureSession: ObservableObject {
     
     private let region: LongCaptureRegion
     private let captureService = LongCaptureStreamService()
-    private let stabilityAnalyzer = LongCaptureFrameStabilityAnalyzer()
-    private let stitcher = LongCaptureStitcher()
+    private let frames = LongCaptureFrameAccumulator()
     private var isStarted = false
     
     init(region: LongCaptureRegion) {
@@ -512,11 +531,16 @@ final class LongCaptureSession: ObservableObject {
             self.status = .finishing
         }
         await captureService.stop()
-        guard let image = stitcher.renderFinalImage() else {
-            await MainActor.run {
-                self.status = .failed(LongCaptureError.rendererFailed.localizedDescription)
-            }
-            throw LongCaptureError.rendererFailed
+        let image: NSImage
+        do {
+            image = try frames.renderFinalImage()
+        } catch {
+            await MainActor.run { self.status = .failed(error.localizedDescription) }
+            throw error
+        }
+        if image.size.width > 0 {
+            image.size = NSSize(width: region.selectionRect.width,
+                                height: image.size.height * region.selectionRect.width / image.size.width)
         }
         await MainActor.run {
             self.status = .completed
@@ -533,57 +557,63 @@ final class LongCaptureSession: ObservableObject {
     
     private func handle(frame: LongCaptureFrame) {
         guard captureService.isRunning else { return }
-        switch stabilityAnalyzer.process(frame: frame) {
-        case .ignore:
-            return
-        case .accept(let acceptedFrame):
-            let result = stitcher.append(frame: acceptedFrame)
-            guard result.accepted else { return }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.progress = LongCaptureProgress(
-                    acceptedFrameCount: self.stitcher.acceptedFrameCount,
-                    appendedPixelHeight: self.stitcher.totalPixelHeight
-                )
-            }
+        guard let progress = frames.process(frame: frame) else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.status == .capturing else { return }
+            self.progress = progress
         }
     }
 }
 
-private enum LongCaptureFrameDecision {
+/// Owns the accepted-frame baseline and completion validation on the capture queue.
+/// An unmatched final frame must not turn into a successful one-screen "long" image.
+final class LongCaptureFrameAccumulator {
+    private let deduplicator = LongCaptureFrameDeduplicator()
+    private let stitcher = LongCaptureStitcher()
+    private var hasUnmatchedFrame = false
+
+    func process(frame: LongCaptureFrame) -> LongCaptureProgress? {
+        switch deduplicator.process(frame: frame) {
+        case .ignore:
+            // Returning to the last accepted position clears the retry warning.
+            guard hasUnmatchedFrame else { return nil }
+            hasUnmatchedFrame = false
+        case .accept:
+            let result = stitcher.append(frame: frame)
+            hasUnmatchedFrame = !result.accepted
+            if result.accepted { deduplicator.markAccepted(frame) }
+        }
+        return LongCaptureProgress(acceptedFrameCount: stitcher.acceptedFrameCount,
+                                   appendedPixelHeight: stitcher.totalPixelHeight,
+                                   warning: hasUnmatchedFrame ? "当前画面未接上，请回滚到上次位置，再小幅向下滚动。" : nil)
+    }
+
+    func renderFinalImage() throws -> NSImage {
+        guard !hasUnmatchedFrame else { throw LongCaptureError.incompleteCapture }
+        guard let image = stitcher.renderFinalImage() else { throw LongCaptureError.noStableFrame }
+        return image
+    }
+}
+
+enum LongCaptureFrameDecision {
     case ignore
     case accept(LongCaptureFrame)
 }
 
-private final class LongCaptureFrameStabilityAnalyzer {
-    private let duplicateThreshold: Double = 1.8
-    private let minimumAcceptedInterval: CFTimeInterval = 0.09
-    private var lastAcceptedSignature: LongCaptureThumbnailSignature?
-    private var lastAcceptedTimestamp: CFTimeInterval = 0
-    
+final class LongCaptureFrameDeduplicator {
+    private var accepted: LongCaptureThumbnailSignature?
+
     func process(frame: LongCaptureFrame) -> LongCaptureFrameDecision {
-        guard let signature = LongCaptureThumbnailSignature(image: frame.image) else {
-            return .ignore
-        }
-        
-        guard let lastAcceptedSignature else {
-            self.lastAcceptedSignature = signature
-            self.lastAcceptedTimestamp = frame.timestamp
-            return .accept(frame)
-        }
-        
-        if frame.timestamp - lastAcceptedTimestamp < minimumAcceptedInterval {
-            return .ignore
-        }
-        
-        let difference = signature.averageDifference(from: lastAcceptedSignature)
-        if difference < duplicateThreshold {
-            return .ignore
-        } else {
-            self.lastAcceptedSignature = signature
-            self.lastAcceptedTimestamp = frame.timestamp
-            return .accept(frame)
-        }
+        guard let signature = LongCaptureThumbnailSignature(image: frame.image) else { return .ignore }
+        // Complete ScreenCaptureKit frames may be matched during continuous scrolling.
+        // Waiting for the scroll to stop can discard every intermediate overlapping frame.
+        if let accepted, signature.averageDifference(from: accepted) < 0.4 { return .ignore }
+        return .accept(frame)
+    }
+
+    /// Failed matches remain retryable and never become the deduplication baseline.
+    func markAccepted(_ frame: LongCaptureFrame) {
+        accepted = LongCaptureThumbnailSignature(image: frame.image)
     }
 }
 
@@ -593,7 +623,7 @@ private struct LongCaptureThumbnailSignature {
     let height: Int
     
     init?(image: CGImage) {
-        let targetWidth = 24
+        let targetWidth = 96
         let targetHeight = max(Int(round(CGFloat(targetWidth) * CGFloat(image.height) / CGFloat(max(image.width, 1)))), 24)
         guard let scaledImage = LongCaptureImageSampling.scale(image: image, to: CGSize(width: targetWidth, height: targetHeight)),
               let pixels = LongCaptureImageSampling.grayscalePixels(from: scaledImage) else {
@@ -615,55 +645,93 @@ private struct LongCaptureThumbnailSignature {
     }
 }
 
-private final class LongCaptureStitcher {
+final class LongCaptureStitcher {
     private let overlapMatcher = LongCaptureOverlapMatcher()
     private var segments: [LongCaptureSegment] = []
-    private var logicalCanvasSize: CGSize = .zero
+    private var previousImage: CGImage?
+    private var footerImage: CGImage?
+    private var fixedFooterHeight: Int?
     private(set) var totalPixelHeight = 0
     private(set) var acceptedFrameCount = 0
     
     func append(frame: LongCaptureFrame) -> LongCaptureAppendResult {
         if segments.isEmpty {
-            logicalCanvasSize = CGSize(width: frame.image.width, height: frame.image.height)
+            guard let first = Self.detachedImage(frame.image) else {
+                return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
+            }
             totalPixelHeight = frame.image.height
             acceptedFrameCount = 1
-            segments = [LongCaptureSegment(image: frame.image, yOffset: 0)]
+            segments = [LongCaptureSegment(image: first, yOffset: 0)]
+            previousImage = frame.image
             return LongCaptureAppendResult(accepted: true, appendedPixelHeight: frame.image.height)
         }
-        
-        guard let previousImage = segments.last?.sourceImage ?? segments.last?.image,
+
+        guard let previousImage,
               let match = overlapMatcher.match(previous: previousImage, current: frame.image) else {
             return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
         }
-        
+
         let appendStartY = match.overlapHeight
         let appendHeight = frame.image.height - appendStartY
-        guard appendHeight >= 24 else {
+        guard appendHeight >= 1 else {
             return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
         }
-        
-        let cropRect = CGRect(x: 0, y: appendStartY, width: frame.image.width, height: appendHeight)
-        guard let appendedImage = frame.image.cropping(to: cropRect.integral) else {
+
+        let footerHeight = fixedFooterHeight ?? match.footerHeight
+        let cropRect = CGRect(x: 0, y: appendStartY - footerHeight, width: frame.image.width, height: appendHeight)
+        guard let crop = frame.image.cropping(to: cropRect.integral),
+              let appendedImage = Self.detachedImage(crop) else {
             return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
         }
-        
-        segments.append(
-            LongCaptureSegment(
-                image: appendedImage,
-                yOffset: totalPixelHeight,
-                sourceImage: frame.image
-            )
-        )
+
+        // Prepare every fragment before committing the new matching baseline.
+        // A failed allocation must leave the previously accepted document intact.
+        var nextFooter: CGImage?
+        var trimmedFirst: CGImage?
+        if footerHeight > 0 {
+            guard let crop = frame.image.cropping(to: CGRect(x: 0, y: frame.image.height - footerHeight,
+                                                            width: frame.image.width, height: footerHeight)),
+                  let footer = Self.detachedImage(crop) else {
+                return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
+            }
+            nextFooter = footer
+            if footerImage == nil, let first = segments.first {
+                guard let crop = first.image.cropping(to: CGRect(x: 0, y: 0, width: first.image.width,
+                                                                 height: first.image.height - footerHeight)),
+                      let trimmed = Self.detachedImage(crop) else {
+                    return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
+                }
+                trimmedFirst = trimmed
+            }
+        }
+        if let trimmedFirst { segments[0] = LongCaptureSegment(image: trimmedFirst, yOffset: 0) }
+        footerImage = nextFooter
+        fixedFooterHeight = footerHeight
+        segments.append(LongCaptureSegment(image: appendedImage, yOffset: totalPixelHeight - footerHeight))
+        self.previousImage = frame.image
         totalPixelHeight += appendHeight
         acceptedFrameCount += 1
         return LongCaptureAppendResult(accepted: true, appendedPixelHeight: appendHeight)
     }
-    
+
+    /// CGImage crops retain their original backing store. Materialize only the pixels
+    /// needed by the document, using the same sRGB format as the final renderer.
+    private static func detachedImage(_ image: CGImage) -> CGImage? {
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: image.width, height: image.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .none
+        context.setBlendMode(.copy)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage()
+    }
+
     func renderFinalImage() -> NSImage? {
         guard let firstSegment = segments.first else { return nil }
         let width = firstSegment.image.width
         guard width > 0, totalPixelHeight > 0 else { return nil }
-        guard let colorSpace = firstSegment.image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) else {
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
             return nil
         }
         guard let context = CGContext(
@@ -688,9 +756,11 @@ private final class LongCaptureStitcher {
             context.draw(segment.image, in: drawRect)
         }
         
+        if let footerImage {
+            context.draw(footerImage, in: CGRect(x: 0, y: 0, width: width, height: footerImage.height))
+        }
         guard let cgImage = context.makeImage() else { return nil }
-        let logicalHeight = CGFloat(totalPixelHeight) * logicalCanvasSize.height / CGFloat(max(firstSegment.image.height, 1))
-        let logicalSize = NSSize(width: logicalCanvasSize.width, height: logicalHeight)
+        let logicalSize = NSSize(width: width, height: totalPixelHeight)
         return NSImage(cgImage: cgImage, size: logicalSize)
     }
 }
@@ -698,212 +768,119 @@ private final class LongCaptureStitcher {
 private struct LongCaptureSegment {
     let image: CGImage
     let yOffset: Int
-    let sourceImage: CGImage?
-    
-    init(image: CGImage, yOffset: Int, sourceImage: CGImage? = nil) {
-        self.image = image
-        self.yOffset = yOffset
-        self.sourceImage = sourceImage
-    }
 }
 
-private struct LongCaptureOverlapMatch {
+struct LongCaptureOverlapMatch {
     let overlapHeight: Int
     let confidence: Double
+    var footerHeight: Int = 0
 }
 
-private struct LongCaptureOverlapCandidate {
-    let overlap: Int
-    let confidence: Double
-}
 
-private final class LongCaptureOverlapMatcher {
+/// Search vertical translations in original pixel rows. Only the horizontal axis is sampled:
+/// reducing height aliases small scrolls and can select a different repeated text row.
+final class LongCaptureOverlapMatcher {
     private let sampleWidth = 240
-    private let minimumOverlap = 24
-    private let maximumOverlap = 720
-    private let confidenceThreshold = 0.72
-    private let coarseStride = 4
-    private let refineRadius = 6
-    private let ambiguityTolerance = 0.012
-    
+
     func match(previous: CGImage, current: CGImage) -> LongCaptureOverlapMatch? {
-        let previousHeight = max(Int(round(CGFloat(sampleWidth) * CGFloat(previous.height) / CGFloat(max(previous.width, 1)))), sampleWidth)
-        let currentHeight = max(Int(round(CGFloat(sampleWidth) * CGFloat(current.height) / CGFloat(max(current.width, 1)))), sampleWidth)
-        guard let previousScaled = LongCaptureImageSampling.scale(image: previous, to: CGSize(width: sampleWidth, height: previousHeight)),
-              let currentScaled = LongCaptureImageSampling.scale(image: current, to: CGSize(width: sampleWidth, height: currentHeight)),
-              let previousPixels = LongCaptureImageSampling.grayscalePixels(from: previousScaled),
-              let currentPixels = LongCaptureImageSampling.grayscalePixels(from: currentScaled) else {
-            return nil
+        guard previous.width == current.width, previous.height == current.height else { return nil }
+        let width = min(sampleWidth, current.width), height = current.height
+        guard height >= 32,
+              let a = LongCaptureImageSampling.scale(image: previous, to: CGSize(width: width, height: height)),
+              let b = LongCaptureImageSampling.scale(image: current, to: CGSize(width: width, height: height)),
+              let ap = LongCaptureImageSampling.grayscalePixels(from: a),
+              let bp = LongCaptureImageSampling.grayscalePixels(from: b) else { return nil }
+
+        // Ignore static sidebars when locating the scrolling content.
+        let columns = (0..<width).filter { x in
+            var difference = 0.0
+            for y in 0..<height {
+                difference += abs(Double(ap[y * width + x]) - Double(bp[y * width + x]))
+            }
+            return difference / Double(height) > 1.0
         }
-        let previousRows = rowSignatures(from: previousPixels, width: sampleWidth, height: previousScaled.height)
-        let currentRows = rowSignatures(from: currentPixels, width: sampleWidth, height: currentScaled.height)
-        
-        let maxOverlap = min(maximumOverlap, previousScaled.height - 8, currentScaled.height - 8)
-        let minOverlap = min(minimumOverlap, maxOverlap)
-        guard minOverlap >= minimumOverlap else { return nil }
-        
-        var coarseBest: LongCaptureOverlapCandidate?
-        var coarseSecondBest: LongCaptureOverlapCandidate?
-        for overlap in stride(from: minOverlap, through: maxOverlap, by: coarseStride) {
-            let candidate = LongCaptureOverlapCandidate(
-                overlap: overlap,
-                confidence: score(
-                    previousPixels: previousPixels,
-                    previousHeight: previousScaled.height,
-                    previousRows: previousRows,
-                    currentPixels: currentPixels,
-                    currentHeight: currentScaled.height,
-                    currentRows: currentRows,
-                    overlap: overlap
-                )
-            )
-            
-            if coarseBest == nil {
-                coarseBest = candidate
-            } else if let currentBest = coarseBest, candidate.confidence > currentBest.confidence {
-                coarseSecondBest = currentBest
-                coarseBest = candidate
-            } else if let currentSecondBest = coarseSecondBest {
-                if candidate.confidence > currentSecondBest.confidence {
-                    coarseSecondBest = candidate
-                }
-            } else {
-                coarseSecondBest = candidate
+        guard columns.count >= 8 else { return nil }
+        let rows = (0..<height).filter { y in
+            columns.reduce(0.0) { $0 + abs(Double(ap[y * width + $1]) - Double(bp[y * width + $1])) }
+                / Double(columns.count) > 1.0
+        }
+        guard let top = rows.first, let last = rows.last, last - top >= 24 else { return nil }
+        let bottom = last + 1
+        let minOverlap = max(24, (bottom - top) / 4)
+        let contrastA = Self.contrast(ap, width: width), contrastB = Self.contrast(bp, width: width)
+        let candidates = (1...(bottom - top - minOverlap)).map { shift in
+            (shift: shift, error: Self.error(contrastA, contrastB, width: width, top: top, bottom: bottom,
+                                            columns: columns, shift: shift, exhaustive: false))
+        }.filter { $0.error < 0.20 }.sorted { $0.error < $1.error }
+        // Validate multiple candidates using every row, including competing repeated periods.
+        // Too many equally plausible candidates are ambiguous, not evidence to guess a seam.
+        guard let coarseBest = candidates.first else { return nil }
+        let contenders = candidates.filter { $0.error < coarseBest.error + 0.05 }
+        guard contenders.count <= 64 else { return nil }
+        let verified = contenders.map { candidate in
+            (shift: candidate.shift, error: Self.error(contrastA, contrastB, width: width, top: top, bottom: bottom,
+                                                       columns: columns, shift: candidate.shift, exhaustive: true))
+        }.sorted { $0.error < $1.error }
+        guard let best = verified.first, best.error < 0.08 else { return nil }
+        if let second = verified.first(where: { abs($0.shift - best.shift) > 2 }),
+           second.error - best.error < 0.025 { return nil }
+
+        let footer = Self.fixedFooterHeight(ap, bp, width: width, height: height, unchangedFrom: bottom)
+        guard best.shift + footer < height else { return nil }
+        return LongCaptureOverlapMatch(overlapHeight: height - best.shift,
+                                       confidence: 1 - best.error, footerHeight: footer)
+    }
+
+    private static func fixedFooterHeight(_ a: [UInt8], _ b: [UInt8], width: Int,
+                                          height: Int, unchangedFrom bottom: Int) -> Int {
+        guard bottom < height else { return 0 }
+        // A fixed bar needs both a stable suffix and an actual horizontal boundary.
+        // Blank spacing after the last text row is not a footer, regardless of its height.
+        for y in bottom..<height {
+            var boundaryColumns = 0
+            var unchanged = 0.0
+            for x in 0..<width {
+                if abs(Int(a[y * width + x]) - Int(a[(y - 1) * width + x])) > 3 { boundaryColumns += 1 }
+                unchanged += abs(Double(a[y * width + x]) - Double(b[y * width + x]))
+            }
+            if boundaryColumns > width / 2, unchanged / Double(width) < 0.5 {
+                return height - y
             }
         }
-        
-        guard let coarseBest else { return nil }
-        
-        var bestMatch: LongCaptureOverlapCandidate?
-        let refineStart = max(minOverlap, coarseBest.overlap - refineRadius)
-        let refineEnd = min(maxOverlap, coarseBest.overlap + refineRadius)
-        for overlap in refineStart...refineEnd {
-            let candidate = LongCaptureOverlapCandidate(
-                overlap: overlap,
-                confidence: score(
-                    previousPixels: previousPixels,
-                    previousHeight: previousScaled.height,
-                    previousRows: previousRows,
-                    currentPixels: currentPixels,
-                    currentHeight: currentScaled.height,
-                    currentRows: currentRows,
-                    overlap: overlap
-                )
-            )
-            if let bestMatch, candidate.confidence <= bestMatch.confidence {
-                continue
-            }
-            bestMatch = candidate
-        }
-        
-        guard let bestMatch, bestMatch.confidence >= confidenceThreshold else {
-            return nil
-        }
-        
-        if let coarseSecondBest,
-           abs(bestMatch.overlap - coarseSecondBest.overlap) > coarseStride,
-           bestMatch.confidence - coarseSecondBest.confidence < ambiguityTolerance {
-            return nil
-        }
-        
-        return LongCaptureOverlapMatch(
-            overlapHeight: Int(round(CGFloat(bestMatch.overlap) * CGFloat(current.height) / CGFloat(currentScaled.height))),
-            confidence: bestMatch.confidence
-        )
+        return 0
     }
-    
-    private func score(
-        previousPixels: [UInt8],
-        previousHeight: Int,
-        previousRows: [LongCaptureRowSignature],
-        currentPixels: [UInt8],
-        currentHeight: Int,
-        currentRows: [LongCaptureRowSignature],
-        overlap: Int
-    ) -> Double {
-        let rawScore = similarity(
-            previousPixels: previousPixels,
-            previousHeight: previousHeight,
-            currentPixels: currentPixels,
-            currentHeight: currentHeight,
-            width: sampleWidth,
-            overlap: overlap
-        )
-        let rowScore = rowSimilarity(
-            previousRows: previousRows,
-            currentRows: currentRows,
-            overlap: overlap
-        )
-        let overlapBias = min(Double(overlap) / Double(max(maximumOverlap, 1)), 1) * 0.02
-        return rawScore * 0.72 + rowScore * 0.28 + overlapBias
+
+    private static func contrast(_ pixels: [UInt8], width: Int) -> [Double] {
+        var result = [Double](repeating: 0, count: pixels.count)
+        for y in 0..<(pixels.count / width) {
+            let row = y * width
+            let samples = stride(from: 0, to: width, by: max(1, width / 24)).map { pixels[row + $0] }.sorted()
+            let background = Double(samples[samples.count / 2])
+            for x in 0..<width { result[row + x] = Double(pixels[row + x]) - background }
+        }
+        return result
     }
-    
-    private func similarity(previousPixels: [UInt8], previousHeight: Int, currentPixels: [UInt8], currentHeight: Int, width: Int, overlap: Int) -> Double {
-        let previousStartRow = previousHeight - overlap
-        var total = 0.0
-        var sampleCount = 0
-        for row in stride(from: 0, to: overlap, by: 2) {
-            let previousRowIndex = (previousStartRow + row) * width
-            let currentRowIndex = row * width
-            for column in stride(from: Int(Double(width) * 0.15), to: Int(Double(width) * 0.85), by: 2) {
-                let previousValue = previousPixels[previousRowIndex + column]
-                let currentValue = currentPixels[currentRowIndex + column]
-                total += abs(Double(previousValue) - Double(currentValue))
-                sampleCount += 1
+
+    private static func error(_ a: [Double], _ b: [Double], width: Int, top: Int, bottom: Int,
+                              columns: [Int], shift: Int, exhaustive: Bool) -> Double {
+        var difference = 0.0, energy = 0.0
+        let rowStep = exhaustive ? 1 : max(1, (bottom - top - shift) / 64)
+        let colStep = max(1, columns.count / (exhaustive ? 120 : 32))
+        for y in stride(from: top, to: bottom - shift, by: rowStep) {
+            let ay = (y + shift) * width, by = y * width
+            for i in stride(from: 0, to: columns.count, by: colStep) {
+                let x = columns[i]
+                let av = a[ay + x], bv = b[by + x]
+                difference += abs(av - bv)
+                energy += max(abs(av), abs(bv))
             }
         }
-        guard sampleCount > 0 else { return 0 }
-        let averageDifference = total / Double(sampleCount)
-        return max(0, 1.0 - averageDifference / 255.0)
-    }
-    
-    private func rowSignatures(from pixels: [UInt8], width: Int, height: Int) -> [LongCaptureRowSignature] {
-        guard width > 0, height > 0 else { return [] }
-        return (0..<height).map { row in
-            let rowOffset = row * width
-            var brightnessTotal = 0.0
-            var edgeTotal = 0.0
-            var previousValue = Double(pixels[rowOffset])
-            for column in 0..<width {
-                let value = Double(pixels[rowOffset + column])
-                brightnessTotal += value
-                if column > 0 {
-                    edgeTotal += abs(value - previousValue)
-                }
-                previousValue = value
-            }
-            return LongCaptureRowSignature(
-                brightness: brightnessTotal / Double(width),
-                edge: edgeTotal / Double(max(width - 1, 1))
-            )
-        }
-    }
-    
-    private func rowSimilarity(previousRows: [LongCaptureRowSignature], currentRows: [LongCaptureRowSignature], overlap: Int) -> Double {
-        guard previousRows.count >= overlap, currentRows.count >= overlap, overlap > 0 else {
-            return 0
-        }
-        let previousSlice = previousRows[(previousRows.count - overlap)..<previousRows.count]
-        let currentSlice = currentRows[..<overlap]
-        var totalDifference = 0.0
-        var sampleCount = 0
-        for (previousRow, currentRow) in zip(previousSlice, currentSlice) {
-            totalDifference += abs(previousRow.brightness - currentRow.brightness)
-            totalDifference += abs(previousRow.edge - currentRow.edge) * 0.8
-            sampleCount += 2
-        }
-        guard sampleCount > 0 else { return 0 }
-        let averageDifference = totalDifference / Double(sampleCount)
-        return max(0, 1.0 - averageDifference / 255.0)
+        return energy > 1000 ? difference / energy : .infinity
     }
 }
 
-private struct LongCaptureRowSignature {
-    let brightness: Double
-    let edge: Double
-}
-
-private final class LongCaptureStreamService {
+// Frame state is confined to outputQueue; start/stop own stream lifecycle and drain that queue before teardown.
+private final class LongCaptureStreamService: @unchecked Sendable {
     private let context = CIContext()
     private let outputQueue = DispatchQueue(label: "com.libreshot.long-capture")
     private var stream: SCStream?
@@ -911,9 +888,10 @@ private final class LongCaptureStreamService {
     private var region: LongCaptureRegion?
     private var onFrame: ((LongCaptureFrame) -> Void)?
     private var minimumFrameInterval: CFTimeInterval = 0.10
-    private var lastEmissionTimestamp: CFTimeInterval = 0
     private(set) var isRunning = false
     private var isPaused = false
+    private var settleWork: DispatchWorkItem?
+    private var pendingFrame: LongCaptureFrame?
     
     func start(region: LongCaptureRegion, onFrame: @escaping (LongCaptureFrame) -> Void) async throws {
         let content = try await ScreenCaptureAccess.content {
@@ -923,9 +901,9 @@ private final class LongCaptureStreamService {
             throw CaptureServiceError.noDisplay
         }
         
+        try Task.checkCancellation()
         self.region = region
         self.onFrame = onFrame
-        self.lastEmissionTimestamp = 0
         self.isPaused = false
         
         let excludedApplications: [SCRunningApplication]
@@ -935,13 +913,14 @@ private final class LongCaptureStreamService {
             excludedApplications = []
         }
         let filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
-        let configuration = SCStreamConfiguration()
-        configuration.width = display.width
-        configuration.height = display.height
-        configuration.scalesToFit = false
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.showsCursor = false
-        configuration.capturesAudio = false
+        let pixelSize = await MainActor.run { () -> CGSize in
+            let screen = NSScreen.screens.first {
+                ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == region.displayID
+            }
+            let scale = screen?.backingScaleFactor ?? 1
+            return CGSize(width: region.screenFrame.width * scale, height: region.screenFrame.height * scale)
+        }
+        let configuration = CaptureService.displayConfiguration(width: Int(pixelSize.width), height: Int(pixelSize.height))
         configuration.minimumFrameInterval = CMTime(seconds: minimumFrameInterval, preferredTimescale: 600)
         
         let output = CaptureStreamOutput { [weak self] sampleBuffer in
@@ -949,29 +928,46 @@ private final class LongCaptureStreamService {
         }
         let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: outputQueue)
-        try await stream.startCapture()
-        
         self.streamOutput = output
         self.stream = stream
-        self.isRunning = true
+        outputQueue.sync { self.isRunning = true }
+        do {
+            try await stream.startCapture()
+            try Task.checkCancellation()
+        } catch {
+            await stop()
+            throw error
+        }
     }
     
     func pause() {
-        isPaused = true
+        outputQueue.async { self.isPaused = true; self.settleWork?.cancel() }
     }
     
     func resume() {
-        lastEmissionTimestamp = 0
-        isPaused = false
+        outputQueue.async {
+            self.isPaused = false
+        }
     }
     
     func stop() async {
         guard let stream else {
-            isRunning = false
+            outputQueue.sync { self.isRunning = false }
             return
         }
-        isRunning = false
         try? await stream.stopCapture()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            outputQueue.async {
+                self.settleWork?.cancel()
+                self.settleWork = nil
+                if !self.isPaused, let frame = self.pendingFrame {
+                    self.onFrame?(LongCaptureFrame(image: frame.image, timestamp: frame.timestamp + 0.2))
+                }
+                self.pendingFrame = nil
+                self.isRunning = false
+                continuation.resume()
+            }
+        }
         if let streamOutput {
             try? stream.removeStreamOutput(streamOutput, type: .screen)
         }
@@ -983,11 +979,11 @@ private final class LongCaptureStreamService {
     
     private func handle(sampleBuffer: CMSampleBuffer) {
         guard isRunning, !isPaused, let region, let onFrame else { return }
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let rawStatus = attachments.first?[.status] as? Int,
+              SCFrameStatus(rawValue: rawStatus) == .complete,
+              let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
-        if lastEmissionTimestamp > 0, timestamp - lastEmissionTimestamp < minimumFrameInterval {
-            return
-        }
         
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
         guard let fullImage = context.createCGImage(ciImage, from: ciImage.extent),
@@ -995,8 +991,16 @@ private final class LongCaptureStreamService {
             return
         }
         
-        lastEmissionTimestamp = timestamp
-        onFrame(LongCaptureFrame(image: croppedImage, timestamp: timestamp))
+        let frame = LongCaptureFrame(image: croppedImage, timestamp: timestamp)
+        pendingFrame = frame
+        settleWork?.cancel()
+        onFrame(frame)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isRunning, !self.isPaused else { return }
+            self.onFrame?(LongCaptureFrame(image: frame.image, timestamp: timestamp + 0.2))
+        }
+        settleWork = work
+        outputQueue.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 }
 

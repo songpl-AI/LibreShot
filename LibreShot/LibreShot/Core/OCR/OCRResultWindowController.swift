@@ -31,8 +31,7 @@ class OCRResultWindowController: NSWindowController, NSWindowDelegate {
 
 struct OCRResultView: View {
     let text: String
-    @State private var copied = false
-    @State private var translatedText: String = ""
+    @State private var translatedText = ""
     @State private var translateError: String?
 
     var body: some View {
@@ -41,43 +40,37 @@ struct OCRResultView: View {
                 .font(.system(.body, design: .monospaced))
                 .padding(8)
                 .frame(minHeight: 140)
-
             Divider()
-
-            HStack {
-                Text(copied ? "已复制！" : "\(text.count) 字符")
-                    .foregroundColor(copied ? .green : .secondary)
-                    .font(.caption)
-
-                Spacer()
-
+            VStack(spacing: 10) {
+                HStack {
+                    Text("\(text.count) 字符").foregroundStyle(.secondary).font(.caption)
+                    Spacer()
+                    OCRCopyButton(text: text, title: "复制文本")
+                        .keyboardShortcut("c", modifiers: .command)
+                }
                 if #available(macOS 26.0, *) {
-                    OCRTranslationControls(text: text,
-                                           translatedText: $translatedText,
-                                           translateError: $translateError)
+                    HStack {
+                        Text("翻译为").foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        OCRTranslationControls(text: text, translatedText: $translatedText, translateError: $translateError)
+                    }
                 }
-
-                Button(action: {
-                    copyToClipboard()
-                }) {
-                    Label("复制文本", systemImage: "doc.on.doc")
-                }
-                .keyboardShortcut("c", modifiers: .command)
             }
-            .padding()
+            .padding(12)
             .background(Color(NSColor.windowBackgroundColor))
 
             if let error = translateError {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                    Text(error)
-                }
-                .font(.caption)
-                .foregroundColor(.orange)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding([.horizontal, .bottom], 12)
             } else if !translatedText.isEmpty {
                 Divider()
+                HStack {
+                    Text("译文").font(.headline)
+                    Spacer()
+                    OCRCopyButton(text: translatedText, title: "复制译文")
+                }.padding(12)
                 TextEditor(text: .constant(translatedText))
                     .font(.system(.body, design: .monospaced))
                     .padding(8)
@@ -86,23 +79,35 @@ struct OCRResultView: View {
         }
         .frame(minWidth: 480, minHeight: 360)
     }
-
-    private func copyToClipboard() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-
-        withAnimation {
-            copied = true
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation {
-                copied = false
-            }
-        }
-    }
 }
 
+struct OCRCopyButton: View {
+    let text: String
+    let title: String
+    @State private var copyID: UUID?
+
+    var body: some View {
+        Button {
+            Self.copy(text, to: .general)
+            copyID = UUID()
+        } label: {
+            Label(copyID == nil ? title : "已复制", systemImage: copyID == nil ? "doc.on.doc" : "checkmark")
+                .frame(minWidth: 82)
+                .fixedSize()
+        }
+        .disabled(text.isEmpty)
+        .task(id: copyID) {
+            guard copyID != nil else { return }
+            do { try await Task.sleep(for: .seconds(2)); copyID = nil } catch { }
+        }
+        .onChange(of: text) { _ in copyID = nil }
+    }
+
+    static func copy(_ text: String, to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+}
 
 @available(macOS 26.0, *)
 private struct OCRTranslationControls: View {
@@ -127,11 +132,15 @@ private struct OCRTranslationControls: View {
             Button {
                 model.start(text: text)
             } label: {
-                if model.isTranslating {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("翻译", systemImage: "character.bubble")
+                HStack(spacing: 6) {
+                    ZStack {
+                        Image(systemName: "character.bubble").opacity(model.isTranslating ? 0 : 1)
+                        if model.isTranslating { ProgressView().controlSize(.small) }
+                    }.frame(width: 18, height: 18)
+                    Text("翻译")
                 }
+                .frame(minWidth: 68)
+                .fixedSize()
             }
             .disabled(model.isTranslating || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .help("首次翻译可能需要联网下载免费语言包，系统会询问是否下载；安装后可离线翻译。")

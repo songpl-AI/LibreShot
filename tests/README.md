@@ -1,5 +1,7 @@
 # 工具栏与截图完成流程回归检查
 
+截图内存优化的功能与生命周期回归使用 `tests/run-issue4-checks.sh`：验证 PNG/TIFF 单条目、透明圆角、Retina 尺寸、跨进程及写入进程退出后的剪贴板读回；追踪历史完整帧像素缓冲释放，并对照固定底栏、小幅滚动、sRGB/Display P3 彩色图片的最终像素。内存数值对照见 [内存分析](../docs/qa/memory-analysis.md)。
+
 在装有 Xcode 的 macOS 上，从仓库根目录运行：
 
 ```bash
@@ -66,3 +68,28 @@ python3 -m http.server 8768 --bind 127.0.0.1 --directory tests/fixtures
 实际截图验收使用正常签名构建，不传 `CODE_SIGNING_ALLOWED=NO`，以免改变应用身份、干扰已有录屏授权。自动检查不能替代屏幕录制、滚动拼接和跨 macOS 版本测试。当前结果和未验证项目见 [1.1.0 验收记录](../docs/qa/1.1.0.md)。
 
 标注选择原生 UI 入口为 `AnnotationSelectionUITestApp.swift`：将回归脚本中的生产 Swift 源文件与此入口一起编译为独立 App（不包含 `ToolbarRegressionChecks.swift`）。它使用生产 `OverlayView`、合成矩形和文字及独立设置域，无需录屏权限。操作步骤和实测结果见 [1.2.0 标注验收](../docs/qa/1.2.0.md)。
+
+
+## Issue #4 回归
+
+```bash
+bash tests/run-issue4-checks.sh
+```
+
+覆盖圆角透明度、Retina 尺寸、重复列表与固定栏匹配、奇数/小幅滚动、固定底栏、逐像素接缝、反向/无重叠/歧义帧拒绝、连续滚动、失败重试和未完整拼接时阻止静默出图、保存快捷键提交文字、回车的文字编辑边界、复制译文、长图底部标注导出。
+
+可选原生渲染：
+
+```bash
+LIBRESHOT_ISSUE4_QA=/tmp/LibreShot-issue4-qa bash tests/run-issue4-checks.sh
+```
+
+`Issue4UITestApp.swift` 是独立交互验收入口。使用 `run-issue4-checks.sh` 中的生产源文件，将 `Issue4RegressionChecks.swift` 替换为该入口编译运行。它显示生产长图编辑器，使用合成的 60 行图片与独立设置域；保存、另存为、完成只将 PNG 写入 `/tmp/LibreShot-Issue4-UI`，不改用户剪贴板。按 Esc 退出。步骤及实测结果见 [Issue #4 验收](../docs/qa/issue-4.md)。
+
+可选传入本机图文图片，检查连续滚动分帧重建是否与原图逐像素一致：
+
+```bash
+LIBRESHOT_CAPTURE_FIXTURE=/absolute/path/image.png bash tests/run-issue4-checks.sh
+```
+
+Issue #4 补充覆盖多种截图宽高、小幅位移以及 20/32/64 px 固定底栏。仅横向采样，保留原始像素行以防重复周期误判。

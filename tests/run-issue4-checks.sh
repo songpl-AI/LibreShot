@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-task_tmp=$(mktemp -d "${TMPDIR:-/tmp}/libreshot-toolbar-checks.XXXXXX")
+task_tmp=$(mktemp -d "${TMPDIR:-/tmp}/libreshot-issue4-checks.XXXXXX")
 trap 'rm -rf "$task_tmp"' EXIT
 xcrun swiftc -parse-as-library \
   LibreShot/LibreShot/CaptureService.swift \
@@ -21,6 +21,9 @@ xcrun swiftc -parse-as-library \
   LibreShot/LibreShot/Core/Hotkey/HotkeyService.swift \
   LibreShot/LibreShot/Features/Settings/SettingsView.swift \
   LibreShot/LibreShot/Features/Settings/ShortcutRecorder.swift \
-  tests/ToolbarRegressionChecks.swift \
+  tests/Issue4RegressionChecks.swift \
   -o "$task_tmp/checks"
 "$task_tmp/checks"
+task_clipboard="LibreShot.ClipboardCheck.$(uuidgen)"
+"$task_tmp/checks" --clipboard-write "$task_clipboard"
+"$task_tmp/checks" --clipboard-read "$task_clipboard"

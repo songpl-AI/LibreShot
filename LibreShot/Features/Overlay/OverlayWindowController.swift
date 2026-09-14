@@ -101,7 +101,7 @@ class OverlayWindowController: NSWindowController {
         
         // Escape always cancels the capture, just like the toolbar's Cancel button.
         overlayWindow.onEscapeKey = cancelAction
-        overlayWindow.onConfirmKey = nil
+        overlayWindow.bindEditingActions(to: viewModel)
         
         // 3. Determine Screen
         if let frontmostApplication = NSWorkspace.shared.frontmostApplication,
@@ -246,7 +246,7 @@ class OverlayWindowController: NSWindowController {
         viewModel.longCaptureStatusText = "正在生成长截图"
         window?.ignoresMouseEvents = false
         if let overlayWindow = window as? OverlayWindow {
-            overlayWindow.onConfirmKey = nil
+            overlayWindow.clearEditingActions()
         }
         
         Task { [weak self] in
@@ -302,7 +302,9 @@ class OverlayWindowController: NSWindowController {
         case .idle:
             viewModel.longCaptureStatusText = "正在准备长截图"
         case .capturing:
-            if progress.acceptedFrameCount == 0 {
+            if let warning = progress.warning {
+                viewModel.longCaptureStatusText = warning
+            } else if progress.acceptedFrameCount == 0 {
                 viewModel.longCaptureStatusText = "滚动目标区域，按回车完成，按 Esc 取消"
             } else {
                 viewModel.longCaptureStatusText = "已采集 \(progress.acceptedFrameCount) 帧 · 当前高度 \(progress.appendedPixelHeight) px · 回车完成"
@@ -384,7 +386,7 @@ class OverlayWindowController: NSWindowController {
         longCaptureActionInFlight = false
         if let overlayWindow = window as? OverlayWindow {
             overlayWindow.ignoresMouseEvents = false
-            overlayWindow.onConfirmKey = nil
+            overlayWindow.clearEditingActions()
         }
         previousFrontmostApplication = nil
     }
@@ -397,6 +399,8 @@ class OverlayWindowController: NSWindowController {
         viewModel.captureMode = currentCaptureMode
         viewModel.longCaptureStatusText = currentCaptureMode == .longScreenshot ? "框选目标区域，松开后直接滚动" : "拖动选择截图区域"
         
+        (window as? OverlayWindow)?.bindEditingActions(to: viewModel)
+
         // 2. Re-determine screen based on current mouse location
         let mouseLoc = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouseLoc) } ?? NSScreen.main

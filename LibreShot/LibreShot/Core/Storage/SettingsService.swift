@@ -63,6 +63,10 @@ class SettingsService: ObservableObject {
         }
     }
     
+    @Published var editLongCaptureAfterFinish: Bool {
+        didSet { defaults.set(editLongCaptureAfterFinish, forKey: "editLongCaptureAfterFinish") }
+    }
+
     @Published var playSound: Bool {
         didSet {
             defaults.set(playSound, forKey: "playSound")
@@ -106,6 +110,7 @@ class SettingsService: ObservableObject {
         
         self.launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         self.useRoundedCorners = defaults.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
+        self.editLongCaptureAfterFinish = defaults.object(forKey: "editLongCaptureAfterFinish") as? Bool ?? true
         self.playSound = defaults.object(forKey: "playSound") as? Bool ?? true // Default to true
         self.autoSaveEnabled = defaults.object(forKey: "autoSaveEnabled") as? Bool ?? true // Default to true
     }

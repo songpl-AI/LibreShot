@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyObserver: NSObjectProtocol?
     private var keepAliveWindow: NSWindow?
 
+    private var imageEditors: [ImageEditorWindowController] = []
     private var pinnedWindows: [PinnedImageWindowController] = []
     private var ocrWindowController: OCRResultWindowController?
     private var isUserInitiatedTermination = false
@@ -303,13 +304,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleLongCaptureResult(_ image: NSImage) async {
         await MainActor.run {
             SoundService.shared.playCaptureSound()
+            if SettingsService.shared.editLongCaptureAfterFinish {
+                showImageEditor(image)
+                self.overlayWindowController = nil
+                return
+            }
             var previewWindow: PinnedImageWindowController?
             previewWindow = PinnedImageWindowController(
                 image: image,
                 displayMode: .longCapturePreview,
                 onCopyAction: {
                     CaptureService.shared.copyToClipboard(image)
-                    previewWindow?.close()
                 },
                 onSaveAction: { [weak self] in
                     Task { [weak self] in
@@ -331,7 +336,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             await self?.handleCaptureError(error)
                         }
                     }
-                }
+                },
+                onEditAction: { [weak self] in self?.showImageEditor(image) }
             )
             previewWindow?.onClose = { [weak self, weak previewWindow] in
                 if let previewWindow {
@@ -407,63 +413,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 SoundService.shared.playCaptureSound()
 
-                switch action {
-                case .save:
-                    do {
-                        _ = try await saveImage(outputImage)
-                    } catch is CancellationError {
-                        // User cancelled, do nothing
-                    } catch {
-                        throw error
-                    }
-                case .saveAs:
-                    do {
-                        _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
-                    } catch is CancellationError {
-                        // User cancelled, do nothing
-                    } catch {
-                        throw error
-                    }
-                case .copy:
-                    do {
-                        _ = try await CaptureService.shared.completeCapture(outputImage)
-                    } catch {
-                        showAlert(title: "已复制，但自动保存失败", message: "截图仍在剪贴板中，可粘贴使用。\n\(error.localizedDescription)")
-                    }
-                case .pin:
-                    // Create and show pinned window
-                    await MainActor.run {
-                        let pinnedWindow = PinnedImageWindowController(image: outputImage)
-                        pinnedWindow.onClose = { [weak self, weak pinnedWindow] in
-                            if let pw = pinnedWindow {
-                                self?.pinnedWindows.removeAll { $0 === pw }
-                            }
-                        }
-                        self.pinnedWindows.append(pinnedWindow)
-                        pinnedWindow.showWindow(nil)
-                    }
-                case .ocr:
-                    // Perform OCR
-                    do {
-                         let text = try await OCRService.shared.recognizeText(from: outputImage)
-                         await MainActor.run {
-                             // Close existing OCR window if any
-                             self.ocrWindowController?.close()
-                             
-                             let ocrWC = OCRResultWindowController(text: text)
-                             self.ocrWindowController = ocrWC
-                             ocrWC.showWindow(nil)
-                         }
-                    } catch {
-                        await showAlert(title: "OCR 失败", message: error.localizedDescription)
-                    }
-                }
+                try await handleImageAction(outputImage, action: action)
+            } catch is CancellationError {
             } catch {
                 await handleCaptureError(error)
             }
         }
     }
     
+    @MainActor
+    private func showImageEditor(_ image: NSImage) {
+        let editor = ImageEditorWindowController(image: image)
+        editor.onAction = { [weak self] image, action in
+            guard let self else { return }
+            try await self.handleImageAction(image, action: action)
+        }
+        editor.onClose = { [weak self, weak editor] in
+            self?.imageEditors.removeAll { $0 === editor }
+        }
+        imageEditors.append(editor)
+        editor.showWindow(nil)
+        editor.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
+    private func handleImageAction(_ outputImage: NSImage, action: CaptureAction) async throws {
+        switch action {
+        case .save:
+            _ = try await saveImage(outputImage)
+        case .saveAs:
+            _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
+        case .copy:
+            do {
+                _ = try await CaptureService.shared.completeCapture(outputImage)
+            } catch {
+                showAlert(title: "已复制，但自动保存失败", message: "截图仍在剪贴板中，可粘贴使用。\n\(error.localizedDescription)")
+            }
+        case .pin:
+            let pinnedWindow = PinnedImageWindowController(image: CaptureService.shared.styledImage(outputImage))
+            pinnedWindow.onClose = { [weak self, weak pinnedWindow] in
+                self?.pinnedWindows.removeAll { $0 === pinnedWindow }
+            }
+            pinnedWindows.append(pinnedWindow)
+            pinnedWindow.showWindow(nil)
+        case .ocr:
+            let text = try await OCRService.shared.recognizeText(from: outputImage)
+            ocrWindowController?.close()
+            let controller = OCRResultWindowController(text: text)
+            ocrWindowController = controller
+            controller.showWindow(nil)
+        }
+    }
+
     /// 统一保存入口：自动保存开关开启时直接写盘，否则弹保存面板。
     private func saveImage(_ image: NSImage) async throws -> URL {
         if SettingsService.shared.autoSaveEnabled {

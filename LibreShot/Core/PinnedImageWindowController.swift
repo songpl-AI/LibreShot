@@ -20,7 +20,8 @@ class PinnedImageWindowController: NSWindowController {
         displayMode: DisplayMode = .pinned,
         onCopyAction: (() -> Void)? = nil,
         onSaveAction: (() -> Void)? = nil,
-        onSaveAsAction: (() -> Void)? = nil
+        onSaveAsAction: (() -> Void)? = nil,
+        onEditAction: (() -> Void)? = nil
     ) {
         self.image = image
         self.displayMode = displayMode
@@ -60,7 +61,8 @@ class PinnedImageWindowController: NSWindowController {
             },
             onSaveAs: { [weak self] in
                 self?.handleSaveAs()
-            }
+            },
+            onEdit: onEditAction.map { action in { [weak self] in self?.close(); action() } }
         )
         window.contentView = NSHostingView(rootView: contentView)
     }
@@ -77,6 +79,7 @@ class PinnedImageWindowController: NSWindowController {
     private func handleCopy() {
         if let onCopyAction {
             onCopyAction()
+            if displayMode == .longCapturePreview { close() }
             return
         }
         
@@ -162,6 +165,7 @@ struct PinnedImageView: View {
     var onCopy: () -> Void
     var onSave: () -> Void
     var onSaveAs: () -> Void
+    var onEdit: (() -> Void)? = nil
     
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
@@ -198,6 +202,10 @@ struct PinnedImageView: View {
             
             if displayMode == .longCapturePreview {
                 HStack(spacing: 8) {
+                    if let onEdit {
+                        Button(action: onEdit) { Image(systemName: "pencil.tip.crop.circle") }
+                            .help("标注长截图").accessibilityLabel("标注长截图")
+                    }
                     Button(action: onCopy) {
                         Label("复制", systemImage: "doc.on.doc")
                     }

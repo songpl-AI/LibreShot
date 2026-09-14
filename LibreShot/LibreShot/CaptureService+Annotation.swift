@@ -62,7 +62,7 @@ extension CaptureService {
     }
 
     private func renderCompositeImage(baseImage: NSImage, annotations: [Annotation]) -> NSImage {
-        guard let bitmapRep = bitmapRep(from: baseImage, opaque: true),
+        guard let bitmapRep = bitmapRep(from: baseImage, opaque: false),
               let cgImage = bitmapRep.cgImage else {
             return baseImage
         }

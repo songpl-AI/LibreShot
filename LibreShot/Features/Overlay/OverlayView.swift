@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OverlayView: View {
     @ObservedObject var viewModel: OverlayViewModel
+    var showsToolbar = true
 
     var body: some View {
         GeometryReader { geometry in
@@ -107,12 +108,14 @@ struct OverlayView: View {
                 
                 // Layer 4: Toolbar (Only in Editing mode)
                 if viewModel.state == .editing {
+                    if showsToolbar {
                     let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
                     let toolbarPos = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size)
                     EditorToolbarView(viewModel: viewModel, layout: layout, toolbarPosition: toolbarPos, screenSize: geometry.size)
                         .position(x: toolbarPos.x, y: toolbarPos.y)
                         .zIndex(1)
                         
+                    }
                     // Text Input Overlay（内联编辑：所见即所得，随内容动态调整大小）
                     if viewModel.isEditingText {
                         InlineTextEditor(
@@ -120,6 +123,7 @@ struct OverlayView: View {
                             fontSize: viewModel.selectedFontSize,
                             color: NSColor(viewModel.selectedColor),
                             cursorAtEnd: viewModel.editingTextAnnotationID != nil,
+                            allowsAncestorScrolling: viewModel.captureMode != .imageEditor,
                             onSizeChange: { size in
                                 if size != viewModel.editingTextSize {
                                     viewModel.editingTextSize = size

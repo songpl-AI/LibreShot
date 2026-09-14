@@ -108,11 +108,12 @@ struct EditorToolbarView: View {
     private func help(for item: ToolbarItem) -> String {
         switch item {
         case .complete:
-            return settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
+            return settings.autoSaveEnabled ? "完成：复制并自动保存（回车）" : "完成：复制到剪贴板（回车）"
         case .select: return "选择/移动"
         case .cancel: return "取消截图（Esc）"
-        case .save: return settings.autoSaveEnabled ? "保存到预设目录" : "保存…"
+        case .save: return settings.autoSaveEnabled ? "保存到预设目录（⌘S）" : "保存…（⌘S）"
         case .undo where isDisabled(item): return "撤销（当前没有标注）"
+        case .saveAs: return "另存为…（⇧⌘S）"
         case .longCapture where isDisabled(item): return "长截图（请先撤销标注并结束文字编辑）"
         default: return item.title
         }

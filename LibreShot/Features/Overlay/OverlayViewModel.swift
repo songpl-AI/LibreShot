@@ -23,6 +23,7 @@ enum CaptureAction {
 enum CaptureMode: Equatable {
     case normal
     case longScreenshot
+    case imageEditor
 }
 
 enum SelectionHandle: CaseIterable {
@@ -672,6 +673,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     func beginMoveSelection(at point: CGPoint) {
+        guard captureMode != .imageEditor else { return }
         guard (state == .editing || state == .longCaptureReady), selectionRect != .zero else { return }
         isMovingSelection = true
         selectionDragStartPoint = point
@@ -698,7 +700,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     var canResizeSelection: Bool {
-        (state == .editing || state == .longCaptureReady) && !selectionRect.isEmpty
+        captureMode != .imageEditor && (state == .editing || state == .longCaptureReady) && !selectionRect.isEmpty
     }
 
     /// Resize handles take priority over annotation tools for the entire drag.

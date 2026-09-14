@@ -164,6 +164,11 @@ struct GeneralSettingsView: View {
                     
                     Divider()
                     
+                    SettingsRow("长截图:") {
+                        Toggle("完成后进入标注编辑", isOn: $settings.editLongCaptureAfterFinish)
+                    }
+                    Divider()
+
                     // 2. Corner Radius
                     SettingsRow("截图样式:") {
                         Picker("", selection: $settings.useRoundedCorners) {

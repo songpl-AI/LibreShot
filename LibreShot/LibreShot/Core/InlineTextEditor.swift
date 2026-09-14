@@ -10,6 +10,7 @@ struct InlineTextEditor: NSViewRepresentable {
     var color: NSColor
     /// 首次加载时是否把光标定位到文本末尾（用于重新编辑已有文字）
     var cursorAtEnd: Bool
+    var allowsAncestorScrolling = true
     /// 内容尺寸变化时回调，用于动态调整编辑器大小
     var onSizeChange: (CGSize) -> Void
 
@@ -18,7 +19,8 @@ struct InlineTextEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSTextView {
-        let textView = NSTextView()
+        let textView = InlineAnnotationTextView()
+        textView.allowsAncestorScrolling = allowsAncestorScrolling
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.importsGraphics = false
@@ -88,5 +90,14 @@ struct InlineTextEditor: NSViewRepresentable {
             parent.text = textView.string
             parent.reportSize(textView)
         }
+    }
+}
+
+/// Inline annotations expand to fit their text. In an image document, AppKit must not
+/// scroll the outer viewport using the unscaled NSTextView selection rectangle.
+private final class InlineAnnotationTextView: NSTextView {
+    var allowsAncestorScrolling = true
+    override func scrollRangeToVisible(_ range: NSRange) {
+        if allowsAncestorScrolling { super.scrollRangeToVisible(range) }
     }
 }
