@@ -494,7 +494,7 @@ struct AboutSettingsView: View {
                 .shadow(radius: 4)
             
             VStack(spacing: 6) {
-                Text("LibreShot")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "LibreShot")
                     .font(.title)
                     .fontWeight(.bold)
                 
@@ -502,6 +502,11 @@ struct AboutSettingsView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                     .monospacedDigit()
+                if Bundle.main.object(forInfoDictionaryKey: "LibreShotBuildChannel") as? String == "local-preview" {
+                    Text("本地试用版 · 未公证")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             
             Spacer()
