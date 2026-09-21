@@ -1,6 +1,6 @@
 # LibreShot Preview 本地试用
 
-这是本地构建的 1.3.0 Preview（build 8），不是公开正式版本。它使用临时签名，未公证；源码版本见同目录 `BUILD-INFO.json`。包含 Apple Silicon 和 Intel 架构，但本轮只在 Apple Silicon / macOS 26 验证运行。
+这是本地构建的 1.3.0 Preview（build 8），不是公开正式版本。它使用临时签名，未公证；源码版本见同目录 `BUILD-INFO.json`。包含 Apple Silicon 和 Intel 架构。原生 QA 在 Apple Silicon / macOS 26 上通过；最终试用包仅完成构建、签名和打包检查，尚未启动，以免与正在运行的正式版争用快捷键。
 
 ## 启动
 
