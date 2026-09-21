@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import CoreGraphics
 
 struct SettingsView: View {
     @ObservedObject var settings = SettingsService.shared
@@ -279,6 +280,9 @@ struct GeneralSettingsView: View {
 struct ShortcutSettingsView: View {
     @ObservedObject var settings: SettingsService
     @State private var registerError: Bool = false
+    @State private var editorShortcutError: String?
+    @State private var editorShortcutErrorItem: ToolbarItem?
+    @State private var optionPermissionMissing = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -305,6 +309,14 @@ struct ShortcutSettingsView: View {
             .background(Color(NSColor.controlBackgroundColor))
             
             Divider()
+            if registerError || settings.hotkeyRegistrationError != nil {
+                Label((registerError ? settings.shortcutError : nil) ?? settings.hotkeyRegistrationError ?? "快捷键注册失败，可能已被其他应用占用", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+            }
             
             // Content
             ScrollView {
@@ -338,21 +350,56 @@ struct ShortcutSettingsView: View {
                     
                     ShortcutRow(
                         title: "长截图",
-                        description: "框选滚动区域后开始长截图，完成后自动复制并可继续保存。",
+                        description: "框选滚动区域，完成后进入标注或预览。",
                         keyCode: $settings.longScreenshotShortcutKey,
                         modifiers: $settings.longScreenshotShortcutModifiers,
                         onSave: { k, m in saveLongScreenshotShortcut(keyCode: k, modifiers: m) },
                         onClear: { saveLongScreenshotShortcut(keyCode: -1, modifiers: 0) }
                     )
-                    
-                    if registerError {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                            Text("快捷键注册失败，可能已被其他应用占用")
+
+                    Toggle("双击 Option 启动区域截图", isOn: $settings.doubleOptionEnabled)
+                        .onChange(of: settings.doubleOptionEnabled) { enabled in
+                            let active = HotkeyService.shared.enableDoubleOption(enabled, requestPermission: enabled)
+                            optionPermissionMissing = enabled && !active
                         }
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .padding(.top, 8)
+                    if optionPermissionMissing || (settings.doubleOptionEnabled && !CGPreflightListenEventAccess()) {
+                        Text("需要在系统设置的“隐私与安全性 → 输入监控”中允许 LibreShot，授权后重新启动应用。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    Picker("编辑时空格", selection: $settings.editorSpaceAction) {
+                        ForEach(EditorSpaceAction.allCases, id: \.self) { action in
+                            Text(action.title).tag(action)
+                        }
+                    }
+                    ForEach(ToolbarItem.allCases.filter { $0 != .cancel }) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Label(item.title, systemImage: item.iconName)
+                                Spacer()
+                                ShortcutRecorder(
+                                    keyCode: .constant(settings.editorShortcuts[item.rawValue]?.keyCode ?? -1),
+                                    modifiers: .constant(settings.editorShortcuts[item.rawValue]?.modifiers ?? 0),
+                                    onShortcutRecorded: { key, modifiers in
+                                        editorShortcutErrorItem = item
+                                        editorShortcutError = settings.setEditorShortcut(.init(keyCode: key, modifiers: modifiers), for: item)
+                                    },
+                                    onClear: {
+                                        editorShortcutErrorItem = nil
+                                        editorShortcutError = settings.setEditorShortcut(nil, for: item)
+                                    },
+                                    allowsUnmodified: true
+                                )
+                            }
+                            if editorShortcutErrorItem == item, let editorShortcutError {
+                                Text(editorShortcutError).font(.caption).foregroundStyle(.red)
+                            }
+                        }
+                    }
+                    Button("恢复编辑快捷键") {
+                        settings.restoreDefaultEditorShortcuts()
+                        editorShortcutErrorItem = .save
+                        editorShortcutError = settings.editorShortcuts.count == EditorShortcut.defaults.count ? nil : "与全局截图冲突的默认快捷键未恢复"
                     }
                 }
                 .padding(24)

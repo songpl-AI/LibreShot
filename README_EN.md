@@ -1,5 +1,11 @@
 # LibreShot
 
+### Unreleased Source Changes
+
+The working source adds in-image translation on macOS 26+, editable translation regions, original/translated previews, image export and annotation, configurable editor shortcuts, an optional Space action, and opt-in double-Option capture. Double-Option requires Input Monitoring permission and still needs real keyboard/permission validation. In-image translation is intended primarily for documents and interfaces with simple backgrounds; it does not reconstruct complex backgrounds or exact fonts, and overflowing translations must be corrected or excluded before export. Unchanged text retains the original pixels.
+
+Space can be disabled (default), finish the capture using the auto-save preference, or explicitly save and copy regardless of that preference. Text entry retains ordinary characters, Space and Return. Mosaic preview pixels are allocated on demand; the measurements do not establish a 10 MB post-OCR idle footprint. These changes are not part of the public v1.2.0 release. See the [development plan](docs/design/issues-4-6-roadmap.md) and [validation record](docs/qa/issues-4-6-development.md).
+
 [中文](README.md) | [English](README_EN.md)
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.

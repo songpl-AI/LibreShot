@@ -5,6 +5,7 @@ import CoreGraphics
 enum ToolbarItem: String, CaseIterable, Identifiable {
     case select, pen, rectangle, arrow, ellipse, text, number, mosaic, blur
     case style, undo, cancel, pin, ocr, longCapture, complete, save, saveAs
+    case translate
 
     var id: String { rawValue }
     var isRequired: Bool { self == .complete || self == .cancel }
@@ -29,6 +30,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .complete: return "完成"
         case .save: return "保存"
         case .saveAs: return "另存为…"
+        case .translate: return "原图翻译"
         }
     }
 
@@ -52,6 +54,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .complete: return "checkmark"
         case .save: return "square.and.arrow.down"
         case .saveAs: return "square.and.arrow.down.on.square"
+        case .translate: return "character.bubble"
         }
     }
 

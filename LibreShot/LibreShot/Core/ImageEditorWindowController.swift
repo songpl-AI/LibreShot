@@ -24,7 +24,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         let window = OverlayWindow(contentRect: CGRect(origin: .zero, size: size),
                                    styleMask: [.titled, .closable, .resizable, .miniaturizable],
                                    backing: .buffered, defer: false)
-        window.title = "长截图标注"
+        window.title = "截图标注"
         window.minSize = CGSize(width: 520, height: 360)
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -55,6 +55,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
                 try await onAction(output, action)
                 // Saving keeps the editable document open, including when the user cancels a panel.
                 if case .copy = action { self.close() }
+                if case .saveAndCopy = action { self.close() }
             } catch is CancellationError {
             } catch {
                 guard let window = self.window, window.isVisible else { return }
@@ -83,7 +84,7 @@ struct ImageEditorView: View {
             let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: geometry.size.width - 24)
             VStack(spacing: 10) {
                 HStack {
-                    Text("长截图标注").font(.headline)
+                    Text("截图标注").font(.headline)
                     Spacer()
                     Button { model.commitTextInput(); zoom = max(0.05, zoom / 1.25) } label: { Label("缩小", systemImage: "minus.magnifyingglass") }
                         .labelStyle(.iconOnly).help("缩小")

@@ -11,6 +11,7 @@ struct ToolbarRegressionChecks {
         checkAutomaticAnnotationSelection()
         try await checkOCRAndTranslation()
         if #available(macOS 26.0, *) { await checkTranslationLifecycle() }
+        try await ImageTranslationChecks.run()
         let displayConfiguration = CaptureService.displayConfiguration(width: 3024, height: 1964)
         precondition(!displayConfiguration.showsCursor, "Captured pixels must exclude the system cursor in both frozen previews and exported screenshots")
         precondition(displayConfiguration.width == 3024 && displayConfiguration.height == 1964)
@@ -108,7 +109,7 @@ struct ToolbarRegressionChecks {
         precondition(movedReload.toolbarConfiguration.orderedItems == settings.toolbarConfiguration.orderedItems)
         movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: 0), toOffset: ToolbarItem.allCases.count)
         precondition(movedReload.toolbarConfiguration.orderedItems.last == .save)
-        movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: 17), toOffset: 16)
+        movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: ToolbarItem.allCases.count - 1), toOffset: 16)
         precondition(movedReload.toolbarConfiguration.orderedItems == ToolbarItem.allCases)
         movedReload.moveToolbarItems(fromOffsets: IndexSet([11, 15]), toOffset: 0)
         ToolbarItem.allCases.forEach { movedReload.setToolbarItem($0, visible: false) }
@@ -116,7 +117,7 @@ struct ToolbarRegressionChecks {
         movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: 1), toOffset: 0)
         precondition(movedReload.toolbarConfiguration.visibleItems == [.complete, .cancel])
         let beforeInvalidMove = movedReload.toolbarConfiguration.orderedItems
-        for (source, destination) in [(IndexSet(integer: 99), 0), (IndexSet(integer: 0), -1), (IndexSet(integer: 0), 19), (IndexSet(), 0)] {
+        for (source, destination) in [(IndexSet(integer: 99), 0), (IndexSet(integer: 0), -1), (IndexSet(integer: 0), ToolbarItem.allCases.count + 1), (IndexSet(), 0)] {
             movedReload.moveToolbarItems(fromOffsets: source, toOffset: destination)
             precondition(movedReload.toolbarConfiguration.orderedItems == beforeInvalidMove)
         }
@@ -147,7 +148,7 @@ struct ToolbarRegressionChecks {
         print("PASS: capture-session snapshot, hidden default tool, long-capture availability")
 
         // Finalizing must include text that has not yet been committed by clicking the canvas.
-        for action in [CaptureAction.copy, .save, .saveAs, .pin, .ocr] {
+        for action in [CaptureAction.copy, .save, .saveAs, .pin, .ocr, .saveAndCopy, .translate] {
             model.reset()
             model.state = .editing
             model.selectionRect = CGRect(x: 0, y: 0, width: 200, height: 200)
@@ -166,10 +167,12 @@ struct ToolbarRegressionChecks {
             case .saveAs: model.confirmSaveAs()
             case .pin: model.confirmPin()
             case .ocr: model.confirmOCR()
+            case .saveAndCopy: model.confirmSaveAndCopy()
+            case .translate: model.confirmImageTranslation()
             }
             precondition(received && !model.isEditingText)
         }
-        print("PASS: uncommitted text included in copy/save/save-as/pin/OCR")
+        print("PASS: uncommitted text included in copy/save/save-as/pin/OCR/save-and-copy/image translation")
 
         // Check full, minimal, and wrapped toolbars at all screen corners.
         for width: CGFloat in [320, 640, 1280, 2560] {
@@ -311,6 +314,46 @@ struct ToolbarRegressionChecks {
     @available(macOS 26.0, *)
     @MainActor
     private static func checkTranslationLifecycle() async {
+        var recorderCancelled = false
+        let recorderWindow = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 100),
+                                      styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        recorderWindow.isReleasedWhenClosed = false
+        recorderWindow.makeKeyAndOrderFront(nil)
+        let recorder = RecorderWindowManager.Coordinator(isRecording: .constant(true), onKeyRecorded: nil,
+                                                         onCancel: { recorderCancelled = true })
+        recorder.startMonitoring(in: recorderWindow)
+        recorderWindow.close()
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(recorderCancelled, "Closing a retained settings window must cancel shortcut recording")
+        recorder.stopMonitoring()
+        recorderWindow.makeKeyAndOrderFront(nil)
+        recorderCancelled = false
+        recorder.startMonitoring(in: recorderWindow)
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: recorderWindow)
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(recorderCancelled, "Losing keyboard focus must cancel shortcut recording")
+        var recordedKey: Int?
+        recorder.onKeyRecorded = { key, _ in recordedKey = key }
+        recorder.allowsUnmodified = true
+        recorder.startMonitoring(in: recorderWindow)
+        let otherWindow = NSWindow(contentRect: recorderWindow.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        otherWindow.isReleasedWhenClosed = false
+        let foreignEvent = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                            windowNumber: otherWindow.windowNumber, context: nil, characters: "r",
+                                            charactersIgnoringModifiers: "r", isARepeat: false, keyCode: 15)!
+        precondition(recorder.handleKeyEvent(foreignEvent) === foreignEvent, "Another window's character must not be consumed")
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(recordedKey == nil, "Another window's character must not change a saved shortcut")
+        recorder.startMonitoring(in: recorderWindow)
+        let ownEvent = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                        windowNumber: recorderWindow.windowNumber, context: nil, characters: "r",
+                                        charactersIgnoringModifiers: "r", isARepeat: false, keyCode: 15)!
+        precondition(recorder.handleKeyEvent(ownEvent) == nil)
+        try? await Task.sleep(for: .milliseconds(30))
+        precondition(recordedKey == 15, "Recording still accepts the owning window's character")
+        recorderWindow.close()
+        otherWindow.close()
+        print("PASS: shortcut recording stops on close/focus loss and ignores other windows")
         let model = OCRTranslationModel()
         precondition(model.configuration == nil && !model.isTranslating)
         model.start(text: "  \n")

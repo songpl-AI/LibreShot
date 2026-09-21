@@ -16,6 +16,8 @@ enum CaptureAction {
     case copy
     case save
     case saveAs
+    case saveAndCopy
+    case translate
     case pin
     case ocr
 }
@@ -71,7 +73,9 @@ class OverlayViewModel: ObservableObject {
     }
 
     // Editor State
-    @Published var selectedTool: AnnotationType?
+    @Published var selectedTool: AnnotationType? {
+        didSet { if selectedTool == .mosaic { prepareMosaicPreview() } }
+    }
     @Published var annotations: [Annotation] = []
     @Published var currentAnnotation: Annotation?
     @Published var selectedColor: Color = .red
@@ -83,6 +87,66 @@ class OverlayViewModel: ObservableObject {
     var previewBitmap: NSBitmapImageRep?
     @Published var captureMode: CaptureMode = .normal
     @Published var longCaptureStatusText: String = "拖动选择滚动区域"
+    @Published var showsStylePopover = false
+
+    func isToolbarItemEnabled(_ item: ToolbarItem) -> Bool {
+        if item == .style { return visibleToolbarItems.contains(.style) }
+        if item == .translate {
+            if #available(macOS 26.0, *) { return true }
+            return false
+        }
+        if item == .undo { return !annotations.isEmpty }
+        if item == .longCapture { return captureMode == .normal && annotations.isEmpty && !isEditingText }
+        return true
+    }
+
+    func performToolbarItem(_ item: ToolbarItem) {
+        guard isToolbarItemEnabled(item) else { return }
+        if let tool = item.annotationType {
+            selectTool(selectedTool == tool ? nil : tool)
+            return
+        }
+        switch item {
+        case .select: selectTool(nil)
+        case .style: showsStylePopover.toggle()
+        case .undo: undoLastAnnotation()
+        case .cancel: cancel()
+        case .pin: confirmPin()
+        case .ocr: confirmOCR()
+        case .translate: confirmImageTranslation()
+        case .longCapture: startLongCaptureFromToolbar()
+        case .complete: confirmCopy()
+        case .save: confirmSave()
+        case .saveAs: confirmSaveAs()
+        default: break
+        }
+    }
+
+    func performEditorShortcut(_ event: NSEvent, textResponder: Bool = false) -> Bool {
+        guard state == .editing, !selectionRect.isEmpty, event.type == .keyDown else { return false }
+        let editing = isEditingText || textResponder
+        let modifiers = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
+        if event.keyCode == 49, modifiers == 0, !editing, !showsStylePopover {
+            guard settings.editorSpaceAction != .disabled else { return false }
+            if !event.isARepeat {
+                if settings.editorSpaceAction == .complete { confirmCopy() }
+                else { confirmSaveAndCopy() }
+            }
+            return true
+        }
+        guard let item = ToolbarItem.allCases.first(where: { settings.editorShortcuts[$0.rawValue]?.matches(event) == true }) else { return false }
+        // Only save commands can commit active text. Letters, Return and undo belong to the text editor.
+        if editing || showsStylePopover {
+            guard (item == .save || item == .saveAs), event.modifierFlags.contains(.command) else { return false }
+        }
+        guard isToolbarItemEnabled(item) else { return false }
+        if !event.isARepeat { performToolbarItem(item) }
+        return true
+    }
+
+    func shortcutTitle(for item: ToolbarItem) -> String? {
+        item == .cancel ? "Esc" : settings.editorShortcuts[item.rawValue]?.title
+    }
     
     // Actions
     var onCapture: ((CGRect, [Annotation], CaptureAction, CGImage?) -> Void)?
@@ -100,6 +164,11 @@ class OverlayViewModel: ObservableObject {
         commitTextInput()
         onCapture?(selectionRect, annotations, .save, previewImage)
     }
+
+    func confirmSaveAndCopy() {
+        commitTextInput()
+        onCapture?(selectionRect, annotations, .saveAndCopy, previewImage)
+    }
     
     func confirmPin() {
         commitTextInput()
@@ -109,6 +178,11 @@ class OverlayViewModel: ObservableObject {
     func confirmOCR() {
         commitTextInput()
         onCapture?(selectionRect, annotations, .ocr, previewImage)
+    }
+
+    func confirmImageTranslation() {
+        commitTextInput()
+        onCapture?(selectionRect, annotations, .translate, previewImage)
     }
 
     func confirmSaveAs() {
@@ -141,11 +215,13 @@ class OverlayViewModel: ObservableObject {
     func updatePreviewImage(_ image: CGImage?, scale: CGFloat = 1.0) {
         previewImage = image
         previewScale = scale
-        if let image {
-            previewBitmap = makePreviewBitmap(from: image, maxDimension: 1200)
-        } else {
-            previewBitmap = nil
-        }
+        previewBitmap = nil
+        if selectedTool == .mosaic || annotations.contains(where: { $0.type == .mosaic }) { prepareMosaicPreview() }
+    }
+
+    private func prepareMosaicPreview() {
+        guard previewBitmap == nil, let image = previewImage else { return }
+        previewBitmap = makePreviewBitmap(from: image, maxDimension: 1200)
     }
     
     // MARK: - Selection Logic
@@ -432,6 +508,7 @@ class OverlayViewModel: ObservableObject {
     }
     
     func reset() {
+        showsStylePopover = false
         endSelectedShapeDrag()
         clearAnnotationPress()
         toolbarConfiguration = settings.toolbarConfiguration

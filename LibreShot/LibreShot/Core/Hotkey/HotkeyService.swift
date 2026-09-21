@@ -6,8 +6,12 @@ class HotkeyService {
     
     private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var eventHandler: EventHandlerRef?
+    private var optionTap: CFMachPort?
+    private var optionRunLoopSource: CFRunLoopSource?
+    private var optionGesture = DoubleOptionGesture()
     
     var onSelectionTrigger: (() -> Void)?
+    var onDoubleOptionTrigger: (() -> Void)?
     var onFullScreenTrigger: (() -> Void)?
     var onLongScreenshotTrigger: (() -> Void)?
     var onLongCaptureFinishTrigger: (() -> Void)?
@@ -28,6 +32,56 @@ class HotkeyService {
             RemoveEventHandler(handler)
         }
         unregisterAllHotkeys()
+        stopDoubleOption()
+    }
+
+    @discardableResult
+    func enableDoubleOption(_ enabled: Bool, requestPermission: Bool = false) -> Bool {
+        stopDoubleOption()
+        guard enabled else { return true }
+        guard CGPreflightListenEventAccess() || (requestPermission && CGRequestListenEventAccess()) else { return false }
+        let types: [CGEventType] = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
+        let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+        let callback: CGEventTapCallBack = { _, type, event, pointer in
+            guard let pointer else { return Unmanaged.passUnretained(event) }
+            // The source is installed exclusively on the main run loop.
+            MainActor.assumeIsolated {
+                let service = Unmanaged<HotkeyService>.fromOpaque(pointer).takeUnretainedValue()
+                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                    service.optionGesture = DoubleOptionGesture()
+                    if let tap = service.optionTap { CGEvent.tapEnable(tap: tap, enable: true) }
+                } else if let input = NSEvent(cgEvent: event) {
+                    service.handleOptionEvent(input)
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
+                                          eventsOfInterest: mask, callback: callback,
+                                          userInfo: Unmanaged.passUnretained(self).toOpaque()),
+              let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else { return false }
+        optionTap = tap
+        optionRunLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        return true
+    }
+
+    private func handleOptionEvent(_ event: NSEvent) {
+        if optionGesture.consume(type: event.type, keyCode: event.type == .flagsChanged ? event.keyCode : 0,
+                                 modifiers: event.modifierFlags, timestamp: event.timestamp) {
+            // A modifier gesture must not reset an in-progress editor or shortcut recorder.
+            guard !(NSApp.isActive && NSApp.keyWindow?.isVisible == true) else { return }
+            onDoubleOptionTrigger?()
+        }
+    }
+
+    private func stopDoubleOption() {
+        if let source = optionRunLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        if let tap = optionTap { CFMachPortInvalidate(tap) }
+        optionRunLoopSource = nil
+        optionTap = nil
+        optionGesture = DoubleOptionGesture()
     }
     
     private func installEventHandler() {
@@ -169,5 +223,42 @@ class HotkeyService {
     var onTrigger: (() -> Void)? {
         get { onSelectionTrigger }
         set { onSelectionTrigger = newValue }
+    }
+}
+
+/// Two complete taps of the same Option key, without any intervening input.
+struct DoubleOptionGesture {
+    private var pressedAt: TimeInterval?
+    private var previousRelease: TimeInterval?
+    private var key: UInt16?
+
+    mutating func consume(type: NSEvent.EventType, keyCode: UInt16,
+                          modifiers: NSEvent.ModifierFlags, timestamp: TimeInterval) -> Bool {
+        let flags = modifiers.intersection([.command, .shift, .control, .option])
+        guard type == .flagsChanged, [UInt16(kVK_Option), UInt16(kVK_RightOption)].contains(keyCode),
+              flags == .option || flags.isEmpty else {
+            self = DoubleOptionGesture()
+            return false
+        }
+        if flags == .option {
+            if pressedAt != nil { self = DoubleOptionGesture(); return false }
+            if key != keyCode || previousRelease.map({ timestamp - $0 > 0.35 || timestamp < $0 }) == true {
+                previousRelease = nil
+            }
+            key = keyCode
+            pressedAt = timestamp
+            return false
+        }
+        guard let pressedAt, key == keyCode, timestamp >= pressedAt, timestamp - pressedAt <= 0.3 else {
+            self = DoubleOptionGesture()
+            return false
+        }
+        self.pressedAt = nil
+        if let previousRelease, timestamp - previousRelease <= 0.5 {
+            self = DoubleOptionGesture()
+            return true
+        }
+        previousRelease = timestamp
+        return false
     }
 }

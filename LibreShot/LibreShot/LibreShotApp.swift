@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var imageEditors: [ImageEditorWindowController] = []
     private var pinnedWindows: [PinnedImageWindowController] = []
     private var ocrWindowController: OCRResultWindowController?
+    private var imageTranslationWindows: [NSWindowController] = []
     private var isUserInitiatedTermination = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -122,6 +123,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotkeyService.shared.onSelectionTrigger = { [weak self] in
             self?.captureSelection()
         }
+
+        HotkeyService.shared.onDoubleOptionTrigger = { [weak self] in
+            guard let self, self.overlayWindowController == nil else { return }
+            self.captureSelection()
+        }
         
         HotkeyService.shared.onFullScreenTrigger = { [weak self] in
             self?.captureFullScreen()
@@ -143,12 +149,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func reregisterHotkeys() {
+        var failures: [String] = []
+        HotkeyService.shared.enableDoubleOption(SettingsService.shared.doubleOptionEnabled)
         // Register Selection Shortcut
         let selKey = SettingsService.shared.shortcutKey
         let selMods = SettingsService.shared.shortcutModifiers
         
         if selKey != -1 {
-            HotkeyService.shared.registerSelectionHotkey(keyCode: selKey, modifiers: selMods)
+            if !HotkeyService.shared.registerSelectionHotkey(keyCode: selKey, modifiers: selMods) { failures.append("区域截图") }
             let shortcutString = ShortcutUtils.string(for: selKey, modifiers: selMods)
             captureSelectionMenuItem?.title = "区域截图 (\(shortcutString))"
         } else {
@@ -161,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fullMods = SettingsService.shared.fullScreenShortcutModifiers
         
         if fullKey != -1 {
-            HotkeyService.shared.registerFullScreenHotkey(keyCode: fullKey, modifiers: fullMods)
+            if !HotkeyService.shared.registerFullScreenHotkey(keyCode: fullKey, modifiers: fullMods) { failures.append("全屏截图") }
             let shortcutString = ShortcutUtils.string(for: fullKey, modifiers: fullMods)
             captureFullScreenMenuItem?.title = "全屏截图 (\(shortcutString))"
         } else {
@@ -173,13 +181,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let longMods = SettingsService.shared.longScreenshotShortcutModifiers
         
         if longKey != -1 {
-            HotkeyService.shared.registerLongScreenshotHotkey(keyCode: longKey, modifiers: longMods)
+            if !HotkeyService.shared.registerLongScreenshotHotkey(keyCode: longKey, modifiers: longMods) { failures.append("长截图") }
             let shortcutString = ShortcutUtils.string(for: longKey, modifiers: longMods)
             longCaptureMenuItem?.title = "长截图 (\(shortcutString))"
         } else {
             HotkeyService.shared.unregisterLongScreenshotHotkey()
             longCaptureMenuItem?.title = "长截图"
         }
+        SettingsService.shared.reportHotkeyRegistrationFailures(failures)
     }
     
     deinit {
@@ -444,6 +453,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = try await saveImage(outputImage)
         case .saveAs:
             _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
+        case .saveAndCopy:
+            CaptureService.shared.copyToClipboard(outputImage)
+            do {
+                _ = try await CaptureService.shared.saveImageDirectly(outputImage)
+            } catch {
+                throw NSError(domain: "LibreShot.SaveAndCopy", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "已复制，但保存失败。截图仍在剪贴板中。\n\(error.localizedDescription)"])
+            }
         case .copy:
             do {
                 _ = try await CaptureService.shared.completeCapture(outputImage)
@@ -463,6 +480,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let controller = OCRResultWindowController(text: text)
             ocrWindowController = controller
             controller.showWindow(nil)
+        case .translate:
+            if #available(macOS 26.0, *) {
+                let controller = ImageTranslationWindowController(image: outputImage)
+                controller.onAction = { [weak self] image, action in
+                    if action == .copy { CaptureService.shared.copyToClipboard(image) }
+                    else { try await self?.handleImageAction(image, action: action) }
+                }
+                controller.onEdit = { [weak self] in self?.showImageEditor($0) }
+                controller.onClose = { [weak self, weak controller] in
+                    self?.imageTranslationWindows.removeAll { $0 === controller }
+                }
+                imageTranslationWindows.append(controller)
+                controller.showWindow(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
     }
 

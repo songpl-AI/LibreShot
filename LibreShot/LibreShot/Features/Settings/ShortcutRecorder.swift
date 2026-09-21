@@ -1,11 +1,16 @@
 import SwiftUI
 import Carbon
 
+private extension Notification.Name {
+    static let shortcutRecordingStarted = Notification.Name("LibreShot.shortcutRecordingStarted")
+}
+
 struct ShortcutRecorder: View {
     @Binding var keyCode: Int
     @Binding var modifiers: Int
     var onShortcutRecorded: ((Int, Int) -> Void)? = nil
     var onClear: (() -> Void)? = nil
+    var allowsUnmodified = false
     
     @State private var isRecording = false
     @State private var isHovering = false
@@ -64,10 +69,15 @@ struct ShortcutRecorder: View {
         .background(
             RecorderWindowManager(
                 isRecording: $isRecording,
+                allowsUnmodified: allowsUnmodified,
                 onKeyRecorded: { recordedKey, recordedMods in
-                    keyCode = recordedKey
-                    modifiers = recordedMods
-                    onShortcutRecorded?(recordedKey, recordedMods)
+                    if let onShortcutRecorded {
+                        onShortcutRecorded(recordedKey, recordedMods)
+                    } else {
+                        keyCode = recordedKey
+                        modifiers = recordedMods
+                    }
+                    isRecording = false
                 },
                 onCancel: {
                     isRecording = false
@@ -82,9 +92,8 @@ struct ShortcutRecorder: View {
     }
     
     private func clearShortcut() {
-        keyCode = -1
-        modifiers = 0
-        onClear?()
+        if let onClear { onClear() }
+        else { keyCode = -1; modifiers = 0 }
     }
     
     private var currentShortcutString: String {
@@ -92,9 +101,10 @@ struct ShortcutRecorder: View {
     }
 }
 
-// Window manager to handle keyboard events using global event monitor
+// A recording belongs to one visible key window, not the whole application.
 struct RecorderWindowManager: NSViewRepresentable {
     @Binding var isRecording: Bool
+    var allowsUnmodified = false
     var onKeyRecorded: ((Int, Int) -> Void)?
     var onCancel: (() -> Void)?
     
@@ -104,8 +114,11 @@ struct RecorderWindowManager: NSViewRepresentable {
     }
     
     func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.allowsUnmodified = allowsUnmodified
+        context.coordinator.onKeyRecorded = onKeyRecorded
+        context.coordinator.onCancel = onCancel
         if isRecording {
-            context.coordinator.startMonitoring()
+            context.coordinator.startMonitoring(in: nsView.window)
         } else {
             context.coordinator.stopMonitoring()
         }
@@ -114,14 +127,20 @@ struct RecorderWindowManager: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(isRecording: $isRecording, onKeyRecorded: onKeyRecorded, onCancel: onCancel)
     }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stopMonitoring()
+    }
     
     class Coordinator: NSObject {
         @Binding var isRecording: Bool
         var onKeyRecorded: ((Int, Int) -> Void)?
         var onCancel: (() -> Void)?
         private var keyDownMonitor: Any?
-        private var flagsChangedMonitor: Any?
-        private var currentModifiers: Int = 0
+        private var recordingObserver: NSObjectProtocol?
+        private var windowObservers: [NSObjectProtocol] = []
+        private weak var recordingWindow: NSWindow?
+        var allowsUnmodified = false
         
         init(isRecording: Binding<Bool>, onKeyRecorded: ((Int, Int) -> Void)?, onCancel: (() -> Void)?) {
             self._isRecording = isRecording
@@ -129,73 +148,59 @@ struct RecorderWindowManager: NSViewRepresentable {
             self.onCancel = onCancel
         }
         
-        func startMonitoring() {
-            guard keyDownMonitor == nil else { return }
-            
-            print("🔍 Starting local event monitoring...")
-            currentModifiers = 0
-            
-            // Monitor key down events
+        func startMonitoring(in window: NSWindow? = nil) {
+            guard keyDownMonitor == nil, let owner = window ?? NSApp.keyWindow, owner.isVisible else { return }
+            recordingWindow = owner
+            recordingObserver = NotificationCenter.default.addObserver(forName: .shortcutRecordingStarted, object: nil, queue: .main) { [weak self] notification in
+                guard let self, let other = notification.object as? Coordinator, other !== self else { return }
+                self.cancelRecording()
+            }
+            NotificationCenter.default.post(name: .shortcutRecordingStarted, object: self)
+            for name in [NSWindow.willCloseNotification, NSWindow.didResignKeyNotification] {
+                windowObservers.append(NotificationCenter.default.addObserver(forName: name, object: owner, queue: .main) { [weak self] _ in
+                    self?.cancelRecording()
+                })
+            }
             keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self = self else { return event }
-                
-                print("📝 Key event received: keyCode=\(event.keyCode), char=\(event.charactersIgnoringModifiers ?? "nil")")
-                
-                // Check for Escape to cancel
-                if event.keyCode == 53 {
-                    print("  ↩ Escape pressed, cancelling")
-                    DispatchQueue.main.async {
-                        self.stopMonitoring()
-                        self.onCancel?()
-                    }
-                    return nil // Consume the event
-                }
-                
-                // Get current modifiers
-                let carbonMods = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
-                
-                // Validate: Must have at least one modifier key
-                if carbonMods == 0 {
-                    print("  ⚠️ Ignored: No modifier keys pressed (shortcuts must have ⌘/⌃/⌥/⇧)")
-                    return nil // Consume but don't record
-                }
-                
-                // Record the key
-                print("  ✅ Recording: keyCode=\(event.keyCode), modifiers=\(carbonMods)")
-                
-                // Stop monitoring immediately to prevent multiple recordings
-                DispatchQueue.main.async {
-                    self.stopMonitoring()
-                    self.onKeyRecorded?(Int(event.keyCode), carbonMods)
-                }
-                
-                return nil // Consume the event
+                guard let self else { return event }
+                return self.handleKeyEvent(event)
             }
-            
-            // Monitor modifier flags
-            flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-                guard let self = self else { return event }
-                let carbonMods = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
-                self.currentModifiers = carbonMods
-                print("🚩 Flags changed: modifiers=\(carbonMods)")
-                return event // Don't consume flags
+        }
+
+        func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+            guard keyDownMonitor != nil, let owner = recordingWindow,
+                  owner.isVisible, event.window === owner else {
+                cancelRecording()
+                return event
             }
-            
-            print("✅ Event monitoring started")
+            if event.keyCode == 53 {
+                cancelRecording()
+                return nil
+            }
+            let modifiers = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
+            guard modifiers != 0 || allowsUnmodified else { return nil }
+            stopMonitoring()
+            DispatchQueue.main.async { self.onKeyRecorded?(Int(event.keyCode), modifiers) }
+            return nil
+        }
+
+        private func cancelRecording() {
+            stopMonitoring()
+            DispatchQueue.main.async { self.onCancel?() }
         }
         
         func stopMonitoring() {
+            if let recordingObserver {
+                NotificationCenter.default.removeObserver(recordingObserver)
+                self.recordingObserver = nil
+            }
             if let monitor = keyDownMonitor {
                 NSEvent.removeMonitor(monitor)
                 keyDownMonitor = nil
-                print("🛑 Key down monitor removed")
             }
-            if let monitor = flagsChangedMonitor {
-                NSEvent.removeMonitor(monitor)
-                flagsChangedMonitor = nil
-                print("🛑 Flags monitor removed")
-            }
-            currentModifiers = 0
+            windowObservers.forEach(NotificationCenter.default.removeObserver)
+            windowObservers = []
+            recordingWindow = nil
         }
         
         deinit {

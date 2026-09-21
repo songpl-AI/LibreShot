@@ -6,7 +6,6 @@ struct EditorToolbarView: View {
     let layout: ToolbarLayout
     var toolbarPosition: CGPoint? = nil
     var screenSize: CGSize? = nil
-    @State private var showStylePopover = false
     @State private var hoveredItem: ToolbarItem?
 
     var body: some View {
@@ -16,7 +15,7 @@ struct EditorToolbarView: View {
                     ForEach(layout.rows[row]) { item in
                         if item == .style {
                             toolbarButton(item)
-                                .popover(isPresented: $showStylePopover, arrowEdge: .bottom) {
+                                .popover(isPresented: $viewModel.showsStylePopover, arrowEdge: .bottom) {
                                     StylePopoverView(viewModel: viewModel).padding(12)
                                 }
                         } else {
@@ -28,8 +27,8 @@ struct EditorToolbarView: View {
         }
         .padding(ToolbarLayout.padding)
         .frame(width: layout.size.width, height: layout.size.height)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.98)))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.1), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.windowBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(NSColor.separatorColor), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
         .overlay(alignment: .topLeading) {
             if let item = hoveredItem {
@@ -64,9 +63,7 @@ struct EditorToolbarView: View {
                 }
                 .foregroundColor(tint(for: item))
                 .frame(width: ToolbarLayout.buttonSize, height: ToolbarLayout.buttonSize)
-                .background(RoundedRectangle(cornerRadius: 8).fill(isSelected(item) ? Color.blue.opacity(0.1) : Color.white))
-                .overlay(RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.black.opacity(isSelected(item) ? 0.22 : 0.12), lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 6).fill(buttonBackground(item)))
                 .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
@@ -90,53 +87,43 @@ struct EditorToolbarView: View {
     }
 
     private func isDisabled(_ item: ToolbarItem) -> Bool {
-        if item == .undo { return viewModel.annotations.isEmpty }
-        if item == .longCapture { return !viewModel.annotations.isEmpty || viewModel.isEditingText }
-        return false
+        !viewModel.isToolbarItemEnabled(item)
+    }
+
+    private func buttonBackground(_ item: ToolbarItem) -> Color {
+        if item == .complete { return .accentColor }
+        if isSelected(item) { return Color.accentColor.opacity(0.15) }
+        return hoveredItem == item ? Color.primary.opacity(0.08) : .clear
     }
 
     private func tint(for item: ToolbarItem) -> Color {
         if isSelected(item) { return .blue }
         switch item {
+        case .complete: return .white
         case .pin: return .orange
         case .ocr: return .blue
+        case .translate: return .teal
         case .longCapture: return .purple
-        default: return .black.opacity(0.9)
+        default: return .primary
         }
     }
 
     private func help(for item: ToolbarItem) -> String {
+        let label: String
         switch item {
         case .complete:
-            return settings.autoSaveEnabled ? "完成：复制并自动保存（回车）" : "完成：复制到剪贴板（回车）"
-        case .select: return "选择/移动"
-        case .cancel: return "取消截图（Esc）"
-        case .save: return settings.autoSaveEnabled ? "保存到预设目录（⌘S）" : "保存…（⌘S）"
-        case .undo where isDisabled(item): return "撤销（当前没有标注）"
-        case .saveAs: return "另存为…（⇧⌘S）"
-        case .longCapture where isDisabled(item): return "长截图（请先撤销标注并结束文字编辑）"
-        default: return item.title
+            label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
+        case .save: label = settings.autoSaveEnabled ? "保存到预设目录" : "保存…"
+        case .undo where isDisabled(item): label = "撤销（当前没有标注）"
+        case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
+        case .translate where isDisabled(item): label = "原图翻译需要 macOS 26 或更新版本"
+        default: label = item.title
         }
+        return viewModel.shortcutTitle(for: item).map { "\(label)（\($0)）" } ?? label
     }
 
     private func perform(_ item: ToolbarItem) {
-        if let tool = item.annotationType {
-            viewModel.selectTool(viewModel.selectedTool == tool ? nil : tool)
-            return
-        }
-        switch item {
-        case .select: viewModel.selectTool(nil)
-        case .style: showStylePopover.toggle()
-        case .undo: viewModel.undoLastAnnotation()
-        case .cancel: viewModel.cancel()
-        case .pin: viewModel.confirmPin()
-        case .ocr: viewModel.confirmOCR()
-        case .longCapture: viewModel.startLongCaptureFromToolbar()
-        case .complete: viewModel.confirmCopy()
-        case .save: viewModel.confirmSave()
-        case .saveAs: viewModel.confirmSaveAs()
-        default: break
-        }
+        viewModel.performToolbarItem(item)
     }
 }
 

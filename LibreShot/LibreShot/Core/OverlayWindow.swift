@@ -8,8 +8,12 @@ class OverlayWindow: NSWindow {
     var onConfirmKey: (() -> Void)?
     var onSaveKey: (() -> Void)?
     var onSaveAsKey: (() -> Void)?
+    var onEditorShortcut: ((NSEvent, Bool) -> Bool)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let onEditorShortcut {
+            return onEditorShortcut(event, firstResponder is NSTextView) || super.performKeyEquivalent(with: event)
+        }
         let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
         if event.type == .keyDown, event.charactersIgnoringModifiers?.lowercased() == "s" {
             let action = modifiers == [.command, .shift] ? onSaveAsKey : (modifiers == [.command] ? onSaveKey : nil)
@@ -24,10 +28,15 @@ class OverlayWindow: NSWindow {
             onEscapeKey()
             return
         }
+        if event.type == .keyDown, onEditorShortcut?(event, firstResponder is NSTextView) == true { return }
         super.sendEvent(event)
     }
 
     override func keyDown(with event: NSEvent) {
+        if let onEditorShortcut {
+            if !onEditorShortcut(event, firstResponder is NSTextView) { super.keyDown(with: event) }
+            return
+        }
         if (event.keyCode == 36 || event.keyCode == 76),
            event.modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty,
            let onConfirmKey {
@@ -40,6 +49,9 @@ class OverlayWindow: NSWindow {
 
 extension OverlayWindow {
     func bindEditingActions(to model: OverlayViewModel) {
+        onEditorShortcut = { [weak model] event, textResponder in
+            model?.performEditorShortcut(event, textResponder: textResponder) ?? false
+        }
         onConfirmKey = { [weak model] in
             guard let model, model.state == .editing, !model.isEditingText, !model.selectionRect.isEmpty else { return }
             model.confirmCopy()
@@ -58,5 +70,6 @@ extension OverlayWindow {
         onConfirmKey = nil
         onSaveKey = nil
         onSaveAsKey = nil
+        onEditorShortcut = nil
     }
 }

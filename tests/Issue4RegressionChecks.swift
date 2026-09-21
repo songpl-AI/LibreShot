@@ -227,6 +227,13 @@ struct Issue4RegressionChecks {
             check(samePixels(result, document), "fragment copies retain final pixels for \(colorSpaceName)")
         }
         let model = OverlayViewModel(settings: settings)
+        model.updatePreviewImage(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        check(model.previewBitmap == nil, "ordinary editing does not allocate a mosaic sampling bitmap")
+        model.selectTool(.mosaic)
+        check(model.previewBitmap != nil, "mosaic selection prepares its sampling bitmap")
+        weak var mosaicBitmap = model.previewBitmap
+        model.reset()
+        check(mosaicBitmap == nil && model.previewImage == nil, "reset releases source and mosaic sampling bitmap")
         model.state = .editing
         model.selectionRect = CGRect(x: 0, y: 0, width: 200, height: 200)
         let window = OverlayWindow(contentRect: model.selectionRect, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -256,6 +263,71 @@ struct Issue4RegressionChecks {
         model.startTextInput(at: CGPoint(x: 20, y: 50))
         window.keyDown(with: event("\r", code: 36, modifiers: []))
         check(actions.count == count, "Return during text editing does not finish screenshot")
+        settings.editorSpaceAction = .saveAndCopy
+        let space = event(" ", code: 49, modifiers: [])
+        check(!model.performEditorShortcut(space), "Space belongs to active text editor")
+        model.commitTextInput()
+        check(model.performEditorShortcut(space) && actions.last == .saveAndCopy, "Space dispatches explicit save-and-copy")
+        settings.autoSaveEnabled = false
+        check(model.performEditorShortcut(space) && actions.last == .saveAndCopy, "Space save-and-copy is independent of auto-save")
+        check(settings.setEditorShortcut(.init(keyCode: 15, modifiers: 0), for: .rectangle) == nil, "unmodified annotation shortcut is configurable")
+        check(settings.setEditorShortcut(.init(keyCode: 15, modifiers: 0), for: .arrow) != nil, "duplicate shortcut rejected")
+        check(settings.setEditorShortcut(.init(keyCode: 8, modifiers: 256), for: .arrow) != nil, "Command-C reserved for text editing")
+        check(settings.setEditorShortcut(.init(keyCode: 76, modifiers: 0), for: .arrow) != nil, "keypad Enter conflicts with Return")
+        check(settings.setEditorShortcut(.init(keyCode: settings.longScreenshotShortcutKey, modifiers: settings.longScreenshotShortcutModifiers), for: .arrow) != nil,
+              "editor shortcuts cannot collide with global capture hotkeys")
+        _ = settings.setEditorShortcut(nil, for: .arrow)
+        let originalGlobal = settings.shortcutKey
+        check(!settings.saveShortcut(keyCode: 1, modifiers: 256) && settings.shortcutKey == originalGlobal,
+              "global capture shortcuts cannot steal Command-S from the editor")
+        check(!settings.saveFullScreenShortcut(keyCode: settings.longScreenshotShortcutKey, modifiers: settings.longScreenshotShortcutModifiers),
+              "global capture shortcuts cannot duplicate each other")
+        model.selectedTool = nil
+        let rectangleKey = event("r", code: 15, modifiers: [])
+        check(model.performEditorShortcut(rectangleKey) && model.selectedTool == .rectangle, "shortcut uses toolbar tool-selection action")
+        check(model.performEditorShortcut(rectangleKey) && model.selectedTool == nil, "repeated tool shortcut returns to selection mode")
+        check(!model.performEditorShortcut(rectangleKey, textResponder: true), "native text responder retains character shortcuts")
+        let reloaded = SettingsService(defaults: defaults)
+        check(reloaded.editorShortcuts["rectangle"]?.keyCode == 15 && reloaded.editorSpaceAction == .saveAndCopy, "editor key bindings persist")
+        _ = settings.setEditorShortcut(nil, for: .save)
+        check(!model.performEditorShortcut(event("s", code: 1, modifiers: .command)), "cleared save shortcut does not fall back to fixed binding")
+        settings.restoreDefaultEditorShortcuts()
+        check(settings.editorShortcuts == EditorShortcut.defaults && settings.editorSpaceAction == .disabled, "shortcut defaults restore independently of global keys")
+        let legacySuite = suite + ".legacy-shortcuts"
+        let legacyDefaults = UserDefaults(suiteName: legacySuite)!
+        defer { legacyDefaults.removePersistentDomain(forName: legacySuite) }
+        legacyDefaults.set(1, forKey: "shortcutKey")
+        legacyDefaults.set(256, forKey: "shortcutModifiers")
+        legacyDefaults.set(try JSONEncoder().encode(EditorShortcut.defaults), forKey: "editorShortcuts")
+        let migrated = SettingsService(defaults: legacyDefaults)
+        check(migrated.editorShortcuts["save"] == nil && migrated.shortcutKey == 1,
+              "loading old conflicting settings preserves the global key and removes the shadowed editor binding")
+        migrated.restoreDefaultEditorShortcuts()
+        check(migrated.editorShortcuts["save"] == nil, "restoring editor defaults cannot recreate a global conflict")
+        check(migrated.saveShortcut(keyCode: -1, modifiers: 0), "conflicting global keys can still be cleared")
+        migrated.restoreDefaultEditorShortcuts()
+        check(migrated.editorShortcuts["save"] == EditorShortcut.defaults["save"], "clearing the global conflict permits restoring Command-S")
+        settings.reportHotkeyRegistrationFailures(["区域截图", "长截图"])
+        check(settings.hotkeyRegistrationError?.contains("区域截图、长截图") == true,
+              "system registration failures identify every inactive global shortcut")
+        settings.reportHotkeyRegistrationFailures([])
+        check(settings.hotkeyRegistrationError == nil, "successful re-registration clears the failure message")
+        for interruption in [NSEvent.EventType.keyDown, .leftMouseDown, .scrollWheel] {
+            var gesture = DoubleOptionGesture()
+            _ = gesture.consume(type: .flagsChanged, keyCode: 58, modifiers: .option, timestamp: 1)
+            _ = gesture.consume(type: interruption, keyCode: 0, modifiers: .option, timestamp: 1.05)
+            _ = gesture.consume(type: .flagsChanged, keyCode: 58, modifiers: [], timestamp: 1.1)
+            _ = gesture.consume(type: .flagsChanged, keyCode: 58, modifiers: .option, timestamp: 1.2)
+            check(!gesture.consume(type: .flagsChanged, keyCode: 58, modifiers: [], timestamp: 1.3), "Option gesture rejects intervening \(interruption)")
+        }
+        for option: UInt16 in [58, 61] {
+            var gesture = DoubleOptionGesture()
+            _ = gesture.consume(type: .flagsChanged, keyCode: option, modifiers: .option, timestamp: 1)
+            check(!gesture.consume(type: .flagsChanged, keyCode: option, modifiers: [], timestamp: 1.1), "one Option tap does not trigger")
+            _ = gesture.consume(type: .flagsChanged, keyCode: option, modifiers: .option, timestamp: 1.2)
+            check(gesture.consume(type: .flagsChanged, keyCode: option, modifiers: [], timestamp: 1.3), "two complete Option taps trigger, key=\(option)")
+            check(!gesture.consume(type: .flagsChanged, keyCode: option, modifiers: [], timestamp: 1.4), "duplicate Option release does not retrigger")
+        }
         let board = NSPasteboard(name: .init(suite + ".translation"))
         OCRCopyButton.copy("译文测试", to: board)
         check(board.string(forType: .string) == "译文测试", "copy translation writes the supplied translation")

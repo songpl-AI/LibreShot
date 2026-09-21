@@ -88,8 +88,75 @@ class SettingsService: ObservableObject {
 
     private let defaults: UserDefaults
 
+    @Published private(set) var editorShortcuts: [String: EditorShortcut] {
+        didSet {
+            if let data = try? JSONEncoder().encode(editorShortcuts) {
+                defaults.set(data, forKey: "editorShortcuts")
+            }
+        }
+    }
+    @Published var editorSpaceAction: EditorSpaceAction {
+        didSet { defaults.set(editorSpaceAction.rawValue, forKey: "editorSpaceAction") }
+    }
+    @Published var doubleOptionEnabled: Bool {
+        didSet {
+            defaults.set(doubleOptionEnabled, forKey: "doubleOptionEnabled")
+            NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
+        }
+    }
+    @Published private(set) var shortcutError: String?
+    @Published private(set) var hotkeyRegistrationError: String?
+
+    func reportHotkeyRegistrationFailures(_ titles: [String]) {
+        hotkeyRegistrationError = titles.isEmpty ? nil : "全局快捷键未生效：\(titles.joined(separator: "、"))。可能已被系统或其他应用占用，请更换组合键。"
+    }
+
+    private var globalShortcuts: [(title: String, shortcut: EditorShortcut)] {
+        [("区域截图", .init(keyCode: shortcutKey, modifiers: shortcutModifiers)),
+         ("全屏截图", .init(keyCode: fullScreenShortcutKey, modifiers: fullScreenShortcutModifiers)),
+         ("长截图", .init(keyCode: longScreenshotShortcutKey, modifiers: longScreenshotShortcutModifiers))]
+            .filter { $0.shortcut.keyCode >= 0 }
+    }
+
+    func setEditorShortcut(_ shortcut: EditorShortcut?, for item: ToolbarItem) -> String? {
+        guard item != .cancel else { return "Esc 始终用于取消截图" }
+        if let shortcut {
+            guard shortcut.isAllowed else { return "此按键保留给文字编辑、空格动作或系统操作" }
+            if let conflict = globalShortcuts.first(where: { $0.shortcut.conflicts(with: shortcut) }) {
+                return "已用于全局“\(conflict.title)”"
+            }
+            if let conflict = ToolbarItem.allCases.first(where: {
+                $0 != item && editorShortcuts[$0.rawValue]?.conflicts(with: shortcut) == true
+            }) { return "已用于“\(conflict.title)”" }
+        }
+        editorShortcuts[item.rawValue] = shortcut
+        return nil
+    }
+
+    func restoreDefaultEditorShortcuts() {
+        editorShortcuts = EditorShortcut.defaults.filter { _, shortcut in
+            !globalShortcuts.contains { $0.shortcut.conflicts(with: shortcut) }
+        }
+        editorSpaceAction = .disabled
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        if let data = defaults.data(forKey: "editorShortcuts"),
+           let saved = try? JSONDecoder().decode([String: EditorShortcut].self, from: data) {
+            var validated: [String: EditorShortcut] = [:]
+            for item in ToolbarItem.allCases where item != .cancel {
+                if let shortcut = saved[item.rawValue], shortcut.isAllowed,
+                   !validated.values.contains(where: { $0.conflicts(with: shortcut) }) {
+                    validated[item.rawValue] = shortcut
+                }
+            }
+            self.editorShortcuts = validated
+        } else {
+            self.editorShortcuts = EditorShortcut.defaults
+        }
+        self.editorSpaceAction = EditorSpaceAction(rawValue: defaults.string(forKey: "editorSpaceAction") ?? "") ?? .disabled
+        self.doubleOptionEnabled = defaults.bool(forKey: "doubleOptionEnabled")
         self.toolbarConfiguration = ToolbarConfiguration(
             hiddenItems: Set(defaults.stringArray(forKey: "hiddenToolbarItems") ?? []),
             itemOrder: defaults.stringArray(forKey: "toolbarItemOrder") ?? []
@@ -113,6 +180,10 @@ class SettingsService: ObservableObject {
         self.editLongCaptureAfterFinish = defaults.object(forKey: "editLongCaptureAfterFinish") as? Bool ?? true
         self.playSound = defaults.object(forKey: "playSound") as? Bool ?? true // Default to true
         self.autoSaveEnabled = defaults.object(forKey: "autoSaveEnabled") as? Bool ?? true // Default to true
+        // Existing global bindings win when loading a previously conflicting configuration.
+        self.editorShortcuts = editorShortcuts.filter { _, shortcut in
+            !globalShortcuts.contains { $0.shortcut.conflicts(with: shortcut) }
+        }
     }
     
     func setToolbarItem(_ item: ToolbarItem, visible: Bool) {
@@ -168,23 +239,20 @@ class SettingsService: ObservableObject {
     
     @discardableResult
     func saveShortcut(keyCode: Int, modifiers: Int) -> Bool {
-        // Unregister old if needed (handled by registerHotkey internals or explicit unregister)
-        // For simplicity, we just try to register new one.
-        // Note: Real app should check if key is already taken by fullScreenShortcut
-        
+        guard validateGlobalShortcut(.init(keyCode: keyCode, modifiers: modifiers), replacing: "区域截图") else { return false }
         shortcutKey = keyCode
         shortcutModifiers = modifiers
         
         // Notify changes
         NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
         
-        // We return true here because actual registration happens in AppDelegate
-        // Ideally we should move registration logic here or return actual status
+        // This reports configuration validation; AppDelegate reports actual registration separately.
         return true
     }
     
     @discardableResult
     func saveFullScreenShortcut(keyCode: Int, modifiers: Int) -> Bool {
+        guard validateGlobalShortcut(.init(keyCode: keyCode, modifiers: modifiers), replacing: "全屏截图") else { return false }
         fullScreenShortcutKey = keyCode
         fullScreenShortcutModifiers = modifiers
         
@@ -194,10 +262,22 @@ class SettingsService: ObservableObject {
     
     @discardableResult
     func saveLongScreenshotShortcut(keyCode: Int, modifiers: Int) -> Bool {
+        guard validateGlobalShortcut(.init(keyCode: keyCode, modifiers: modifiers), replacing: "长截图") else { return false }
         longScreenshotShortcutKey = keyCode
         longScreenshotShortcutModifiers = modifiers
         
         NotificationCenter.default.post(name: .hotkeyDidChange, object: nil)
         return true
+    }
+
+    private func validateGlobalShortcut(_ shortcut: EditorShortcut, replacing title: String) -> Bool {
+        shortcutError = nil
+        if shortcut.keyCode == -1 { return true }
+        if let conflict = globalShortcuts.first(where: { $0.title != title && $0.shortcut.conflicts(with: shortcut) }) {
+            shortcutError = "已用于全局“\(conflict.title)”"
+        } else if let item = ToolbarItem.allCases.first(where: { editorShortcuts[$0.rawValue]?.conflicts(with: shortcut) == true }) {
+            shortcutError = "已用于编辑工具“\(item.title)”"
+        }
+        return shortcutError == nil
     }
 }

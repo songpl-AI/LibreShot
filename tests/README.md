@@ -1,5 +1,19 @@
 # 工具栏与截图完成流程回归检查
 
+## Issues #4–#6 开发版
+
+`bash tests/run-toolbar-checks.sh` 还验证原图翻译的坐标、实际 Vision 读回、浅/深背景、分栏、溢出处理、过期会话隔离、语言切换与导出状态；已安装语言包时验证系统批量翻译的区域 ID，未安装则跳过而不下载。`bash tests/run-issue4-checks.sh` 增加工具快捷键、空格动作、双击 Option 手势判定和马赛克位图延迟分配/释放检查。
+
+生产源码的命令行编译列表集中在 `tests/compile-checks.sh`，可传入输出路径和独立检查入口。设置 `LIBRESHOT_OPTIMIZE=1` 可使用优化构建。
+
+二次审查增加：全局/编辑快捷键双向冲突及旧配置迁移；录制窗口关闭、失焦、异窗口输入；CoreText 窄字形裁切；相邻表格行分隔线保留；取消任务传递到 `VNRequest.cancel()`。记录见 [二次审查](../docs/qa/issues-4-6-review.md)。
+
+- `bash tests/run-roadmap-ui.sh`：先运行工具栏回归生成样例，再打开独立的快捷键和原图翻译验收窗口。使用独立设置域和剪贴板；导出仅写入 `/tmp/libreshot-roadmap-qa`，通过应用菜单 Quit 退出。默认实际调用已安装的翻译模型，缺少语言包时不要在无人值守验收中确认下载。
+- `bash tests/run-memory-checks.sh`：优化构建，20 次编辑器/复制和 5 次 OCR，分别等待 1/5/15/60 秒记录 physical footprint。约需 2–3 分钟，使用独立设置和剪贴板，不是完整应用内存。
+- `bash tests/profile-idle-app.sh /absolute/path/LibreShot.app`：完整应用启动后 1/5/15/60 秒采样 `vmmap` 与 CPU，应用结束后退出测试进程。运行前须退出已运行的 LibreShot；沿用其设置，不发起截图或修改设置。
+
+原生窗口截图、测试输出和临时文件不能替代 Finder 真实录屏、多显示器、权限授权/撤销、最低系统版本验收。当前结果见 [开发版验收](../docs/qa/issues-4-6-development.md)。
+
 截图内存优化的功能与生命周期回归使用 `tests/run-issue4-checks.sh`：验证 PNG/TIFF 单条目、透明圆角、Retina 尺寸、跨进程及写入进程退出后的剪贴板读回；追踪历史完整帧像素缓冲释放，并对照固定底栏、小幅滚动、sRGB/Display P3 彩色图片的最终像素。内存数值对照见 [内存分析](../docs/qa/memory-analysis.md)。
 
 在装有 Xcode 的 macOS 上，从仓库根目录运行：
