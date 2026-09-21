@@ -21,21 +21,25 @@ xcodebuild -project LibreShot/LibreShot.xcodeproj -scheme LibreShot \
     PRODUCT_NAME=LibreShotPreview \
     PRODUCT_BUNDLE_IDENTIFIER=com.allensong.LibreShot.Preview \
     INFOPLIST_KEY_CFBundleDisplayName='LibreShot Preview' \
-    INFOPLIST_KEY_LibreShotBuildChannel=local-preview \
-    INFOPLIST_KEY_LibreShotSourceRevision="$revision" \
     MARKETING_VERSION=1.3.0 CURRENT_PROJECT_VERSION=8 \
     'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO build > "$output/build.log" 2>&1
 
 app="$output/LibreShot Preview.app"
 ditto "$work/Build/Products/Release/LibreShotPreview.app" "$app"
 info="$app/Contents/Info.plist"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")" == com.allensong.LibreShot.Preview ]]
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :LibreShotBuildChannel' "$info")" == local-preview ]]
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :LibreShotSourceRevision' "$info")" == "$revision" ]]
+plutil -insert LibreShotBuildChannel -string local-preview "$info"
+plutil -insert LibreShotSourceRevision -string "$revision" "$info"
+codesign --force --sign - --options runtime --entitlements LibreShot/LibreShot/LibreShot.entitlements "$app"
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")" != "com.allensong.LibreShot.Preview" ]] ||
+   [[ "$(/usr/libexec/PlistBuddy -c 'Print :LibreShotBuildChannel' "$info")" != "local-preview" ]] ||
+   [[ "$(/usr/libexec/PlistBuddy -c 'Print :LibreShotSourceRevision' "$info")" != "$revision" ]]; then
+    printf 'Preview identity verification failed.\n' >&2
+    exit 1
+fi
 codesign --verify --deep --strict "$app"
 codesign -d --entitlements :- "$app" > "$output/entitlements.plist" 2> "$output/signature.log"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$output/entitlements.plist")" == true ]]
-lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/LibreShotPreview"
+lipo "$app/Contents/MacOS/LibreShotPreview" -verify_arch arm64 x86_64
 cp docs/qa/preview-trial.md "$output/READ-ME.md"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$output/LibreShot-Preview.zip"
 (cd "$output" && shasum -a 256 LibreShot-Preview.zip > SHA256SUMS)
