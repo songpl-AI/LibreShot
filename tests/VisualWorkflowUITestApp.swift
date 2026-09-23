@@ -16,6 +16,12 @@ struct VisualWorkflowUITestApp {
         commands.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let suite = "LibreShot.Visual.UI.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
+        if ProcessInfo.processInfo.environment["LIBRESHOT_QA_CUSTOM_TOOLBAR"] == "1" {
+            let priority: [ToolbarItem] = [.pin, .ocr, .select, .pen, .rectangle, .arrow, .ellipse,
+                                           .text, .number, .mosaic, .undo, .cancel, .complete, .style, .translate]
+            defaults.set((priority + ToolbarItem.allCases.filter { !priority.contains($0) }).map(\.rawValue),
+                         forKey: "toolbarItemOrder")
+        }
         let settings = SettingsService(defaults: defaults)
         let board = NSPasteboard.withUniqueName()
         let service = CaptureService(settings: settings, pasteboard: board)

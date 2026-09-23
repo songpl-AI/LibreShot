@@ -15,6 +15,21 @@ struct VisualWorkflowChecks {
             precondition(Set(primary + compact.overflowItems) == Set(ToolbarItem.allCases))
         }
         print("PASS: overflow preserves every action and keeps completion/cancel visible")
+        let customized: [ToolbarItem] = [.pin, .ocr, .style, .select, .pen, .cancel, .complete, .translate]
+        let allFit = ToolbarLayout(items: customized, availableWidth: 620, prioritizeDefaults: false)
+        precondition(allFit.rows[0] == customized && allFit.overflowItems.isEmpty,
+                     "More must disappear when every enabled action fits")
+        let prioritized = ToolbarLayout(items: customized, availableWidth: 220, prioritizeDefaults: false)
+        precondition(prioritized.rows[0] == [.pin, .ocr, .style, .cancel, .complete] &&
+                     prioritized.overflowItems == [.select, .pen, .translate],
+                     "Custom order must decide which optional actions stay visible")
+        let styleInMore = ToolbarLayout(items: [.pin, .ocr, .select, .pen, .rectangle, .style, .cancel, .complete],
+                                        availableWidth: 220, prioritizeDefaults: false)
+        precondition(styleInMore.overflowItems.contains(.style), "Style must remain available from More")
+        let defaults = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 620)
+        precondition(defaults.rows[0].contains(.translate) && defaults.rows[0].contains(.style),
+                     "The unchanged default order must retain direct translation and style access")
+        print("PASS: custom order controls the main strip, More appears only for overflow, default translation stays visible")
 
         let long = CGSize(width: 1400, height: 6200)
         let narrow = ImageEditorViewportLayout(imageSize: long, viewport: CGSize(width: 540, height: 600), mode: .fitWidth, zoom: 1)

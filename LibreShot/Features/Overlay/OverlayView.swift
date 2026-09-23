@@ -118,7 +118,8 @@ struct OverlayView: View {
                 // Layer 4: Toolbar (Only in Editing mode)
                 if viewModel.state == .editing {
                     if showsToolbar {
-                    let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
+                    let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20,
+                                               prioritizeDefaults: !viewModel.toolbarConfiguration.hasCustomOrder)
                     let accessoryHeight: CGFloat = viewModel.translationSource != nil && viewModel.showsTranslationControls ? 78 : 0
                     let accessoryWidth = min(430, geometry.size.width - 20)
                     let toolbarPos = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,

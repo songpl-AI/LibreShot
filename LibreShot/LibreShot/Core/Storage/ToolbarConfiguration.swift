@@ -79,6 +79,7 @@ struct ToolbarConfiguration {
     }
 
     var visibleItems: [ToolbarItem] { orderedItems.filter(isVisible) }
+    var hasCustomOrder: Bool { orderedItems != ToolbarItem.allCases }
 
     mutating func moveItems(fromOffsets source: IndexSet, toOffset destination: Int) {
         guard !source.isEmpty, source.allSatisfy({ orderedItems.indices.contains($0) }),
@@ -96,7 +97,7 @@ struct ToolbarConfiguration {
     }
 }
 
-/// Keep the primary strip on one line; secondary actions retain their configured order in More.
+/// Keep the primary strip on one line; More contains only enabled items that do not fit.
 struct ToolbarLayout {
     static let buttonSize: CGFloat = 30
     static let spacing: CGFloat = 3
@@ -106,17 +107,25 @@ struct ToolbarLayout {
     let overflowItems: [ToolbarItem]
     let size: CGSize
 
-    init(items: [ToolbarItem], availableWidth: CGFloat) {
+    init(items: [ToolbarItem], availableWidth: CGFloat, prioritizeDefaults: Bool = true) {
         let columns = max(3, min(14, Int((availableWidth - Self.padding * 2 + Self.spacing)
             / (Self.buttonSize + Self.spacing))))
-        let secondary: Set<ToolbarItem> = [.pin, .ocr, .longCapture, .saveAs, .blur]
-        let needsOverflow = items.count > columns || items.contains(where: secondary.contains)
-        let capacity = max(2, columns - (needsOverflow ? 1 : 0))
-        let pinned = items.filter { $0.isRequired || $0 == .translate || $0 == .style }
         var visible = Set(items.filter(\.isRequired))
-        for item in pinned where visible.count < capacity { visible.insert(item) }
-        for item in items where !secondary.contains(item) && visible.count < capacity { visible.insert(item) }
-        if !needsOverflow { visible = Set(items) }
+        if items.count <= columns {
+            visible = Set(items)
+        } else {
+            let capacity = columns - 1
+            if prioritizeDefaults {
+                let secondary: Set<ToolbarItem> = [.pin, .ocr, .longCapture, .saveAs, .blur]
+                for item in items where (item == .translate || item == .style) && visible.count < capacity {
+                    visible.insert(item)
+                }
+                for item in items where !secondary.contains(item) && visible.count < capacity {
+                    visible.insert(item)
+                }
+            }
+            for item in items where visible.count < capacity { visible.insert(item) }
+        }
         let primary = items.filter(visible.contains)
         overflowItems = items.filter { !visible.contains($0) }
         rows = [primary]

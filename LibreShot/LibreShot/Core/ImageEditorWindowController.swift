@@ -85,7 +85,8 @@ struct ImageEditorView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: geometry.size.width - 24)
+            let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: geometry.size.width - 24,
+                                       prioritizeDefaults: !model.toolbarConfiguration.hasCustomOrder)
             VStack(spacing: 0) {
                 GeometryReader { viewport in
                     ImageEditorScrollView(model: model, imageSize: imageSize, zoom: $zoom,

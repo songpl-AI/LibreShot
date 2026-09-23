@@ -100,6 +100,7 @@ struct ToolbarRegressionChecks {
         // Old preferences need no migration; partial/corrupt orders still include each tool once.
         let repairedOrder = ToolbarConfiguration(itemOrder: ["save", "unknown", "save", "complete"])
         precondition(repairedOrder.orderedItems == [.save, .complete] + ToolbarItem.allCases.filter { $0 != .save && $0 != .complete })
+        precondition(repairedOrder.hasCustomOrder && !ToolbarConfiguration().hasCustomOrder)
         defaults.set(["save", "unknown", "save", "complete"], forKey: "toolbarItemOrder")
         precondition(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems == repairedOrder.orderedItems)
         defaults.set("invalid-array", forKey: "toolbarItemOrder")

@@ -4,6 +4,7 @@
 
 - `bash tests/run-visual-checks.sh`：验证单排工具栏、窄宽度溢出菜单、长图适宽/全图布局、译文主色、原选区会话及 Retina 导出坐标。
 - `bash tests/build-visual-qa.sh`：生成 `/tmp/LibreShot-Visual-QA/LibreShotVisualQA.app`。打开后有原选区翻译与长图编辑两个合成样例，使用生产视图、独立设置域及剪贴板，不需要录屏权限。选区窗口使用生产截图的 `screenSaver` 层级，校正弹窗也需在这一层级下检查。
+- 给验收应用设置 `LIBRESHOT_QA_CUSTOM_TOOLBAR=1` 可查看自定义顺序的主栏与更多菜单，包括从菜单打开“颜色与字号”。
 - 应用菜单可切换样例或退出；翻译调用系统模型，缺少语言包时不要在无人值守测试中批准下载。导出只写入 `/tmp/LibreShot-Visual-QA`，不会修改系统剪贴板。
 
 验收结果与局限见 [原位翻译与编辑器布局](../docs/qa/visual-workflow.md)。

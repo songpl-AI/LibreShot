@@ -13,32 +13,40 @@ struct EditorToolbarView: View {
             ForEach(layout.rows.indices, id: \.self) { row in
                 HStack(spacing: ToolbarLayout.spacing) {
                     ForEach(layout.rows[row]) { item in
-                        if item == .style {
-                            toolbarButton(item)
-                                .popover(isPresented: $viewModel.showsStylePopover, arrowEdge: .bottom) {
-                                    StylePopoverView(viewModel: viewModel).padding(12)
-                                }
-                        } else {
-                            toolbarButton(item)
-                        }
+                        toolbarButton(item)
                     }
                     if !layout.overflowItems.isEmpty {
                         Menu {
                             ForEach(layout.overflowItems) { item in
-                                Button { perform(item) } label: {
-                                    Label(help(for: item), systemImage: item.iconName)
-                                }.disabled(isDisabled(item))
+                                if item.annotationType != nil || item == .select {
+                                    Toggle(isOn: Binding(get: { isSelected(item) }, set: { _ in perform(item) })) {
+                                        Label(help(for: item), systemImage: item.iconName)
+                                    }.disabled(isDisabled(item))
+                                } else {
+                                    Button { perform(item) } label: {
+                                        Label(help(for: item), systemImage: item.iconName)
+                                    }.disabled(isDisabled(item))
+                                }
                             }
                         } label: {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 16, weight: .medium))
                                 .frame(width: ToolbarLayout.buttonSize, height: ToolbarLayout.buttonSize)
+                                .foregroundStyle(layout.overflowItems.contains(where: isSelected) ? Color.accentColor : Color.primary)
+                                .background(RoundedRectangle(cornerRadius: 6)
+                                    .fill(layout.overflowItems.contains(where: isSelected) ? Color.accentColor.opacity(0.15) : .clear))
                         }
                         .menuStyle(.borderlessButton)
                         .menuIndicator(.hidden)
                         .fixedSize()
+                        .overlay(alignment: .bottom) {
+                            if layout.overflowItems.contains(where: isSelected) {
+                                Capsule().fill(Color.accentColor).frame(width: 12, height: 2).offset(y: 2)
+                            }
+                        }
                         .help("更多工具")
                         .accessibilityLabel("更多工具")
+                        .accessibilityValue(layout.overflowItems.contains(where: isSelected) ? "已选中工具" : "")
                     }
                 }
             }
@@ -66,6 +74,9 @@ struct EditorToolbarView: View {
             }
         }
         .onDisappear { hoveredItem = nil }
+        .popover(isPresented: $viewModel.showsStylePopover, arrowEdge: .bottom) {
+            StylePopoverView(viewModel: viewModel).padding(12)
+        }
     }
 
     private func toolbarButton(_ item: ToolbarItem) -> some View {
