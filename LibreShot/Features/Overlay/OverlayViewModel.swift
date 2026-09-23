@@ -56,7 +56,9 @@ class OverlayViewModel: ObservableObject {
     // Selection State
     @Published var startPoint: CGPoint?
     @Published var currentPoint: CGPoint?
-    @Published var selectionRect: CGRect = .zero
+    @Published var selectionRect: CGRect = .zero {
+        didSet { if selectionRect != oldValue { clearImageTranslation() } }
+    }
     @Published var state: OverlayState = .idle
     
     // Freeze visibility for the current capture session.
@@ -88,15 +90,40 @@ class OverlayViewModel: ObservableObject {
     @Published var captureMode: CaptureMode = .normal
     @Published var longCaptureStatusText: String = "拖动选择滚动区域"
     @Published var showsStylePopover = false
+    @Published private(set) var translationSource: NSImage?
+    @Published private(set) var translationSessionID = UUID()
+    @Published var translatedSelection: CGImage?
+    @Published var showsOriginalTranslation = false
+    @Published var translationCanExport = false
+    @Published var showsTranslationControls = false
+
+    var canExportSelection: Bool { translationSource == nil || translationCanExport }
+
+    func clearImageTranslation() {
+        translationSource = nil
+        translatedSelection = nil
+        translationCanExport = false
+        showsOriginalTranslation = false
+        showsTranslationControls = false
+        translationSessionID = UUID()
+    }
+
+    func imageForExport() -> CGImage? {
+        guard let original = previewImage, translationSource != nil,
+              !showsOriginalTranslation, let translated = translatedSelection else { return previewImage }
+        return ImageTranslationRenderer.replacingSelection(in: original, with: translated,
+                                                           selection: selectionRect, scale: previewScale)
+    }
 
     func isToolbarItemEnabled(_ item: ToolbarItem) -> Bool {
+        if [.complete, .save, .saveAs, .pin, .ocr].contains(item), !canExportSelection { return false }
         if item == .style { return visibleToolbarItems.contains(.style) }
         if item == .translate {
             if #available(macOS 26.0, *) { return true }
             return false
         }
         if item == .undo { return !annotations.isEmpty }
-        if item == .longCapture { return captureMode == .normal && annotations.isEmpty && !isEditingText }
+        if item == .longCapture { return captureMode == .normal && annotations.isEmpty && !isEditingText && translationSource == nil }
         return true
     }
 
@@ -156,38 +183,54 @@ class OverlayViewModel: ObservableObject {
     // MARK: - Finalize
     
     func confirmCopy() {
+        guard canExportSelection else { return }
         commitTextInput()
-        onCapture?(selectionRect, annotations, .copy, previewImage)
+        onCapture?(selectionRect, annotations, .copy, imageForExport())
     }
     
     func confirmSave() {
+        guard canExportSelection else { return }
         commitTextInput()
-        onCapture?(selectionRect, annotations, .save, previewImage)
+        onCapture?(selectionRect, annotations, .save, imageForExport())
     }
 
     func confirmSaveAndCopy() {
+        guard canExportSelection else { return }
         commitTextInput()
-        onCapture?(selectionRect, annotations, .saveAndCopy, previewImage)
+        onCapture?(selectionRect, annotations, .saveAndCopy, imageForExport())
     }
     
     func confirmPin() {
+        guard canExportSelection else { return }
         commitTextInput()
-        onCapture?(selectionRect, annotations, .pin, previewImage)
+        onCapture?(selectionRect, annotations, .pin, imageForExport())
     }
 
     func confirmOCR() {
+        guard canExportSelection else { return }
         commitTextInput()
-        onCapture?(selectionRect, annotations, .ocr, previewImage)
+        onCapture?(selectionRect, annotations, .ocr, imageForExport())
     }
 
     func confirmImageTranslation() {
         commitTextInput()
-        onCapture?(selectionRect, annotations, .translate, previewImage)
+        if translationSource != nil { showsTranslationControls.toggle(); return }
+        guard #available(macOS 26.0, *), let image = previewImage,
+              !selectionRect.isEmpty, previewScale > 0 else { return }
+        let pixels = CGRect(x: selectionRect.minX * previewScale, y: selectionRect.minY * previewScale,
+                            width: selectionRect.width * previewScale, height: selectionRect.height * previewScale).integral
+        guard let crop = image.cropping(to: pixels) else { return }
+        translationSessionID = UUID()
+        translationSource = NSImage(cgImage: crop, size: selectionRect.size)
+        showsTranslationControls = true
+        selectedTool = nil
+        selectedAnnotationID = nil
     }
 
     func confirmSaveAs() {
+        guard canExportSelection else { return }
         commitTextInput()
-        onCapture?(selectionRect, annotations, .saveAs, previewImage)
+        onCapture?(selectionRect, annotations, .saveAs, imageForExport())
     }
     
     func cancel() {
@@ -508,6 +551,7 @@ class OverlayViewModel: ObservableObject {
     }
     
     func reset() {
+        clearImageTranslation()
         showsStylePopover = false
         endSelectedShapeDrag()
         clearAnnotationPress()

@@ -69,13 +69,19 @@ struct ToolbarRegressionChecks {
                                          size: CGSize(width: 640, height: 480), path: output + "/selection-mode.png")
             let scale = CGFloat(initial.pixelsWide) / 640
             // Sample inside each circular handle, away from the one-pixel selection border.
-            for point in [CGPoint(x: 102, y: 102), CGPoint(x: 398, y: 102),
-                          CGPoint(x: 102, y: 298), CGPoint(x: 398, y: 298)] {
+            for point in [CGPoint(x: 101, y: 101), CGPoint(x: 399, y: 101),
+                          CGPoint(x: 101, y: 299), CGPoint(x: 399, y: 299)] {
                 let x = Int(point.x * scale), y = Int(point.y * scale)
                 let control = selectionMode.colorAt(x: x, y: y)!.usingColorSpace(.deviceRGB)!
                 let actual = initial.colorAt(x: x, y: y)!.usingColorSpace(.deviceRGB)!
-                precondition(control.redComponent > 0.8, "Selection mode must render a white resize handle")
-                precondition(actual.redComponent > 0.8, "Selection handles must appear immediately, before Esc")
+                precondition(max(actual.redComponent, actual.greenComponent, actual.blueComponent) > 0.7 &&
+                             abs(actual.redComponent - control.redComponent) < 0.03 &&
+                             abs(actual.blueComponent - control.blueComponent) < 0.03,
+                             "Accent resize handles must appear immediately, before Esc")
+                let rim = initial.colorAt(x: Int((point.x < 200 ? 103 : 397) * scale),
+                                          y: Int((point.y < 200 ? 100 : 300) * scale))!.usingColorSpace(.deviceRGB)!
+                precondition(min(rim.redComponent, rim.greenComponent, rim.blueComponent) > 0.7,
+                             "Selection handles need a contrasting white rim")
             }
             print("PASS: actual overlay renders all four corner handles immediately after selection, before Esc")
         }
@@ -148,7 +154,7 @@ struct ToolbarRegressionChecks {
         print("PASS: capture-session snapshot, hidden default tool, long-capture availability")
 
         // Finalizing must include text that has not yet been committed by clicking the canvas.
-        for action in [CaptureAction.copy, .save, .saveAs, .pin, .ocr, .saveAndCopy, .translate] {
+        for action in [CaptureAction.copy, .save, .saveAs, .pin, .ocr, .saveAndCopy] {
             model.reset()
             model.state = .editing
             model.selectionRect = CGRect(x: 0, y: 0, width: 200, height: 200)
@@ -172,14 +178,19 @@ struct ToolbarRegressionChecks {
             }
             precondition(received && !model.isEditingText)
         }
-        print("PASS: uncommitted text included in copy/save/save-as/pin/OCR/save-and-copy/image translation")
+        print("PASS: uncommitted text included in copy/save/save-as/pin/OCR/save-and-copy")
 
-        // Check full, minimal, and wrapped toolbars at all screen corners.
+        // Check full, minimal, and overflow toolbars at all screen corners.
         for width: CGFloat in [320, 640, 1280, 2560] {
             let screen = CGSize(width: width, height: 720)
             for items in [ToolbarItem.allCases, [.cancel, .complete], [.text, .undo, .cancel, .complete], repairedOrder.orderedItems] {
                 let layout = ToolbarLayout(items: items, availableWidth: width - 20)
-                precondition(layout.rows.flatMap { $0 } == items)
+                let primary = layout.rows.flatMap { $0 }
+                precondition(Set(primary + layout.overflowItems) == Set(items))
+                precondition(primary == items.filter { primary.contains($0) })
+                precondition(layout.overflowItems == items.filter { !primary.contains($0) })
+                precondition(items.filter(\.isRequired).allSatisfy(primary.contains))
+                precondition(layout.rows.count == 1 && layout.size.height == 42)
                 for x in [CGFloat(0), width / 2, width - 20] {
                     for y: CGFloat in [0, 350, 700] {
                         let center = layout.position(selection: CGRect(x: x, y: y, width: 20, height: 20), screenSize: screen)
@@ -198,7 +209,7 @@ struct ToolbarRegressionChecks {
                 }
             }
         }
-        print("PASS: screen-edge positioning, wrapping and tooltip bounds (144 configurations, including custom order)")
+        print("PASS: screen-edge positioning, overflow and tooltip bounds (144 configurations, including custom order)")
 
         if ProcessInfo.processInfo.environment["LIBRESHOT_CHECK_PERFORMANCE"] == "1" {
             let payload = try PropertyListSerialization.data(fromPropertyList: [
@@ -271,9 +282,9 @@ struct ToolbarRegressionChecks {
             let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: 900)
             try render(EditorToolbarView(viewModel: model, layout: layout).padding(16),
                        size: CGSize(width: layout.size.width + 32, height: layout.size.height + 32), path: output + "/toolbar-custom.png")
-            let wrapped = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 300)
-            try render(EditorToolbarView(viewModel: model, layout: wrapped).padding(16),
-                       size: CGSize(width: wrapped.size.width + 32, height: wrapped.size.height + 32), path: output + "/toolbar-wrapped.png")
+            let compact = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 300)
+            try render(EditorToolbarView(viewModel: model, layout: compact).padding(16),
+                       size: CGSize(width: compact.size.width + 32, height: compact.size.height + 32), path: output + "/toolbar-overflow.png")
             print("PASS: rendered native SwiftUI settings and toolbar previews")
         }
     }

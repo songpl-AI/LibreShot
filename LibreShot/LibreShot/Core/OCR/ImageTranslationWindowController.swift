@@ -202,6 +202,131 @@ final class ImageTranslationModel: ObservableObject {
         progress = "已取消"
         if regions.isEmpty { loaded = false }
     }
+
+    func translate(using session: TranslationSession, requestID: UUID?) async {
+        await run(requestID: requestID) { regions in
+            var translated: [Int: String] = [:]
+            for start in stride(from: 0, to: regions.count, by: 32) {
+                try Task.checkCancellation()
+                let batch = regions[start..<min(start + 32, regions.count)].map {
+                    TranslationSession.Request(sourceText: $0.text, clientIdentifier: String($0.id))
+                }
+                for response in try await session.translations(from: batch) {
+                    if let identifier = response.clientIdentifier, let id = Int(identifier) {
+                        translated[id] = response.targetText
+                    }
+                }
+            }
+            return translated
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+struct InlineImageTranslationView: View {
+    @ObservedObject var viewModel: OverlayViewModel
+    @StateObject private var model: ImageTranslationModel
+    @State private var showsCorrections = false
+    private let sessionID: UUID
+
+    init(viewModel: OverlayViewModel, image: NSImage) {
+        self.viewModel = viewModel
+        sessionID = viewModel.translationSessionID
+        _model = StateObject(wrappedValue: ImageTranslationModel(image: image))
+    }
+
+    var body: some View {
+        let requestID = model.activeRequestID
+        VStack(spacing: 0) {
+            if viewModel.showsTranslationControls {
+                VStack(spacing: 5) {
+                    HStack(spacing: 6) {
+                        Picker("目标语言", selection: $model.targetLanguageID) {
+                            Text("简体中文").tag("zh-Hans")
+                            Text("English").tag("en")
+                            Text("日本語").tag("ja")
+                            Text("한국어").tag("ko")
+                        }.labelsHidden().frame(width: 84).disabled(model.isBusy)
+                        Picker("图像", selection: $viewModel.showsOriginalTranslation) {
+                            Text("原文").tag(true)
+                            Text("译文").tag(false)
+                        }.pickerStyle(.segmented).labelsHidden().frame(width: 90)
+                        Spacer(minLength: 0)
+                        Button {
+                            if model.isBusy { model.cancel() }
+                            else if model.regions.isEmpty { Task { await model.recognize() } }
+                            else { model.startTranslation() }
+                        } label: {
+                            Image(systemName: model.isBusy ? "stop.circle" : "arrow.clockwise")
+                                .frame(width: 24, height: 24)
+                        }.help(model.isBusy ? "取消翻译" : "重新翻译")
+                            .accessibilityLabel(model.isBusy ? "取消翻译" : "重新翻译")
+                        Button { showsCorrections.toggle() } label: {
+                            Image(systemName: "pencil.line").frame(width: 24, height: 24)
+                        }.help("校正译文").accessibilityLabel("校正译文")
+                            .popover(isPresented: $showsCorrections) {
+                                ImageTranslationCorrections(model: model).frame(width: 310, height: 360)
+                            }
+                        Button { model.cancel(); viewModel.clearImageTranslation() } label: {
+                            Image(systemName: "xmark").frame(width: 24, height: 24)
+                        }.help("移除翻译，保留原图").accessibilityLabel("移除翻译")
+                    }.buttonStyle(.plain)
+                    HStack(spacing: 6) {
+                        if model.isBusy { ProgressView().controlSize(.mini) }
+                        Text(model.errorMessage ?? model.progress)
+                            .font(.system(size: 11))
+                            .foregroundStyle(model.errorMessage != nil || !model.overflowIDs.isEmpty ? Color.red : Color.secondary)
+                            .lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }.frame(height: 14)
+                }
+                .padding(10)
+                .frame(height: 70)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+                .padding(.top, 8)
+            }
+        }
+        .task { await model.recognize() }
+        .task(id: model.renderRevision) { await model.render() }
+        .translationTask(model.configuration) { session in
+            await model.translate(using: session, requestID: requestID)
+        }
+        .onChange(of: model.translatedImage) { _, image in
+            guard viewModel.translationSessionID == sessionID else { return }
+            viewModel.translatedSelection = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+        .onChange(of: model.canExport) { _, allowed in
+            guard viewModel.translationSessionID == sessionID else { return }
+            viewModel.translationCanExport = allowed
+        }
+        .onChange(of: model.targetLanguageID) { _, _ in model.startTranslation() }
+        .onDisappear { model.cancel() }
+    }
+}
+
+@available(macOS 26.0, *)
+private struct ImageTranslationCorrections: View {
+    @ObservedObject var model: ImageTranslationModel
+    var body: some View {
+        List {
+            ForEach(model.regions) { region in
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("区域 \(region.id + 1)", isOn: Binding(get: { region.isIncluded }, set: { model.setIncluded($0, id: region.id) }))
+                        .font(.caption).disabled(model.isTranslating)
+                    Text(region.source.text).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    TextEditor(text: Binding(get: { region.translation }, set: { model.updateTranslation($0, id: region.id) }))
+                        .font(.system(size: 13)).frame(height: 60)
+                        .disabled(model.isTranslating || !region.isIncluded)
+                    if model.overflowIDs.contains(region.id) {
+                        Label("译文过长或为空", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red)
+                    } else if model.complexBackgroundIDs.contains(region.id) {
+                        Label("复杂背景，请核对覆盖效果", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    }
+                }.padding(.vertical, 6)
+            }
+        }
+    }
 }
 
 @available(macOS 26.0, *)
@@ -329,22 +454,7 @@ private struct ImageTranslationView: View {
         .task { await model.recognize() }
         .task(id: model.renderRevision) { await model.render() }
         .translationTask(model.configuration) { session in
-            await model.run(requestID: translationRequestID) { regions in
-                var translated: [Int: String] = [:]
-                for start in stride(from: 0, to: regions.count, by: 32) {
-                    try Task.checkCancellation()
-                    let batch = regions[start..<min(start + 32, regions.count)].map {
-                        TranslationSession.Request(sourceText: $0.text, clientIdentifier: String($0.id))
-                    }
-                    let responses = try await session.translations(from: batch)
-                    for response in responses {
-                        if let identifier = response.clientIdentifier, let id = Int(identifier) {
-                            translated[id] = response.targetText
-                        }
-                    }
-                }
-                return translated
-            }
+            await model.translate(using: session, requestID: translationRequestID)
         }
         .onDisappear { model.cancel() }
     }

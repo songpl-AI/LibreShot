@@ -22,14 +22,32 @@ struct EditorToolbarView: View {
                             toolbarButton(item)
                         }
                     }
+                    if !layout.overflowItems.isEmpty {
+                        Menu {
+                            ForEach(layout.overflowItems) { item in
+                                Button { perform(item) } label: {
+                                    Label(help(for: item), systemImage: item.iconName)
+                                }.disabled(isDisabled(item))
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 16, weight: .medium))
+                                .frame(width: ToolbarLayout.buttonSize, height: ToolbarLayout.buttonSize)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("更多工具")
+                        .accessibilityLabel("更多工具")
+                    }
                 }
             }
         }
         .padding(ToolbarLayout.padding)
         .frame(width: layout.size.width, height: layout.size.height)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.windowBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(NSColor.separatorColor), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
         .overlay(alignment: .topLeading) {
             if let item = hoveredItem {
                 let text = help(for: item)
@@ -58,7 +76,7 @@ struct EditorToolbarView: View {
                         ToolbarColorIcon(selectedColor: viewModel.selectedColor)
                     } else {
                         Image(systemName: item.iconName)
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: 16, weight: .regular))
                     }
                 }
                 .foregroundColor(tint(for: item))
@@ -81,6 +99,7 @@ struct EditorToolbarView: View {
     }
 
     private func isSelected(_ item: ToolbarItem) -> Bool {
+        if item == .translate { return viewModel.translationSource != nil }
         if item == .select { return viewModel.selectedTool == nil }
         guard let tool = item.annotationType else { return false }
         return viewModel.selectedTool == tool
@@ -91,19 +110,14 @@ struct EditorToolbarView: View {
     }
 
     private func buttonBackground(_ item: ToolbarItem) -> Color {
-        if item == .complete { return .accentColor }
         if isSelected(item) { return Color.accentColor.opacity(0.15) }
         return hoveredItem == item ? Color.primary.opacity(0.08) : .clear
     }
 
     private func tint(for item: ToolbarItem) -> Color {
-        if isSelected(item) { return .blue }
+        if isSelected(item) { return .accentColor }
         switch item {
-        case .complete: return .white
-        case .pin: return .orange
-        case .ocr: return .blue
-        case .translate: return .teal
-        case .longCapture: return .purple
+        case .cancel: return .red
         default: return .primary
         }
     }

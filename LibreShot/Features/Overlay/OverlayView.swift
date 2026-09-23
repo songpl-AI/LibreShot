@@ -15,6 +15,14 @@ struct OverlayView: View {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .allowsHitTesting(false)
                 }
+                if viewModel.translationSource != nil, !viewModel.showsOriginalTranslation,
+                   let translated = viewModel.translatedSelection {
+                    Image(decorative: translated, scale: viewModel.previewScale, orientation: .up)
+                        .resizable()
+                        .frame(width: viewModel.selectionRect.width, height: viewModel.selectionRect.height)
+                        .position(x: viewModel.selectionRect.midX, y: viewModel.selectionRect.midY)
+                        .allowsHitTesting(false)
+                }
 
                 // Layer 1: Dimmed Background
                 Path { path in
@@ -84,7 +92,7 @@ struct OverlayView: View {
                     let rect = viewModel.selectionRect
                     ZStack {
                         Rectangle()
-                            .stroke(viewModel.state == .longCapturing ? Color.blue : Color.white, lineWidth: viewModel.state == .longCapturing ? 2 : 1)
+                            .stroke(Color.accentColor, lineWidth: 1.5)
                             .frame(width: rect.width, height: rect.height)
                             .position(x: rect.midX, y: rect.midY)
                         
@@ -94,7 +102,8 @@ struct OverlayView: View {
                             ForEach(SelectionHandle.allCases, id: \.self) { handle in
                                 ZStack {
                                     Circle()
-                                        .fill(Color.white)
+                                        .fill(Color.accentColor)
+                                        .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
                                         .frame(width: handleSize, height: handleSize)
                                 }
                                 .frame(width: handleHitSize, height: handleHitSize)
@@ -110,8 +119,20 @@ struct OverlayView: View {
                 if viewModel.state == .editing {
                     if showsToolbar {
                     let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
-                    let toolbarPos = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size)
-                    EditorToolbarView(viewModel: viewModel, layout: layout, toolbarPosition: toolbarPos, screenSize: geometry.size)
+                    let accessoryHeight: CGFloat = viewModel.translationSource != nil && viewModel.showsTranslationControls ? 78 : 0
+                    let accessoryWidth = min(430, geometry.size.width - 20)
+                    let toolbarPos = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,
+                                                     accessorySize: CGSize(width: accessoryHeight > 0 ? accessoryWidth : 0, height: accessoryHeight))
+                    VStack(spacing: 0) {
+                        EditorToolbarView(viewModel: viewModel, layout: layout,
+                                          toolbarPosition: CGPoint(x: toolbarPos.x, y: toolbarPos.y - accessoryHeight / 2),
+                                          screenSize: geometry.size)
+                        if #available(macOS 26.0, *), let source = viewModel.translationSource {
+                            InlineImageTranslationView(viewModel: viewModel, image: source)
+                                .id(viewModel.translationSessionID)
+                                .frame(width: accessoryWidth)
+                        }
+                    }
                         .position(x: toolbarPos.x, y: toolbarPos.y)
                         .zIndex(1)
                         

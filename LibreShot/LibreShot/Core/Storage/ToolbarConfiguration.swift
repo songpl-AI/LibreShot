@@ -96,29 +96,40 @@ struct ToolbarConfiguration {
     }
 }
 
-/// The toolbar and its overlay position use the same dimensions, including wrapping.
+/// Keep the primary strip on one line; secondary actions retain their configured order in More.
 struct ToolbarLayout {
-    static let buttonSize: CGFloat = 32
-    static let spacing: CGFloat = 6
-    static let padding: CGFloat = 8
+    static let buttonSize: CGFloat = 30
+    static let spacing: CGFloat = 3
+    static let padding: CGFloat = 6
 
     let rows: [[ToolbarItem]]
+    let overflowItems: [ToolbarItem]
     let size: CGSize
 
     init(items: [ToolbarItem], availableWidth: CGFloat) {
-        let columns = max(1, Int((availableWidth - Self.padding * 2 + Self.spacing)
-            / (Self.buttonSize + Self.spacing)))
-        rows = stride(from: 0, to: items.count, by: columns).map {
-            Array(items[$0..<min($0 + columns, items.count)])
-        }
-        let columnCount = min(columns, items.count)
+        let columns = max(3, min(14, Int((availableWidth - Self.padding * 2 + Self.spacing)
+            / (Self.buttonSize + Self.spacing))))
+        let secondary: Set<ToolbarItem> = [.pin, .ocr, .longCapture, .saveAs, .blur]
+        let needsOverflow = items.count > columns || items.contains(where: secondary.contains)
+        let capacity = max(2, columns - (needsOverflow ? 1 : 0))
+        let pinned = items.filter { $0.isRequired || $0 == .translate || $0 == .style }
+        var visible = Set(items.filter(\.isRequired))
+        for item in pinned where visible.count < capacity { visible.insert(item) }
+        for item in items where !secondary.contains(item) && visible.count < capacity { visible.insert(item) }
+        if !needsOverflow { visible = Set(items) }
+        let primary = items.filter(visible.contains)
+        overflowItems = items.filter { !visible.contains($0) }
+        rows = [primary]
+        let columnCount = primary.count + (overflowItems.isEmpty ? 0 : 1)
         size = CGSize(
             width: CGFloat(columnCount) * Self.buttonSize + CGFloat(max(0, columnCount - 1)) * Self.spacing + Self.padding * 2,
-            height: CGFloat(rows.count) * Self.buttonSize + CGFloat(max(0, rows.count - 1)) * Self.spacing + Self.padding * 2
+            height: Self.buttonSize + Self.padding * 2
         )
     }
 
-    func position(selection: CGRect, screenSize: CGSize) -> CGPoint {
+    func position(selection: CGRect, screenSize: CGSize, accessorySize: CGSize = .zero) -> CGPoint {
+        let size = CGSize(width: max(size.width, accessorySize.width),
+                          height: size.height + accessorySize.height)
         let margin: CGFloat = 10
         let below = selection.maxY + margin + size.height / 2
         let above = selection.minY - margin - size.height / 2
@@ -134,7 +145,8 @@ struct ToolbarLayout {
         let width = min(tooltipSize.width, max(0, screenSize.width - margin * 2))
         var anchorX = toolbarCenter.x
         if let row = rows.first(where: { $0.contains(item) }), let column = row.firstIndex(of: item) {
-            let rowWidth = CGFloat(row.count) * Self.buttonSize + CGFloat(row.count - 1) * Self.spacing
+            let count = row.count + (overflowItems.isEmpty ? 0 : 1)
+            let rowWidth = CGFloat(count) * Self.buttonSize + CGFloat(count - 1) * Self.spacing
             anchorX = toolbarCenter.x - rowWidth / 2 + CGFloat(column) * (Self.buttonSize + Self.spacing) + Self.buttonSize / 2
         }
         let below = toolbarCenter.y + size.height / 2 + 6

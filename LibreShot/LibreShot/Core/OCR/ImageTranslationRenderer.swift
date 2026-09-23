@@ -25,6 +25,20 @@ nonisolated enum ImageTranslationRenderError: LocalizedError {
 }
 
 nonisolated enum ImageTranslationRenderer {
+    static func replacingSelection(in image: CGImage, with translated: CGImage,
+                                   selection: CGRect, scale: CGFloat) -> CGImage? {
+        guard let context = CGContext(data: nil, width: image.width, height: image.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let rect = CGRect(x: selection.minX * scale, y: CGFloat(image.height) - selection.maxY * scale,
+                          width: selection.width * scale, height: selection.height * scale)
+        context.clip(to: rect)
+        context.draw(translated, in: rect)
+        return context.makeImage()
+    }
+
     static func render(image: CGImage, regions: [TranslatedImageRegion], scale: CGFloat) throws -> ImageTranslationRender {
         try Task.checkCancellation()
         guard image.width <= 80_000_000 / max(image.height, 1) else { throw ImageTranslationRenderError.tooLarge }
@@ -42,6 +56,10 @@ nonisolated enum ImageTranslationRenderer {
         let backgrounds = regions.map { sampleBackground($0.source.bounds, pixels: pixels,
                                                          width: image.width, height: image.height,
                                                          bytesPerRow: context.bytesPerRow) }
+        let inks = zip(regions, backgrounds).map {
+            sampleInk($0.0.source.bounds, background: ($0.1.r, $0.1.g, $0.1.b), pixels: pixels,
+                      width: image.width, height: image.height, bytesPerRow: context.bytesPerRow)
+        }
         for (index, region) in regions.enumerated() where region.isIncluded {
             try Task.checkCancellation()
             let normalized = region.source.bounds.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -54,15 +72,25 @@ nonisolated enum ImageTranslationRenderer {
             let background = backgrounds[index]
             if background.complex { complex.insert(region.id) }
             let brightness = background.r * 0.2126 + background.g * 0.7152 + background.b * 0.0722
-            let ink = CGColor(gray: brightness > 0.5 ? 0.08 : 0.96, alpha: 1)
-            let maxFont = max(6 * scale, rect.height / CGFloat(max(1, region.source.lineCount)) * 0.95)
+            let ink = inks[index] ?? CGColor(gray: brightness > 0.5 ? 0.08 : 0.96, alpha: 1)
+            let maxFont = max(6 * scale, rect.height / CGFloat(max(1, region.source.lineCount)) * 1.4)
             let minFont = max(5, 7 * scale)
-            func layout(at fontSize: CGFloat) -> CTFrame? {
+            func layout(at fontSize: CGFloat) -> (frame: CTFrame?, line: CTLine?, origin: CGPoint)? {
                 let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
                 let attributed = NSAttributedString(string: text, attributes: [
                     NSAttributedString.Key(kCTFontAttributeName as String): font,
                     NSAttributedString.Key(kCTForegroundColorAttributeName as String): ink
                 ])
+                // OCR returns ink bounds, not a font's line box. Position single lines by their
+                // glyph bounds so fallback CJK font leading does not halve the visible size.
+                if region.source.lineCount == 1, !text.contains("\n") {
+                    let line = CTLineCreateWithAttributedString(attributed)
+                    let bounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+                    let width = max(bounds.maxX, CTLineGetTypographicBounds(line, nil, nil, nil)) - min(0, bounds.minX)
+                    if !bounds.isEmpty, width <= rect.width, bounds.height <= rect.height {
+                        return (nil, line, CGPoint(x: rect.minX - bounds.minX, y: rect.midY - bounds.midY))
+                    }
+                }
                 let framesetter = CTFramesetterCreateWithAttributedString(attributed)
                 let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), CGPath(rect: rect, transform: nil), nil)
                 guard CTFrameGetVisibleStringRange(frame).length == attributed.length else { return nil }
@@ -78,7 +106,7 @@ nonisolated enum ImageTranslationRenderer {
                     let width = CTLineGetTypographicBounds(line, nil, nil, nil)
                     if origin.x + width > rect.width + 0.01 { return nil }
                 }
-                return frame
+                return (frame, nil, .zero)
             }
             var low = min(minFont, maxFont), high = maxFont
             guard var frame = layout(at: low) else { overflow.insert(region.id); continue }
@@ -92,11 +120,40 @@ nonisolated enum ImageTranslationRenderer {
             context.setFillColor(CGColor(srgbRed: background.r, green: background.g, blue: background.b, alpha: 1))
             context.fill(rect)
             context.textMatrix = .identity
-            CTFrameDraw(frame, context)
+            if let line = frame.line {
+                context.textPosition = frame.origin
+                CTLineDraw(line, context)
+            } else if let textFrame = frame.frame {
+                CTFrameDraw(textFrame, context)
+            }
             context.restoreGState()
         }
         guard let output = context.makeImage() else { throw ImageTranslationRenderError.allocationFailed }
         return ImageTranslationRender(image: output, overflowIDs: overflow, complexBackgroundIDs: complex)
+    }
+
+    private static func sampleInk(_ bounds: CGRect, background: (CGFloat, CGFloat, CGFloat),
+                                  pixels: UnsafePointer<UInt8>, width: Int, height: Int, bytesPerRow: Int) -> CGColor? {
+        let rect = CGRect(x: bounds.minX * CGFloat(width), y: bounds.minY * CGFloat(height),
+                          width: bounds.width * CGFloat(width), height: bounds.height * CGFloat(height))
+            .intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        guard !rect.isNull, !rect.isEmpty else { return nil }
+        var bins: [Int: (count: Int, r: CGFloat, g: CGFloat, b: CGFloat)] = [:]
+        let step = max(1, Int(max(rect.width, rect.height) / 180))
+        for y in stride(from: Int(rect.minY), to: min(height, Int(ceil(rect.maxY))), by: step) {
+            for x in stride(from: Int(rect.minX), to: min(width, Int(ceil(rect.maxX))), by: step) {
+                let offset = y * bytesPerRow + x * 4
+                let alpha = CGFloat(pixels[offset + 3])
+                guard alpha > 180 else { continue }
+                let r = CGFloat(pixels[offset]) / alpha, g = CGFloat(pixels[offset + 1]) / alpha, b = CGFloat(pixels[offset + 2]) / alpha
+                guard abs(r - background.0) + abs(g - background.1) + abs(b - background.2) > 0.65 else { continue }
+                let key = Int(r * 15) * 256 + Int(g * 15) * 16 + Int(b * 15)
+                let old = bins[key] ?? (0, 0, 0, 0)
+                bins[key] = (old.count + 1, old.r + r, old.g + g, old.b + b)
+            }
+        }
+        guard let ink = bins.max(by: { $0.value.count < $1.value.count })?.value, ink.count >= 3 else { return nil }
+        return CGColor(srgbRed: ink.r / CGFloat(ink.count), green: ink.g / CGFloat(ink.count), blue: ink.b / CGFloat(ink.count), alpha: 1)
     }
 
     private static func sampleBackground(_ bounds: CGRect, pixels: UnsafePointer<UInt8>,
