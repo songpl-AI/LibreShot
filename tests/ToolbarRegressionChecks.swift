@@ -100,7 +100,6 @@ struct ToolbarRegressionChecks {
         // Old preferences need no migration; partial/corrupt orders still include each tool once.
         let repairedOrder = ToolbarConfiguration(itemOrder: ["save", "unknown", "save", "complete"])
         precondition(repairedOrder.orderedItems == [.save, .complete] + ToolbarItem.allCases.filter { $0 != .save && $0 != .complete })
-        precondition(repairedOrder.hasCustomOrder && !ToolbarConfiguration().hasCustomOrder)
         defaults.set(["save", "unknown", "save", "complete"], forKey: "toolbarItemOrder")
         precondition(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems == repairedOrder.orderedItems)
         defaults.set("invalid-array", forKey: "toolbarItemOrder")
@@ -181,17 +180,15 @@ struct ToolbarRegressionChecks {
         }
         print("PASS: uncommitted text included in copy/save/save-as/pin/OCR/save-and-copy")
 
-        // Check full, minimal, and overflow toolbars at all screen corners.
+        // Check full, minimal, and wrapped toolbars at all screen corners.
         for width: CGFloat in [320, 640, 1280, 2560] {
             let screen = CGSize(width: width, height: 720)
             for items in [ToolbarItem.allCases, [.cancel, .complete], [.text, .undo, .cancel, .complete], repairedOrder.orderedItems] {
                 let layout = ToolbarLayout(items: items, availableWidth: width - 20)
-                let primary = layout.rows.flatMap { $0 }
-                precondition(Set(primary + layout.overflowItems) == Set(items))
-                precondition(primary == items.filter { primary.contains($0) })
-                precondition(layout.overflowItems == items.filter { !primary.contains($0) })
-                precondition(items.filter(\.isRequired).allSatisfy(primary.contains))
-                precondition(layout.rows.count == 1 && layout.size.height == 42)
+                precondition(layout.rows.flatMap { $0 } == items)
+                precondition(layout.size.width <= width - 20)
+                precondition(layout.size.height == CGFloat(layout.rows.count) * ToolbarLayout.buttonSize
+                             + CGFloat(layout.rows.count - 1) * ToolbarLayout.spacing + ToolbarLayout.padding * 2)
                 for x in [CGFloat(0), width / 2, width - 20] {
                     for y: CGFloat in [0, 350, 700] {
                         let center = layout.position(selection: CGRect(x: x, y: y, width: 20, height: 20), screenSize: screen)
@@ -210,7 +207,7 @@ struct ToolbarRegressionChecks {
                 }
             }
         }
-        print("PASS: screen-edge positioning, overflow and tooltip bounds (144 configurations, including custom order)")
+        print("PASS: screen-edge positioning, wrapped rows and tooltip bounds (144 configurations, including custom order)")
 
         if ProcessInfo.processInfo.environment["LIBRESHOT_CHECK_PERFORMANCE"] == "1" {
             let payload = try PropertyListSerialization.data(fromPropertyList: [
@@ -283,9 +280,9 @@ struct ToolbarRegressionChecks {
             let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: 900)
             try render(EditorToolbarView(viewModel: model, layout: layout).padding(16),
                        size: CGSize(width: layout.size.width + 32, height: layout.size.height + 32), path: output + "/toolbar-custom.png")
-            let compact = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 300)
+            let compact = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 496)
             try render(EditorToolbarView(viewModel: model, layout: compact).padding(16),
-                       size: CGSize(width: compact.size.width + 32, height: compact.size.height + 32), path: output + "/toolbar-overflow.png")
+                       size: CGSize(width: compact.size.width + 32, height: compact.size.height + 32), path: output + "/toolbar-wrapped.png")
             print("PASS: rendered native SwiftUI settings and toolbar previews")
         }
     }

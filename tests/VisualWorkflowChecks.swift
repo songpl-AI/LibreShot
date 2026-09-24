@@ -3,33 +3,24 @@ import AppKit
 @main
 struct VisualWorkflowChecks {
     @MainActor static func main() async throws {
-        let layout = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 620)
-        precondition(layout.rows.count == 1 && layout.size.height <= 42 && layout.size.width <= 480,
-                     "The capture toolbar must stay compact instead of wrapping all actions into two rows")
-        print("PASS: compact single-row capture toolbar")
-        for width: CGFloat in [220, 300, 460, 620, 1440] {
+        let layout = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 660)
+        precondition(layout.rows == [ToolbarItem.allCases] && layout.size.height == 42 && layout.size.width == 636,
+                     "All enabled actions should fit on a single desktop-width row")
+        print("PASS: full screenshot toolbar fits one row without a More menu")
+        for width: CGFloat in [220, 300, 460, 620, 660, 1440] {
             let compact = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: width)
-            precondition(compact.size.width <= width && compact.rows.count == 1)
-            let primary = compact.rows.flatMap { $0 }
-            precondition(primary.contains(.cancel) && primary.contains(.complete))
-            precondition(Set(primary + compact.overflowItems) == Set(ToolbarItem.allCases))
+            precondition(compact.size.width <= width && compact.rows.flatMap { $0 } == ToolbarItem.allCases)
+            precondition(compact.rows.map(\.count).max()! - compact.rows.map(\.count).min()! <= 1)
+            precondition(compact.rows.flatMap { $0 }.contains(.cancel) && compact.rows.flatMap { $0 }.contains(.complete))
         }
-        print("PASS: overflow preserves every action and keeps completion/cancel visible")
+        print("PASS: narrow layouts wrap balanced rows without hiding enabled actions")
         let customized: [ToolbarItem] = [.pin, .ocr, .style, .select, .pen, .cancel, .complete, .translate]
-        let allFit = ToolbarLayout(items: customized, availableWidth: 620, prioritizeDefaults: false)
-        precondition(allFit.rows[0] == customized && allFit.overflowItems.isEmpty,
-                     "More must disappear when every enabled action fits")
-        let prioritized = ToolbarLayout(items: customized, availableWidth: 220, prioritizeDefaults: false)
-        precondition(prioritized.rows[0] == [.pin, .ocr, .style, .cancel, .complete] &&
-                     prioritized.overflowItems == [.select, .pen, .translate],
-                     "Custom order must decide which optional actions stay visible")
-        let styleInMore = ToolbarLayout(items: [.pin, .ocr, .select, .pen, .rectangle, .style, .cancel, .complete],
-                                        availableWidth: 220, prioritizeDefaults: false)
-        precondition(styleInMore.overflowItems.contains(.style), "Style must remain available from More")
-        let defaults = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 620)
-        precondition(defaults.rows[0].contains(.translate) && defaults.rows[0].contains(.style),
-                     "The unchanged default order must retain direct translation and style access")
-        print("PASS: custom order controls the main strip, More appears only for overflow, default translation stays visible")
+        let allFit = ToolbarLayout(items: customized, availableWidth: 620)
+        precondition(allFit.rows == [customized])
+        let wrapped = ToolbarLayout(items: customized, availableWidth: 220)
+        precondition(wrapped.rows == [[.pin, .ocr, .style, .select], [.pen, .cancel, .complete, .translate]],
+                     "Custom order must remain intact across rows, including Style and Translate")
+        print("PASS: customized order remains visible and stable when the toolbar wraps")
 
         let long = CGSize(width: 1400, height: 6200)
         let narrow = ImageEditorViewportLayout(imageSize: long, viewport: CGSize(width: 540, height: 600), mode: .fitWidth, zoom: 1)

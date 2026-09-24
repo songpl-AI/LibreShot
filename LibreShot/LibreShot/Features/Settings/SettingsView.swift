@@ -44,7 +44,7 @@ struct ToolbarSettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("自定义截图工具栏")
                 .font(.headline)
-            Text("勾选工具并拖动排序；靠前的工具优先显示，放不下的收进“更多”。")
+            Text("勾选工具并拖动排序；工具按此顺序显示，窄窗口会自动换行。")
                 .font(.callout)
                 .foregroundColor(.secondary)
 
