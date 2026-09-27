@@ -25,6 +25,15 @@ nonisolated enum ImageTranslationRenderError: LocalizedError {
 }
 
 nonisolated enum ImageTranslationRenderer {
+    private struct RenderLine {
+        let index: Int
+        let rect: CGRect
+        let text: String
+        let ink: CGColor
+        let lineCount: Int
+        var fontSize: CGFloat
+    }
+
     static func replacingSelection(in image: CGImage, with translated: CGImage,
                                    selection: CGRect, scale: CGFloat) -> CGImage? {
         guard let context = CGContext(data: nil, width: image.width, height: image.height,
@@ -60,6 +69,7 @@ nonisolated enum ImageTranslationRenderer {
             sampleInk($0.0.source.bounds, background: ($0.1.r, $0.1.g, $0.1.b), pixels: pixels,
                       width: image.width, height: image.height, bytesPerRow: context.bytesPerRow)
         }
+        var lines: [RenderLine] = []
         for (index, region) in regions.enumerated() where region.isIncluded {
             try Task.checkCancellation()
             let normalized = region.source.bounds.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -75,50 +85,55 @@ nonisolated enum ImageTranslationRenderer {
             let ink = inks[index] ?? CGColor(gray: brightness > 0.5 ? 0.08 : 0.96, alpha: 1)
             let maxFont = max(6 * scale, rect.height / CGFloat(max(1, region.source.lineCount)) * 1.4)
             let minFont = max(5, 7 * scale)
-            func layout(at fontSize: CGFloat) -> (frame: CTFrame?, line: CTLine?, origin: CGPoint)? {
-                let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
-                let attributed = NSAttributedString(string: text, attributes: [
-                    NSAttributedString.Key(kCTFontAttributeName as String): font,
-                    NSAttributedString.Key(kCTForegroundColorAttributeName as String): ink
-                ])
-                // OCR returns ink bounds, not a font's line box. Position single lines by their
-                // glyph bounds so fallback CJK font leading does not halve the visible size.
-                if region.source.lineCount == 1, !text.contains("\n") {
-                    let line = CTLineCreateWithAttributedString(attributed)
-                    let bounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-                    let width = max(bounds.maxX, CTLineGetTypographicBounds(line, nil, nil, nil)) - min(0, bounds.minX)
-                    if !bounds.isEmpty, width <= rect.width, bounds.height <= rect.height {
-                        return (nil, line, CGPoint(x: rect.minX - bounds.minX, y: rect.midY - bounds.midY))
-                    }
-                }
-                let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-                let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), CGPath(rect: rect, transform: nil), nil)
-                guard CTFrameGetVisibleStringRange(frame).length == attributed.length else { return nil }
-                let lines = CTFrameGetLines(frame) as! [CTLine]
-                var origins = [CGPoint](repeating: .zero, count: lines.count)
-                CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-                // CoreText counts an oversized single glyph as visible even when it will be clipped.
-                let localRect = CGRect(origin: .zero, size: rect.size).insetBy(dx: -0.01, dy: -0.01)
-                for (line, origin) in zip(lines, origins) {
-                    let inkBounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-                        .offsetBy(dx: origin.x, dy: origin.y)
-                    if !inkBounds.isEmpty && !localRect.contains(inkBounds) { return nil }
-                    let width = CTLineGetTypographicBounds(line, nil, nil, nil)
-                    if origin.x + width > rect.width + 0.01 { return nil }
-                }
-                return (frame, nil, .zero)
-            }
             var low = min(minFont, maxFont), high = maxFont
-            guard var frame = layout(at: low) else { overflow.insert(region.id); continue }
+            guard layout(text: text, ink: ink, rect: rect, lineCount: region.source.lineCount,
+                         fontSize: low) != nil else { overflow.insert(region.id); continue }
             for _ in 0..<9 {
                 let middle = (low + high) / 2
-                if let candidate = layout(at: middle) { frame = candidate; low = middle }
+                if layout(text: text, ink: ink, rect: rect, lineCount: region.source.lineCount,
+                          fontSize: middle) != nil { low = middle }
                 else { high = middle }
             }
+            lines.append(RenderLine(index: index, rect: rect, text: text, ink: ink,
+                                    lineCount: region.source.lineCount, fontSize: low))
+        }
+
+        // Vision's ink bounds can vary between lines of the same paragraph. Keep their
+        // translated type size uniform without tying nearby columns or distant blocks together.
+        var groups: [[Int]] = []
+        for lineIndex in lines.indices.sorted(by: {
+            lines[$0].rect.minY == lines[$1].rect.minY
+                ? lines[$0].rect.minX < lines[$1].rect.minX
+                : lines[$0].rect.minY < lines[$1].rect.minY
+        }) {
+            if let groupIndex = groups.indices.reversed().first(where: {
+                let previous = lines[groups[$0].last!]
+                return previous.lineCount == 1 && lines[lineIndex].lineCount == 1
+                    && sameParagraph(previous.rect, lines[lineIndex].rect)
+            }) {
+                groups[groupIndex].append(lineIndex)
+            } else {
+                groups.append([lineIndex])
+            }
+        }
+        for group in groups where group.count > 1 {
+            let sharedSize = group.map { lines[$0].fontSize }.min()!
+            for lineIndex in group { lines[lineIndex].fontSize = sharedSize }
+        }
+
+        for line in lines {
+            try Task.checkCancellation()
+            let region = regions[line.index]
+            guard let frame = layout(text: line.text, ink: line.ink, rect: line.rect,
+                                     lineCount: line.lineCount, fontSize: line.fontSize) else {
+                overflow.insert(region.id)
+                continue
+            }
+            let background = backgrounds[line.index]
             context.saveGState()
-            context.clip(to: rect)
+            context.clip(to: line.rect)
             context.setFillColor(CGColor(srgbRed: background.r, green: background.g, blue: background.b, alpha: 1))
-            context.fill(rect)
+            context.fill(line.rect)
             context.textMatrix = .identity
             if let line = frame.line {
                 context.textPosition = frame.origin
@@ -130,6 +145,49 @@ nonisolated enum ImageTranslationRenderer {
         }
         guard let output = context.makeImage() else { throw ImageTranslationRenderError.allocationFailed }
         return ImageTranslationRender(image: output, overflowIDs: overflow, complexBackgroundIDs: complex)
+    }
+
+    private static func sameParagraph(_ upper: CGRect, _ lower: CGRect) -> Bool {
+        let gap = lower.minY - upper.maxY
+        let lineHeight = min(upper.height, lower.height)
+        let overlap = min(upper.maxX, lower.maxX) - max(upper.minX, lower.minX)
+        return gap >= -lineHeight * 0.25 && gap <= lineHeight * 0.75
+            && overlap >= min(upper.width, lower.width) * 0.5
+            && abs(upper.minX - lower.minX) <= max(upper.height, lower.height) * 2
+    }
+
+    private static func layout(text: String, ink: CGColor, rect: CGRect, lineCount: Int,
+                               fontSize: CGFloat) -> (frame: CTFrame?, line: CTLine?, origin: CGPoint)? {
+        let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
+        let attributed = NSAttributedString(string: text, attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): ink
+        ])
+        // OCR returns ink bounds, not a font's line box. Center single lines by glyph bounds.
+        if lineCount == 1, !text.contains("\n") {
+            let line = CTLineCreateWithAttributedString(attributed)
+            let bounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+            let width = max(bounds.maxX, CTLineGetTypographicBounds(line, nil, nil, nil)) - min(0, bounds.minX)
+            if !bounds.isEmpty, width <= rect.width, bounds.height <= rect.height {
+                return (nil, line, CGPoint(x: rect.minX - bounds.minX, y: rect.midY - bounds.midY))
+            }
+        }
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), CGPath(rect: rect, transform: nil), nil)
+        guard CTFrameGetVisibleStringRange(frame).length == attributed.length else { return nil }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        // CoreText counts an oversized single glyph as visible even when it will be clipped.
+        let localRect = CGRect(origin: .zero, size: rect.size).insetBy(dx: -0.01, dy: -0.01)
+        for (line, origin) in zip(lines, origins) {
+            let inkBounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+                .offsetBy(dx: origin.x, dy: origin.y)
+            if !inkBounds.isEmpty && !localRect.contains(inkBounds) { return nil }
+            let width = CTLineGetTypographicBounds(line, nil, nil, nil)
+            if origin.x + width > rect.width + 0.01 { return nil }
+        }
+        return (frame, nil, .zero)
     }
 
     private static func sampleInk(_ bounds: CGRect, background: (CGFloat, CGFloat, CGFloat),

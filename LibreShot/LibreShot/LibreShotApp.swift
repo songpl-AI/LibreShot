@@ -52,7 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pinnedWindows: [PinnedImageWindowController] = []
     private var ocrWindowController: OCRResultWindowController?
     private var imageTranslationWindows: [NSWindowController] = []
-    private var isUserInitiatedTermination = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
@@ -71,10 +70,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         openSettings()
         return false
-    }
-    
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        isUserInitiatedTermination ? .terminateNow : .terminateCancel
     }
     
     private func setupStatusItem() {
@@ -229,7 +224,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func quitApp() {
-        isUserInitiatedTermination = true
         NSApplication.shared.terminate(nil)
     }
 

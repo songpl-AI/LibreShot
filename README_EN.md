@@ -1,16 +1,10 @@
 # LibreShot
 
-### Unreleased Source Changes
-
-The working source adds in-image translation on macOS 26+, editable translation regions, original/translated previews, image export and annotation, configurable editor shortcuts, an optional Space action, and opt-in double-Option capture. Double-Option requires Input Monitoring permission and still needs real keyboard/permission validation. In-image translation is intended primarily for documents and interfaces with simple backgrounds; it does not reconstruct complex backgrounds or exact fonts, and overflowing translations must be corrected or excluded before export. Unchanged text retains the original pixels.
-
-Space can be disabled (default), finish the capture using the auto-save preference, or explicitly save and copy regardless of that preference. Text entry retains ordinary characters, Space and Return. Mosaic preview pixels are allocated on demand; the measurements do not establish a 10 MB post-OCR idle footprint. These changes are not part of the public v1.2.0 release. See the [development plan](docs/design/issues-4-6-roadmap.md) and [validation record](docs/qa/issues-4-6-development.md).
-
 [中文](README.md) | [English](README_EN.md)
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.2.0](https://github.com/songpl-AI/LibreShot/releases/tag/v1.2.0) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.0](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.0) · [Release notes](docs/releases/1.3.0.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -23,11 +17,12 @@ Latest public release: [v1.2.0](https://github.com/songpl-AI/LibreShot/releases/
   - 🔢 **Numbered Annotation**: Circled auto-incrementing numbers to highlight points of interest.
   - 💧 **Blur/Mosaic**: Easily hide sensitive information (like faces, accounts).
 - **OCR Text Recognition & Translation**: Built-in offline OCR engine to extract text from screenshots (supports Chinese & English), plus offline translation after language packs are installed (macOS 26+; the initial download requires internet access).
-- **Long Screenshot**: Capture scrolling content into one long image, with a preview before copy or save.
+- **Translate in Place**: Put editable translations at the original text positions, switch between original and translated images, then copy, save, or annotate (macOS 26+). Best suited to documents and interfaces with simple backgrounds; complex backgrounds are not reconstructed seamlessly.
+- **Long Screenshot**: Capture scrolling content into one long image and, by default, open it in a scrollable, zoomable annotation window. You can choose a preview-first workflow in Settings.
 - **Auto Save**: Finishing an area capture with ✅ copies the image and also saves it to your chosen folder when Auto Save is enabled. A manual "Save As" option remains available.
-- **Custom Toolbar**: Choose which tools appear in Settings and reorder them by dragging rows or using the up/down arrows, with a one-click restore to defaults.
+- **Custom Toolbar**: Show, hide, and reorder tools in Settings. Enabled tools remain directly visible and wrap on narrow windows, without a More menu.
 - **Pin to Screen**: Support "pinning" screenshots to the top of the screen for easy reference or cross-app collaboration.
-- **Global Shortcuts**: Customizable global shortcuts to trigger screenshots instantly.
+- **Shortcuts**: Customize global capture and editor-tool shortcuts, optionally capture by double-tapping Option, and assign Finish or Save & Copy to Space.
 - **On-Device Processing**: Screenshots, OCR, and translation text are processed locally. Initial language downloads and update checks require internet access.
 - **Completely Free**: Open source and free, breaking down payment barriers.
 
@@ -42,9 +37,9 @@ Latest public release: [v1.2.0](https://github.com/songpl-AI/LibreShot/releases/
 
 To upgrade, quit LibreShot and replace the old app in Applications. Your toolbar and save preferences are retained. The installer supports Apple Silicon and Intel; translation requires macOS 26 or later.
 
-The current package uses a development signature and has not been notarized by Apple. If macOS cannot verify the developer, confirm that you downloaded it from this repository’s Release page and follow [Apple’s app-opening instructions](https://support.apple.com/102445) in System Settings → Privacy & Security. For a damaged-file warning, download again and check the included `SHA256SUMS`.
+The v1.3.0 package has a temporary ad-hoc signature and is **not notarized**. macOS may block it by default. Download only from this repository's Release page, verify the `SHA256SUMS` attachment, and follow [Apple's official app-opening instructions](https://support.apple.com/102445) in System Settings → Privacy & Security. Do not disable Gatekeeper globally. If macOS reports a damaged file, redownload and verify the checksum first. This is not a friction-free Developer ID-signed, notarized installer.
 
-Before the first capture, allow LibreShot under Screen Recording (or Screen & System Audio Recording) in System Settings → Privacy & Security.
+Before the first capture, allow LibreShot under Screen Recording (or Screen & System Audio Recording) in System Settings → Privacy & Security. Double-Option also requires Input Monitoring. An upgrade between temporarily signed builds may require you to grant both permissions again and quit/reopen LibreShot.
 
 ### Method 2: Build from Source
 
@@ -62,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-Run `bash build_release.sh` to create a locally signed app, DMG, and SHA256 checksum in a new `dist/` subdirectory. The script preserves existing outputs and does not notarize or upload. See [regression checks](tests/README.md) and the [1.2.0 release notes](docs/releases/1.2.0.md).
+With a valid signing identity, run `bash build_release.sh` to create a signed app, DMG, and SHA256 checksum in a new `dist/` subdirectory. The script preserves existing outputs and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.0 release notes](docs/releases/1.3.0.md).
 
 ## 🚀 Usage Guide
 
@@ -95,14 +90,19 @@ After selecting a capture region, edit mode opens with resize handles at all fou
 Click the **📌 (Pin)** icon on the toolbar to pin the current screenshot as a floating window on top of the screen. You can drag it around and double-click to close it. This is very useful for code comparison or reference.
 
 ### 5. Long Screenshot
-Select Long Screenshot from the menu bar, or use its button in the capture toolbar. Select the content region, then scroll with overlapping content between frames. Press Return to finish or Esc to cancel. The preview offers Copy, Save, and Save As. Save follows your Auto Save preference; Save As always opens a file dialog.
+Select Long Screenshot from the menu bar, or use its button in the capture toolbar. Select the content region, then scroll with overlapping content between frames. Press Return to finish or Esc to cancel. By default the result opens for scrolling, zooming, and annotation. Turn off post-capture editing in Settings for a preview-first Copy/Save workflow. Save follows your Auto Save preference; Save As always opens a file dialog.
 
 ### 6. OCR & Translation
 Click the **OCR** icon on the toolbar. The software will automatically recognize text in the screenshot and show the result in a popup window, supporting one-click copy; you can also translate the result offline by choosing a target language (macOS 26+). If languages are missing, macOS prompts you to download the free language packs. The initial download requires internet access; installed languages translate directly. You can retry after cancelling. Manage packs in System Settings → General → Language & Region → Translation Languages. Downloads you have approved may continue in the background under macOS.
 
+**Translate in Place** replaces recognized text at its position in the image. You can edit individual translations, switch between original and translated views, then copy, save, or continue annotating. Shorten or exclude an overflowing region before export. Adjacent paragraph lines use a consistent type size, but complex textures, tables, and unusual fonts may need manual review.
+
 ### 7. Settings
 Click the scissors icon in the menu bar and select "Settings...", or press `Cmd + ,` while LibreShot is active, to:
 - **Set Shortcuts**: Customize global shortcuts for "Area Screenshot" and "Full Screen Screenshot".
+- **Editor Shortcuts**: Assign keys to annotation tools. Defaults include Cmd-S to save, Shift-Cmd-S for Save As, Return to finish, and Cmd-Z to undo. Ordinary characters, Space, and Return still work while entering text; Esc always cancels.
+- **Double Option**: Optionally start an area capture with two Option taps. Requires Input Monitoring permission; modifier combinations, long presses, and intervening mouse actions do not trigger it.
+- **Space Action**: Choose Off (default), Finish, or Save & Copy. Finish follows Auto Save; Save & Copy always writes to the configured folder and preserves the clipboard image if saving fails.
 - **Save Path**: Customize the default save location for screenshots.
 - **Auto Save**: When enabled, ✅ copies and saves an area capture. When disabled, it only copies. If saving fails, an alert appears and the screenshot remains on the clipboard.
 - **Toolbar**: Show or hide buttons and reorder them by dragging rows or clicking the up/down arrows. Hidden tools retain their positions; Complete and Cancel can move but always remain visible. Changes are saved automatically and apply to the next capture. Restore Defaults restores both visibility and order. Hiding Rectangle starts in selection mode; click the active tool again to return to selection mode if its button is hidden. `Esc` always cancels the capture.
@@ -122,7 +122,7 @@ Or support via [GitHub Sponsors](https://github.com/sponsors/songpl-AI).
 
 Automatic annotation selection and rectangle/ellipse resizing are available in 1.2.0. See the [release notes](docs/releases/1.2.0.md) and [annotation checks](docs/qa/1.2.0.md). Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
 
-Validated on Apple Silicon with macOS 26.5.2. Other macOS versions and Intel hardware still need feedback. See the [capture checks](docs/qa/1.1.0.md) and [translation checks](docs/qa/1.1.1.md).
+v1.3.0 passed automated checks and local trials on Apple Silicon with macOS 26.5.2. Other macOS versions, Intel hardware, and more Finder-list scrolling captures still need feedback. Idle memory has not reached the approximately 10 MB target in Issue #5. See the [v1.3.0 validation](docs/qa/1.3.0-15-local.md) and [capture checks](docs/qa/1.1.0.md).
 
 ## 🤝 Contributing
 

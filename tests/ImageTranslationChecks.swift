@@ -87,6 +87,8 @@ enum ImageTranslationChecks {
                      "Translating adjacent table cells must not erase their separator")
         print("PASS: adjacent table cells retain the separating grid line")
 
+        try checkAdjacentTranslationFontSizes()
+
         let lines = [
             OCRTextRegion(id: 0, text: "First line", bounds: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.04), confidence: 0.9),
             OCRTextRegion(id: 1, text: "Second column", bounds: CGRect(x: 0.6, y: 0.1, width: 0.3, height: 0.04), confidence: 0.9),
@@ -211,5 +213,49 @@ enum ImageTranslationChecks {
         }
         NSGraphicsContext.restoreGraphicsState()
         return NSImage(cgImage: rep.cgImage!, size: CGSize(width: 600, height: 400))
+    }
+
+    private static func checkAdjacentTranslationFontSizes() throws {
+        let width = 1400, height = 270
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let lines = ["关键的设计选择是使并行性明确并且能够检查和恢复",
+                     "如果子代理输出可以保存就能够在中断后继续执行", "执行历史。"]
+        let heights: [CGFloat] = [44, 44, 70]
+        let tops = [12, 70, 128]
+        let regions = lines.enumerated().map { index, text in
+            TranslatedImageRegion(source: OCRTextRegion(
+                id: index, text: "Source line \(index)",
+                bounds: CGRect(x: 40.0 / 1400, y: CGFloat(tops[index]) / 270,
+                               width: 1320.0 / 1400, height: heights[index] / 270), confidence: 1
+            ), translation: text)
+        }
+        let separate = TranslatedImageRegion(source: OCRTextRegion(
+            id: lines.count, text: "Separate label",
+            bounds: CGRect(x: 850.0 / 1400, y: 205.0 / 270,
+                           width: 450.0 / 1400, height: 60.0 / 270), confidence: 1
+        ), translation: "摘要")
+        let result = try ImageTranslationRenderer.render(image: context.makeImage()!, regions: regions + [separate], scale: 1)
+        precondition(result.overflowIDs.isEmpty)
+        let bitmap = NSBitmapImageRep(cgImage: result.image)
+        let inkHeights = regions.indices.map { index -> Int in
+            let top = tops[index]
+            let rows = (top..<(top + Int(heights[index]))).filter { y in
+                (40..<1360).contains(where: { x in bitmap.colorAt(x: x, y: y)!.redComponent < 0.5 })
+            }
+            precondition(!rows.isEmpty, "Rendered translation has no visible ink in region \(index)")
+            return rows.last! - rows.first! + 1
+        }
+        precondition(CGFloat(inkHeights.max()!) / CGFloat(inkHeights.min()!) <= 1.25,
+                     "Adjacent lines from the same source font must not jump in rendered text size: \(inkHeights)")
+        let separateRows = (205..<265).filter { y in
+            (850..<1300).contains(where: { x in bitmap.colorAt(x: x, y: y)!.redComponent < 0.5 })
+        }
+        precondition(!separateRows.isEmpty)
+        precondition(separateRows.last! - separateRows.first! + 1 > Int(CGFloat(inkHeights.max()!) * 1.25),
+                     "An independent label must keep its own larger font size")
+        print("PASS: adjacent translated lines keep a consistent font size despite different text lengths")
     }
 }
