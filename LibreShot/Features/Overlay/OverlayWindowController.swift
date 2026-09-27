@@ -323,10 +323,16 @@ class OverlayWindowController: NSWindowController {
     }
     
     private func finishOverlaySession() {
+        #if DEBUG
+        let hadLongSession = longCaptureSession != nil
+        #endif
         cleanupLongCaptureState()
         popCrosshairCursor()
         window?.orderOut(nil)
         viewModel.reset()
+        #if DEBUG
+        if hadLongSession { MemoryTrace.markAfterRelease("long_session_released") }
+        #endif
     }
     
     private func installLongCaptureKeyMonitors(

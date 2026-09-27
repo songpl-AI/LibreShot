@@ -27,6 +27,13 @@ struct LibreShotApp: App {
                 Button("退出 LibreShot") { appDelegate.quitApp() }
                     .keyboardShortcut("q", modifiers: .command)
             }
+            #if DEBUG
+            CommandGroup(after: .appSettings) {
+                Button("诊断：区域截图") { appDelegate.startDiagnosticSelectionCapture() }
+                Button("诊断：完成长截图") { HotkeyService.shared.onLongCaptureFinishTrigger?() }
+                Button("诊断：取消长截图") { HotkeyService.shared.onLongCaptureCancelTrigger?() }
+            }
+            #endif
         }
     }
 }
@@ -37,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var captureFullScreenMenuItem: NSMenuItem?
     private var longCaptureMenuItem: NSMenuItem?
     private var overlayWindowController: OverlayWindowController?
-    private var settingsWindowController: NSWindowController?
+    private var settingsWindowController: SettingsWindowController?
     private var hotkeyObserver: NSObjectProtocol?
     private var keepAliveWindow: NSWindow?
 
@@ -48,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isUserInitiatedTermination = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        MemoryTrace.mark("app_launched")
+        #endif
         NSApplication.shared.setActivationPolicy(.accessory)
         setupKeepAliveWindow()
         setupStatusItem()
@@ -199,16 +209,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func openSettings() {
         if settingsWindowController == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 450, height: 250),
-                styleMask: [.titled, .closable, .miniaturizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "偏好设置"
-            window.contentView = NSHostingView(rootView: SettingsView())
-            window.center()
-            settingsWindowController = NSWindowController(window: window)
+            let controller = SettingsWindowController()
+            controller.onClose = { [weak self, weak controller] in
+                guard let self, self.settingsWindowController === controller else { return }
+                self.settingsWindowController = nil
+            }
+            settingsWindowController = controller
         }
         
         settingsWindowController?.showWindow(nil)
@@ -227,6 +233,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
+    #if DEBUG
+    func startDiagnosticSelectionCapture() {
+        captureSelection()
+    }
+    #endif
+
     @objc private func captureFullScreen() {
         Task {
             do {
@@ -243,6 +255,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func captureSelection() {
+        #if DEBUG
+        MemoryTrace.mark("selection_started")
+        #endif
         // If an overlay controller already exists, it means a capture session is active.
         // We should focus it or reset it, rather than creating a duplicate or overwriting it.
         if let existing = overlayWindowController {
@@ -266,6 +281,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             
             // Cleanup: Release the controller to free memory
             self?.overlayWindowController = nil
+            #if DEBUG
+            MemoryTrace.mark("selection_overlay_released")
+            #endif
         }, onLongCapture: { [weak self] image in
             Task { [weak self] in
                 await self?.handleLongCaptureResult(image)
@@ -281,10 +299,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("Selection cancelled")
             // Cleanup: Release the controller to free memory
             self?.overlayWindowController = nil
+            #if DEBUG
+            MemoryTrace.markAfterRelease("selection_cancelled")
+            #endif
         })
     }
     
     @objc private func captureLongScreenshot() {
+        #if DEBUG
+        MemoryTrace.mark("long_capture_started")
+        #endif
         if let existing = overlayWindowController {
             existing.close()
             overlayWindowController = nil
@@ -312,6 +336,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func handleLongCaptureResult(_ image: NSImage) async {
         await MainActor.run {
+            #if DEBUG
+            MemoryTrace.mark("long_capture_result_received")
+            #endif
             SoundService.shared.playCaptureSound()
             if SettingsService.shared.editLongCaptureAfterFinish {
                 showImageEditor(image)
@@ -352,6 +379,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let previewWindow {
                     self?.pinnedWindows.removeAll { $0 === previewWindow }
                 }
+                #if DEBUG
+                MemoryTrace.markAfterRelease("long_capture_preview_closed")
+                #endif
             }
             if let previewWindow {
                 pinnedWindows.append(previewWindow)
@@ -359,6 +389,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             NSApp.activate(ignoringOtherApps: true)
             self.overlayWindowController = nil
+            #if DEBUG
+            MemoryTrace.mark("long_capture_preview_open")
+            #endif
         }
     }
 
@@ -408,6 +441,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     await showAlert(title: "裁剪失败", message: "无法生成区域截图")
                     return
                 }
+                #if DEBUG
+                MemoryTrace.mark("selection_cropped")
+                #endif
 
                 let outputImage: NSImage
                 if annotations.isEmpty {
@@ -439,6 +475,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         editor.onClose = { [weak self, weak editor] in
             self?.imageEditors.removeAll { $0 === editor }
+            #if DEBUG
+            MemoryTrace.markAfterRelease("image_editor_closed")
+            #endif
         }
         imageEditors.append(editor)
         editor.showWindow(nil)
@@ -454,9 +493,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .saveAs:
             _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
         case .saveAndCopy:
-            CaptureService.shared.copyToClipboard(outputImage)
             do {
-                _ = try await CaptureService.shared.saveImageDirectly(outputImage)
+                _ = try await CaptureService.shared.copyAndSaveImageDirectly(outputImage)
             } catch {
                 throw NSError(domain: "LibreShot.SaveAndCopy", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "已复制，但保存失败。截图仍在剪贴板中。\n\(error.localizedDescription)"])
@@ -475,13 +513,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pinnedWindows.append(pinnedWindow)
             pinnedWindow.showWindow(nil)
         case .ocr:
+            #if DEBUG
+            MemoryTrace.mark("ocr_action_started")
+            #endif
             let text = try await OCRService.shared.recognizeText(from: outputImage)
             ocrWindowController?.close()
             let controller = OCRResultWindowController(text: text)
             ocrWindowController = controller
             controller.showWindow(nil)
+            #if DEBUG
+            MemoryTrace.mark("ocr_result_window_open")
+            #endif
         case .translate:
             if #available(macOS 26.0, *) {
+                #if DEBUG
+                MemoryTrace.mark("image_translation_window_started")
+                #endif
                 let controller = ImageTranslationWindowController(image: outputImage)
                 controller.onAction = { [weak self] image, action in
                     if action == .copy { CaptureService.shared.copyToClipboard(image) }
@@ -493,6 +540,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 imageTranslationWindows.append(controller)
                 controller.showWindow(nil)
+                #if DEBUG
+                MemoryTrace.mark("image_translation_window_open")
+                #endif
                 NSApp.activate(ignoringOtherApps: true)
             }
         }

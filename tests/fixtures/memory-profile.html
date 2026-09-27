@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>LibreShot memory profile fixture</title>
+  <style>
+    body { margin: 0; background: #f3f5f7; color: #202733; font: 16px/1.55 -apple-system, BlinkMacSystemFont, sans-serif; }
+    main { width: min(840px, calc(100% - 48px)); margin: 32px auto 80px; background: white; border: 1px solid #dce1e6; }
+    header { padding: 28px 36px; border-bottom: 1px solid #dce1e6; }
+    h1 { margin: 0 0 8px; font-size: 27px; }
+    h2 { margin: 0 0 10px; font-size: 19px; }
+    p { margin: 0; }
+    section { padding: 24px 36px; min-height: 120px; border-bottom: 1px solid #e7eaee; }
+    section:nth-child(even) { background: #f9fafb; }
+    .number { color: #087a83; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>LibreShot memory profile fixture</h1>
+      <p>Public sample content for OCR, image translation, and scrolling capture.</p>
+    </header>
+    <div id="rows"></div>
+  </main>
+  <script>
+    const rows = document.getElementById('rows');
+    const topics = [
+      'Create an issue', 'Review a request', 'Assign a teammate', 'Update a milestone',
+      'Compare a draft', 'Resolve a comment', 'Publish a summary', 'Check a deadline',
+      'Archive a record', 'Prepare a report', 'Verify an attachment', 'Organize a backlog'
+    ];
+    const details = [
+      'The title identifies the customer and the expected result.',
+      'A short note explains which fields changed during review.',
+      'The owner checks the due date before accepting the work.',
+      'The history shows when the decision was last revised.'
+    ];
+    for (let index = 1; index <= 48; index += 1) {
+      const section = document.createElement('section');
+      const heading = document.createElement('h2');
+      const number = document.createElement('span');
+      number.className = 'number';
+      number.textContent = `Section ${String(index).padStart(2, '0')} - `;
+      heading.append(number, topics[(index - 1) % topics.length]);
+      const paragraph = document.createElement('p');
+      paragraph.textContent = `${details[(index - 1) % details.length]} Reference ${String(index * 137).padStart(4, '0')} links this step to its own review. ${'Confirm the visible result. '.repeat(1 + index % 4)}`;
+      section.append(heading, paragraph);
+      rows.append(section);
+    }
+  </script>
+</body>
+</html>

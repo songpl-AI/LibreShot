@@ -26,6 +26,9 @@ class OCRResultWindowController: NSWindowController, NSWindowDelegate {
         // Tear down the hosting view so SwiftUI cancels its translation task,
         // even while AppDelegate still retains this window controller.
         window?.contentView = nil
+        #if DEBUG
+        MemoryTrace.markAfterRelease("ocr_result_window_closed")
+        #endif
     }
 }
 
@@ -181,6 +184,9 @@ final class OCRTranslationModel: ObservableObject {
         }
         request = (UUID(), text)
         isTranslating = true
+        #if DEBUG
+        MemoryTrace.mark("ocr_text_translation_started")
+        #endif
         lastConfiguration.source = source
         lastConfiguration.target = target
         lastConfiguration.invalidate()
@@ -194,6 +200,9 @@ final class OCRTranslationModel: ObservableObject {
                 request = nil
                 configuration = nil
                 isTranslating = false
+                #if DEBUG
+                MemoryTrace.mark("ocr_text_translation_finished")
+                #endif
             }
         }
         do {
@@ -217,5 +226,8 @@ final class OCRTranslationModel: ObservableObject {
         request = nil
         configuration = nil
         isTranslating = false
+        #if DEBUG
+        MemoryTrace.mark("ocr_text_translation_cancelled")
+        #endif
     }
 }

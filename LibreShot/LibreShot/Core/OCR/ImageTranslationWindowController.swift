@@ -47,6 +47,10 @@ final class ImageTranslationModel: ObservableObject {
 
     func recognize() async {
         guard !loaded else { return }
+        #if DEBUG
+        MemoryTrace.mark("image_translation_ocr_started")
+        defer { MemoryTrace.mark("image_translation_ocr_finished") }
+        #endif
         loaded = true
         let id = UUID()
         recognitionID = id
@@ -110,6 +114,10 @@ final class ImageTranslationModel: ObservableObject {
 
     func run(requestID expectedID: UUID?, translate: ([OCRTextRegion]) async throws -> [Int: String]) async {
         guard !Task.isCancelled, let id = expectedID, requestID == id else { return }
+        #if DEBUG
+        MemoryTrace.mark("image_translation_text_started")
+        defer { MemoryTrace.mark("image_translation_text_finished") }
+        #endif
         let source = regions.filter(\.isIncluded).map(\.source)
         defer {
             if requestID == id {
@@ -161,6 +169,10 @@ final class ImageTranslationModel: ObservableObject {
 
     func render() async {
         guard isRendering else { return }
+        #if DEBUG
+        MemoryTrace.mark("image_translation_render_started")
+        defer { MemoryTrace.mark("image_translation_render_finished") }
+        #endif
         let revision = renderRevision
         let snapshot = regions
         defer { if revision == renderRevision { isRendering = false } }
@@ -362,6 +374,9 @@ final class ImageTranslationWindowController: NSWindowController, NSWindowDelega
         onEdit = nil
         onClose?()
         onClose = nil
+        #if DEBUG
+        MemoryTrace.markAfterRelease("image_translation_window_closed")
+        #endif
     }
 }
 

@@ -60,26 +60,36 @@ class CaptureService {
     private var stream: SCStream?
     private var streamOutput: CaptureStreamOutput?
     private let outputQueue = DispatchQueue(label: "com.libreshot.capture")
-    private let continuationLock = NSLock()
-    
-    private var continuation: CheckedContinuation<NSImage, Error>?
     private var isStopping = false
     private var currentScale: CGFloat = 1.0
     
     private let settings: SettingsService
     private let pasteboard: NSPasteboard
+    private let fileWriter: @Sendable (Data, URL) throws -> Void
 
-    init(settings: SettingsService = .shared, pasteboard: NSPasteboard = .general) {
+    init(settings: SettingsService = .shared, pasteboard: NSPasteboard = .general,
+         fileWriter: @escaping @Sendable (Data, URL) throws -> Void = { data, url in try data.write(to: url) }) {
         self.settings = settings
         self.pasteboard = pasteboard
+        self.fileWriter = fileWriter
     }
 
     /// Copy first so a failed automatic save never discards the completed screenshot.
     @MainActor
     func completeCapture(_ image: NSImage) async throws -> URL? {
-        copyToClipboard(image)
-        guard settings.autoSaveEnabled else { return nil }
-        return try await saveImageDirectly(image)
+        guard settings.autoSaveEnabled else {
+            copyToClipboard(image)
+            return nil
+        }
+        return try await copyAndSaveImageDirectly(image)
+    }
+
+    @MainActor
+    func copyAndSaveImageDirectly(_ image: NSImage) async throws -> URL {
+        let encoded = pngData(from: image)
+        writeToClipboard(image, pngData: encoded)
+        guard let encoded else { throw CaptureServiceError.imageConversionFailed }
+        return try await savePNGDataDirectly(encoded)
     }
     
     func saveImageWithFallback(_ image: NSImage) async throws -> URL {
@@ -123,14 +133,25 @@ class CaptureService {
 
     /// 直接保存到预设目录（不弹保存面板）。目录优先级：设置里的「保存位置」→ ~/Pictures。
     func saveImageDirectly(_ image: NSImage) async throws -> URL {
-        let directory = settings.saveDirectory
-            ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-
         guard let pngData = pngData(from: image) else {
             throw CaptureServiceError.imageConversionFailed
         }
+        return try await savePNGDataDirectly(pngData)
+    }
 
+    private func savePNGDataDirectly(_ pngData: Data) async throws -> URL {
+        let configuredDirectory = settings.saveDirectory
+        let directory = configuredDirectory
+            ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let fileWriter = fileWriter
+        return try await Task.detached(priority: .userInitiated) {
+            try Self.writePNGData(pngData, to: directory, scoped: configuredDirectory != nil, using: fileWriter)
+        }.value
+    }
+
+    nonisolated private static func writePNGData(_ pngData: Data, to directory: URL, scoped: Bool,
+                                                 using fileWriter: @Sendable (Data, URL) throws -> Void) throws -> URL {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
@@ -143,21 +164,25 @@ class CaptureService {
             counter += 1
         }
 
-        let accessed = settings.saveDirectory != nil && directory.startAccessingSecurityScopedResource()
+        let accessed = scoped && directory.startAccessingSecurityScopedResource()
         defer {
             if accessed {
                 directory.stopAccessingSecurityScopedResource()
             }
         }
 
-        try pngData.write(to: url)
+        try fileWriter(pngData, url)
         return url
     }
 
     func copyToClipboard(_ image: NSImage) {
+        writeToClipboard(image, pngData: pngData(from: image))
+    }
+
+    private func writeToClipboard(_ image: NSImage, pngData: Data?) {
         pasteboard.clearContents()
         
-        guard let pngData = pngData(from: image) else {
+        guard let pngData else {
             pasteboard.writeObjects([image])
             return
         }
@@ -215,10 +240,22 @@ class CaptureService {
             print("CaptureService: CGImage cropping failed")
             return nil
         }
+
+        // A CGImage crop can retain the entire display backing store while the selection is open.
+        guard let context = CGContext(data: nil, width: croppedCGImage.width, height: croppedCGImage.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: croppedCGImage.colorSpace ?? exportColorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
+            return nil
+        }
+        context.interpolationQuality = .none
+        context.setBlendMode(.copy)
+        context.draw(croppedCGImage, in: CGRect(x: 0, y: 0, width: croppedCGImage.width, height: croppedCGImage.height))
+        guard let detachedImage = context.makeImage() else { return nil }
         
         // Return image with the logical size of the cropped area (Points)
         let finalSize = CGSize(width: finalRect.width / scaleX, height: finalRect.height / scaleY)
-        return NSImage(cgImage: croppedCGImage, size: finalSize)
+        return NSImage(cgImage: detachedImage, size: finalSize)
     }
     
     // Updated to accept optional displayID. If nil, captures main display.
@@ -261,26 +298,27 @@ class CaptureService {
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let configuration = Self.displayConfiguration(width: physicalWidth, height: physicalHeight)
 
-        return try await withCheckedThrowingContinuation { continuation in
-            continuationLock.lock()
-            self.continuation = continuation
-            continuationLock.unlock()
-            
-            let output = CaptureStreamOutput { [weak self] sampleBuffer in
-                self?.handleSampleBuffer(sampleBuffer)
+        do {
+            return try await withCheckedThrowingContinuation { continuation in
+                let pending = CaptureContinuation(continuation)
+                let output = CaptureStreamOutput { [weak self, pending] sampleBuffer in
+                    self?.handleSampleBuffer(sampleBuffer, pending: pending)
+                }
+                self.streamOutput = output
+                let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
+                self.stream = stream
+                do {
+                    try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: self.outputQueue)
+                    stream.startCapture { error in
+                        if let error { pending.fail(error) }
+                    }
+                } catch {
+                    pending.fail(error)
+                }
             }
-            self.streamOutput = output
-            let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
-            self.stream = stream
-            do {
-                try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: self.outputQueue)
-                try stream.startCapture()
-            } catch {
-                continuationLock.lock()
-                self.continuation = nil
-                continuationLock.unlock()
-                continuation.resume(throwing: error)
-            }
+        } catch {
+            stopStream()
+            throw error
         }
     }
 
@@ -298,7 +336,7 @@ class CaptureService {
         return configuration
     }
 
-    private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+    private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer, pending: CaptureContinuation) {
         guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
         // Safety check for invalid buffer
@@ -306,14 +344,7 @@ class CaptureService {
             return
         }
         
-        continuationLock.lock()
-        guard let continuation = self.continuation else {
-            continuationLock.unlock()
-            return
-        }
-        // Claim the continuation
-        self.continuation = nil
-        continuationLock.unlock()
+        guard let continuation = pending.take() else { return }
         
         // Convert to NSImage
         CVPixelBufferLockBaseAddress(imageBuffer, .readOnly)
@@ -331,7 +362,6 @@ class CaptureService {
             let ciImage = CIImage(cvImageBuffer: imageBuffer)
             guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
                 continuation.resume(throwing: CaptureServiceError.imageConversionFailed)
-                // self.continuation is already nil
                 stopStream()
                 return
             }
@@ -341,7 +371,6 @@ class CaptureService {
             let size = NSSize(width: ciImage.extent.width / scale, height: ciImage.extent.height / scale)
             let nsImage = NSImage(cgImage: cgImage, size: size)
             continuation.resume(returning: nsImage)
-            // self.continuation is already nil
             stopStream()
         }
     }
@@ -425,6 +454,26 @@ class CaptureService {
     }
 }
 
+final class CaptureContinuation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<NSImage, Error>?
+
+    init(_ continuation: CheckedContinuation<NSImage, Error>) {
+        self.continuation = continuation
+    }
+
+    func take() -> CheckedContinuation<NSImage, Error>? {
+        lock.withLock {
+            defer { continuation = nil }
+            return continuation
+        }
+    }
+
+    func fail(_ error: Error) {
+        take()?.resume(throwing: error)
+    }
+}
+
 final class CaptureStreamOutput: NSObject, SCStreamOutput {
     private let handler: (CMSampleBuffer) -> Void
 
@@ -434,7 +483,9 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput {
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen else { return }
-        handler(sampleBuffer)
+        autoreleasepool {
+            handler(sampleBuffer)
+        }
     }
 }
 
@@ -496,6 +547,9 @@ final class LongCaptureSession: ObservableObject {
     private let captureService = LongCaptureStreamService()
     private let frames = LongCaptureFrameAccumulator()
     private var isStarted = false
+    #if DEBUG
+    private var lastReportedFrameCount = 0
+    #endif
     
     init(region: LongCaptureRegion) {
         self.region = region
@@ -503,6 +557,9 @@ final class LongCaptureSession: ObservableObject {
     
     func start() async throws {
         guard !isStarted else { return }
+        #if DEBUG
+        MemoryTrace.mark("long_stream_starting")
+        #endif
         isStarted = true
         await MainActor.run {
             self.status = .capturing
@@ -510,6 +567,9 @@ final class LongCaptureSession: ObservableObject {
         try await captureService.start(region: region) { [weak self] frame in
             self?.handle(frame: frame)
         }
+        #if DEBUG
+        MemoryTrace.mark("long_stream_started")
+        #endif
     }
     
     func pause() async {
@@ -527,10 +587,16 @@ final class LongCaptureSession: ObservableObject {
     }
     
     func finish() async throws -> NSImage {
+        #if DEBUG
+        MemoryTrace.mark("long_finish_started")
+        #endif
         await MainActor.run {
             self.status = .finishing
         }
         await captureService.stop()
+        #if DEBUG
+        MemoryTrace.mark("long_stream_stopped")
+        #endif
         let image: NSImage
         do {
             image = try frames.renderFinalImage()
@@ -538,6 +604,9 @@ final class LongCaptureSession: ObservableObject {
             await MainActor.run { self.status = .failed(error.localizedDescription) }
             throw error
         }
+        #if DEBUG
+        MemoryTrace.mark("long_image_rendered")
+        #endif
         if image.size.width > 0 {
             image.size = NSSize(width: region.selectionRect.width,
                                 height: image.size.height * region.selectionRect.width / image.size.width)
@@ -545,6 +614,9 @@ final class LongCaptureSession: ObservableObject {
         await MainActor.run {
             self.status = .completed
         }
+        #if DEBUG
+        MemoryTrace.mark("long_finish_completed")
+        #endif
         return image
     }
     
@@ -558,6 +630,13 @@ final class LongCaptureSession: ObservableObject {
     private func handle(frame: LongCaptureFrame) {
         guard captureService.isRunning else { return }
         guard let progress = frames.process(frame: frame) else { return }
+        #if DEBUG
+        if progress.acceptedFrameCount > lastReportedFrameCount {
+            lastReportedFrameCount = progress.acceptedFrameCount
+            if progress.acceptedFrameCount == 1 { MemoryTrace.mark("long_first_frame") }
+            if progress.acceptedFrameCount == 10 { MemoryTrace.mark("long_tenth_frame") }
+        }
+        #endif
         Task { @MainActor [weak self] in
             guard let self, self.status == .capturing else { return }
             self.progress = progress
@@ -892,6 +971,9 @@ private final class LongCaptureStreamService: @unchecked Sendable {
     private var isPaused = false
     private var settleWork: DispatchWorkItem?
     private var pendingFrame: LongCaptureFrame?
+    #if DEBUG
+    private var processedFrameCount = 0
+    #endif
     
     func start(region: LongCaptureRegion, onFrame: @escaping (LongCaptureFrame) -> Void) async throws {
         let content = try await ScreenCaptureAccess.content {
@@ -995,16 +1077,21 @@ private final class LongCaptureStreamService: @unchecked Sendable {
         pendingFrame = frame
         settleWork?.cancel()
         onFrame(frame)
+        #if DEBUG
+        processedFrameCount += 1
+        if processedFrameCount == 10 { MemoryTrace.mark("long_10_frames_processed") }
+        if processedFrameCount == 100 { MemoryTrace.mark("long_100_frames_processed") }
+        #endif
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.isRunning, !self.isPaused else { return }
-            self.onFrame?(LongCaptureFrame(image: frame.image, timestamp: timestamp + 0.2))
+            guard let self, self.isRunning, !self.isPaused, let frame = self.pendingFrame else { return }
+            self.onFrame?(LongCaptureFrame(image: frame.image, timestamp: frame.timestamp + 0.2))
         }
         settleWork = work
         outputQueue.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 }
 
-private enum LongCaptureImageSampling {
+enum LongCaptureImageSampling {
     static func crop(image: CGImage, screenRect: CGRect, screenFrame: CGRect) -> CGImage? {
         let scaleX = CGFloat(image.width) / screenFrame.width
         let scaleY = CGFloat(image.height) / screenFrame.height
@@ -1020,7 +1107,17 @@ private enum LongCaptureImageSampling {
         let imageRect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         let finalRect = cropRect.integral.intersection(imageRect)
         guard !finalRect.isNull, !finalRect.isEmpty else { return nil }
-        return image.cropping(to: finalRect)
+        guard let crop = image.cropping(to: finalRect),
+              let context = CGContext(data: nil, width: crop.width, height: crop.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: crop.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
+            return nil
+        }
+        context.interpolationQuality = .none
+        context.setBlendMode(.copy)
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        return context.makeImage()
     }
     
     static func scale(image: CGImage, to size: CGSize) -> CGImage? {

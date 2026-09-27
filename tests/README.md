@@ -19,6 +19,7 @@
 
 - `bash tests/run-roadmap-ui.sh`：先运行工具栏回归生成样例，再打开独立的快捷键和原图翻译验收窗口。使用独立设置域和剪贴板；导出仅写入 `/tmp/libreshot-roadmap-qa`，通过应用菜单 Quit 退出。默认实际调用已安装的翻译模型，缺少语言包时不要在无人值守验收中确认下载。
 - `bash tests/run-memory-checks.sh`：优化构建，20 次编辑器/复制和 5 次 OCR，分别等待 1/5/15/60 秒记录 physical footprint。约需 2–3 分钟，使用独立设置和剪贴板，不是完整应用内存。
+- `bash tests/run-capture-memory-optimization-checks.sh`：用真实屏幕像素尺寸的可追踪图像验证小选区不保留整屏缓冲，比较 sRGB/Display P3 的颜色与透明像素，并检查自动保存及显式“保存并复制”都只编码一次 PNG、磁盘与剪贴板数据一致。只使用命名剪贴板和临时目录。
 - `bash tests/profile-idle-app.sh /absolute/path/LibreShot.app`：完整应用启动后 1/5/15/60 秒采样 `vmmap` 与 CPU，应用结束后退出测试进程。运行前须退出已运行的 LibreShot；沿用其设置，不发起截图或修改设置。
 
 原生窗口截图、测试输出和临时文件不能替代 Finder 真实录屏、多显示器、权限授权/撤销、最低系统版本验收。当前结果见 [开发版验收](../docs/qa/issues-4-6-development.md)。

@@ -13,6 +13,7 @@ struct MemoryLifecycleChecks {
         defer { board.releaseGlobally() }
         let service = CaptureService(settings: settings, pasteboard: board)
         report("isolated AppKit/service baseline")
+        checkSettingsWindowLifecycle()
         let image = NSImage(size: CGSize(width: 1200, height: 700))
         image.lockFocus()
         NSColor.white.setFill()
@@ -44,6 +45,32 @@ struct MemoryLifecycleChecks {
         try await sampleIdle("OCR")
         precondition(board.data(forType: .png) != nil, "Clipboard must survive idle sampling")
         print("PASS: 20 editor/copy cycles and 5 OCR cycles; private clipboard retained throughout")
+    }
+
+    @MainActor
+    private static func checkSettingsWindowLifecycle() {
+        @MainActor final class Owner {
+            var controller: SettingsWindowController?
+
+            func open() {
+                let controller = SettingsWindowController()
+                controller.onClose = { [weak self, weak controller] in
+                    guard let self, self.controller === controller else { return }
+                    self.controller = nil
+                }
+                self.controller = controller
+            }
+        }
+
+        let owner = Owner()
+        for _ in 0..<3 {
+            owner.open()
+            let window = owner.controller?.window
+            owner.controller?.close()
+            precondition(owner.controller == nil, "Closing settings must release its owner reference")
+            precondition(window?.contentView == nil, "Closing settings must release its SwiftUI view")
+        }
+        report("settings opened/closed x3")
     }
 
     private static func report(_ label: String) {

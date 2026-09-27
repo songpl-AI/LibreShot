@@ -100,12 +100,18 @@ class OverlayViewModel: ObservableObject {
     var canExportSelection: Bool { translationSource == nil || translationCanExport }
 
     func clearImageTranslation() {
+        #if DEBUG
+        let hadTranslation = translationSource != nil || translatedSelection != nil
+        #endif
         translationSource = nil
         translatedSelection = nil
         translationCanExport = false
         showsOriginalTranslation = false
         showsTranslationControls = false
         translationSessionID = UUID()
+        #if DEBUG
+        if hadTranslation { MemoryTrace.markAfterRelease("inline_translation_cleared") }
+        #endif
     }
 
     func imageForExport() -> CGImage? {
@@ -222,6 +228,9 @@ class OverlayViewModel: ObservableObject {
         guard let crop = image.cropping(to: pixels) else { return }
         translationSessionID = UUID()
         translationSource = NSImage(cgImage: crop, size: selectionRect.size)
+        #if DEBUG
+        MemoryTrace.mark("inline_translation_source_ready")
+        #endif
         showsTranslationControls = true
         selectedTool = nil
         selectedAnnotationID = nil

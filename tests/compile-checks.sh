@@ -25,5 +25,6 @@ xcrun swiftc "${task_flags[@]}" \
   LibreShot/LibreShot/Core/Storage/SettingsService.swift \
   LibreShot/LibreShot/Core/Hotkey/HotkeyService.swift \
   LibreShot/LibreShot/Features/Settings/SettingsView.swift \
+  LibreShot/LibreShot/Features/Settings/SettingsWindowController.swift \
   LibreShot/LibreShot/Features/Settings/ShortcutRecorder.swift \
   "$@" -o "$task_output"
