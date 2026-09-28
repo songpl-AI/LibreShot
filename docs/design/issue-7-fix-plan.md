@@ -17,6 +17,7 @@
 当前公开 v1.3.0 是 ad-hoc 签名。源码可改善重复弹窗和恢复指引；发行脚本默认要求 Developer ID，对现有 GitHub 临时签名分发提供显式 `--ad-hoc` 模式和权限迁移警告。要让升级后的权限持续有效，仍需用稳定的发行证书签名；Apple 公证还要求 Developer ID。
 本机 `security find-identity -v -p codesigning` 返回 `0 valid identities found`，因此本轮无法产出可验证 TCC 迁移的正式签名包。
 `bash build_release.sh --ad-hoc /tmp/libreshot-issue7-ad-hoc-smoke` 已完整生成 1.3.0 (15) DMG 并通过签名与磁盘映像校验；这只验证现有 GitHub 分发方式可继续打包，没有安装、上传或验证新版本的真实录屏权限。
+提交 `c82f591` 的本地候选包保存在 `dist/LibreShot-issue7-c82f591-local/LibreShot-1.3.0-15.dmg`，SHA-256 为 `97d5371825e38747cd8a2dc3d157dc4cebee3b1832b03605b89be7982b8f4aa2`，应用 CDHash 为 `8e1195ba253ea940d517bb60c29e0b0c89f4b21a`。它与当前安装的 1.3.0 (15) 同版本号但签名哈希不同，仅供本地验收；尚未替换正在运行的应用或发布到 GitHub。
 
 本轮测量：独立优化编译进程的 OCR 五次后 60 秒为 53.8 MiB；OCR→原图翻译→关窗后 60 秒为 80.9 MiB，后者在 15 秒时也是 80.9 MiB。均高于约 5.5 MiB 的空进程基线，但没有观察到关窗后持续增长。旧记录同场景分别为 53.8 和 82.5 MiB；该隔离样例不能代表报告者的真实屏幕尺寸、翻译内容和完整应用链路，也不能据此承诺 10 MiB 闲置目标。后续针对完整应用应使用固定截图/操作序列和有分配栈的构建定位保留对象，见 [已有内存拆分](../qa/feature-memory-profile-20260926.md)。
 
