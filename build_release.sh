@@ -2,9 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-signing_mode=developer-id
-if [[ ${1:-} == --ad-hoc ]]; then
-  signing_mode=ad-hoc
+signing_mode=ad-hoc
+if [[ ${1:-} == --developer-id ]]; then
+  signing_mode=developer-id
+  shift
+elif [[ ${1:-} == --ad-hoc ]]; then
   shift
 fi
 
@@ -15,9 +17,9 @@ mkdir "$release_output"
 release_output="$(cd "$release_output" && pwd)"
 archive_path="$release_output/LibreShot.xcarchive"
 
-signing_args=("CODE_SIGN_IDENTITY=Developer ID Application" CODE_SIGN_STYLE=Manual)
-if [[ "$signing_mode" == ad-hoc ]]; then
-  signing_args=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=)
+signing_args=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=)
+if [[ "$signing_mode" == developer-id ]]; then
+  signing_args=("CODE_SIGN_IDENTITY=Developer ID Application" CODE_SIGN_STYLE=Manual)
 fi
 echo "Building $signing_mode Release archive..."
 xcodebuild archive \
@@ -48,4 +50,8 @@ hdiutil create -volname "LibreShot $version" -srcfolder "$dmg_source" \
 hdiutil verify "$release_output/$dmg_name" -quiet
 (cd "$release_output" && shasum -a 256 "$dmg_name" > SHA256SUMS)
 echo "Package: $release_output/$dmg_name"
-echo "Signing mode: $signing_mode. Notarization is a separate distribution step."
+if [[ "$signing_mode" == ad-hoc ]]; then
+  echo "Signing mode: ad-hoc. This package cannot be notarized; macOS permissions may need to be granted again after an update."
+else
+  echo "Signing mode: developer-id. Notarization is a separate distribution step."
+fi

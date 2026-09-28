@@ -57,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-With a valid Developer ID Application certificate, run `bash build_release.sh`. If you intentionally distribute without that certificate, run `bash build_release.sh --ad-hoc`; users may need to grant Screen Recording and Input Monitoring again after every update, and that package cannot be notarized. The script checks the chosen signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.0 release notes](docs/releases/1.3.0.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the upcoming [1.3.1 release notes](docs/releases/1.3.1.md).
 
 ## 🚀 Usage Guide
 
