@@ -289,6 +289,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.overlayWindowController = nil
                 }
             }
+        }, onPreviewError: { [weak self] error in
+            self?.overlayWindowController = nil
+            Task { [weak self] in
+                await self?.handleCaptureError(error)
+            }
         }, onCancel: { [weak self] in
             print("Selection cancelled")
             // Cleanup: Release the controller to free memory
@@ -322,6 +327,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     self?.overlayWindowController = nil
                 }
+            }
+        }, onPreviewError: { [weak self] error in
+            self?.overlayWindowController = nil
+            Task { [weak self] in
+                await self?.handleCaptureError(error)
             }
         }, onCancel: { [weak self] in
             self?.overlayWindowController = nil
