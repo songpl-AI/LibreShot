@@ -7,6 +7,7 @@ import Combine
 
 enum CaptureServiceError: LocalizedError {
     case noDisplay
+    case permissionRequestPending
     case permissionDenied
     case captureFailed
     case imageConversionFailed
@@ -14,7 +15,7 @@ enum CaptureServiceError: LocalizedError {
 
     var isPermissionFailure: Bool {
         switch self {
-        case .permissionDenied:
+        case .permissionRequestPending, .permissionDenied:
             return true
         case .screenContentUnavailable(let underlying):
             let error = underlying as NSError
@@ -24,11 +25,16 @@ enum CaptureServiceError: LocalizedError {
         }
     }
 
+    var shouldPresentAlert: Bool {
+        if case .permissionRequestPending = self { return false }
+        return true
+    }
+
     var errorDescription: String? {
         switch self {
         case .noDisplay:
             return "未找到可截图的显示器，请确认显示器已连接后重试。"
-        case .permissionDenied:
+        case .permissionRequestPending, .permissionDenied:
             return "LibreShot 尚未获得屏幕录制权限。请前往“系统设置 → 隐私与安全性 → 录屏与系统录音”（旧版 macOS 为“屏幕录制”），允许 LibreShot 后退出并重新打开应用。若已开启却仍报错，请先退出 LibreShot，删除列表中的旧 LibreShot 项，再用“+”添加当前安装的 LibreShot.app，授权后重新打开。"
         case .captureFailed:
             return "截图失败，请重新选择截图区域后重试。"
@@ -83,8 +89,11 @@ enum ScreenCaptureAccess {
         if preflight() {
             requestGate.resetRequestAfterPreflight()
         } else {
-            guard requestGate.claimRequest(), request() else {
+            guard requestGate.claimRequest() else {
                 throw CaptureServiceError.permissionDenied
+            }
+            guard request() else {
+                throw CaptureServiceError.permissionRequestPending
             }
         }
         do {
