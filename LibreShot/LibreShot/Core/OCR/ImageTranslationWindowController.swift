@@ -239,6 +239,7 @@ struct InlineImageTranslationView: View {
     @ObservedObject var viewModel: OverlayViewModel
     @StateObject private var model: ImageTranslationModel
     @State private var showsCorrections = false
+    @State private var didAutoCollapse = false
     private let sessionID: UUID
 
     init(viewModel: OverlayViewModel, image: NSImage) {
@@ -311,6 +312,11 @@ struct InlineImageTranslationView: View {
         .onChange(of: model.canExport) { _, allowed in
             guard viewModel.translationSessionID == sessionID else { return }
             viewModel.translationCanExport = allowed
+            if allowed && !didAutoCollapse && !showsCorrections &&
+               model.complexBackgroundIDs.isEmpty && model.errorMessage == nil {
+                didAutoCollapse = true
+                viewModel.showsTranslationControls = false
+            }
         }
         .onChange(of: model.targetLanguageID) { _, _ in model.startTranslation() }
         .onDisappear { model.cancel() }

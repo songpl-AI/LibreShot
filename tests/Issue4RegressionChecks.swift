@@ -51,6 +51,7 @@ struct Issue4RegressionChecks {
         settings.useRoundedCorners = true
         let rounded = NSBitmapImageRep(data: service.pngData(from: image)!)!
         check(rounded.colorAt(x: 0, y: 0)!.alphaComponent == 0, "rounded PNG preserves transparent corners")
+        check(rounded.colorAt(x: 8, y: 8)!.alphaComponent == 0, "rounded PNG remains visibly curved four points from a Retina corner")
         check(rounded.pixelsWide == 480 && rounded.pixelsHigh == 480, "Retina output retains physical dimensions")
         settings.useRoundedCorners = false
         let square = NSBitmapImageRep(data: service.pngData(from: image)!)!

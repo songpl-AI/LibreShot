@@ -189,6 +189,9 @@ struct OverlayView: View {
                         if viewModel.handleAnnotationPressChanged(from: value.startLocation, to: value.location) {
                             return
                         }
+                        if viewModel.canToggleTranslationPreview(from: value.startLocation, to: value.location) {
+                            return
+                        }
                         if viewModel.isEditingText {
                             // 点击编辑器外部提交
                             let editorRect = viewModel.editingTextEditorFrame
@@ -295,6 +298,10 @@ struct OverlayView: View {
                                 return
                             }
                             if viewModel.handleAnnotationPressEnded(from: value.startLocation, to: value.location) {
+                                return
+                            }
+                            if viewModel.canToggleTranslationPreview(from: value.startLocation, to: value.location) {
+                                viewModel.toggleTranslationPreview()
                                 return
                             }
                             // Text Tool Click

@@ -551,7 +551,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @MainActor
     private func handleCaptureError(_ error: Error) async {
+        if let captureError = error as? CaptureServiceError,
+           captureError.isPermissionFailure,
+           !ScreenCaptureRequestGate.shared.claimPermissionAlert() {
+            return
+        }
         await showAlert(title: "错误", message: error.localizedDescription)
     }
     

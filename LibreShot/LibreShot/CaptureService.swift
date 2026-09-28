@@ -12,12 +12,24 @@ enum CaptureServiceError: LocalizedError {
     case imageConversionFailed
     case screenContentUnavailable(underlying: Error)
 
+    var isPermissionFailure: Bool {
+        switch self {
+        case .permissionDenied:
+            return true
+        case .screenContentUnavailable(let underlying):
+            let error = underlying as NSError
+            return error.domain == SCStreamErrorDomain && error.code == SCStreamError.Code.userDeclined.rawValue
+        default:
+            return false
+        }
+    }
+
     var errorDescription: String? {
         switch self {
         case .noDisplay:
             return "未找到可截图的显示器，请确认显示器已连接后重试。"
         case .permissionDenied:
-            return "LibreShot 尚未获得屏幕录制权限。请前往“系统设置 → 隐私与安全性 → 录屏与系统录音”（旧版 macOS 为“屏幕录制”），允许 LibreShot 后退出并重新打开应用。若已开启，请确认当前运行的是获得授权的版本。"
+            return "LibreShot 尚未获得屏幕录制权限。请前往“系统设置 → 隐私与安全性 → 录屏与系统录音”（旧版 macOS 为“屏幕录制”），允许 LibreShot 后退出并重新打开应用。若已开启却仍报错，请先退出 LibreShot，删除列表中的旧 LibreShot 项，再用“+”添加当前安装的 LibreShot.app，授权后重新打开。"
         case .captureFailed:
             return "截图失败，请重新选择截图区域后重试。"
         case .imageConversionFailed:
@@ -34,17 +46,51 @@ enum CaptureServiceError: LocalizedError {
 
 /// Shared by ordinary and scrolling capture, keeping permission and system failures distinct.
 @MainActor
+final class ScreenCaptureRequestGate {
+    static let shared = ScreenCaptureRequestGate()
+    private var requested = false
+    private var presentedPermissionAlert = false
+
+    func claimRequest() -> Bool {
+        guard !requested else { return false }
+        requested = true
+        return true
+    }
+
+    func claimPermissionAlert() -> Bool {
+        guard !presentedPermissionAlert else { return false }
+        presentedPermissionAlert = true
+        return true
+    }
+
+    func resetRequestAfterPreflight() { requested = false }
+
+    func markContentLoaded() {
+        requested = false
+        presentedPermissionAlert = false
+    }
+}
+
+@MainActor
 enum ScreenCaptureAccess {
     static func content(
         preflight: () -> Bool = CGPreflightScreenCaptureAccess,
         request: () -> Bool = CGRequestScreenCaptureAccess,
-        load: () async throws -> SCShareableContent
+        load: () async throws -> SCShareableContent,
+        requestGate: ScreenCaptureRequestGate? = nil
     ) async throws -> SCShareableContent {
-        if !preflight(), !request() {
-            throw CaptureServiceError.permissionDenied
+        let requestGate = requestGate ?? .shared
+        if preflight() {
+            requestGate.resetRequestAfterPreflight()
+        } else {
+            guard requestGate.claimRequest(), request() else {
+                throw CaptureServiceError.permissionDenied
+            }
         }
         do {
-            return try await load()
+            let content = try await load()
+            requestGate.markContentLoaded()
+            return content
         } catch {
             throw CaptureServiceError.screenContentUnavailable(underlying: error)
         }
@@ -440,8 +486,8 @@ class CaptureService {
                                       bitsPerComponent: 8, bytesPerRow: 0, space: exportColorSpace,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
         let rect = CGRect(x: 0, y: 0, width: source.width, height: source.height)
-        let radiusX = min(8, image.size.width / 2) * CGFloat(source.width) / image.size.width
-        let radiusY = min(8, image.size.height / 2) * CGFloat(source.height) / image.size.height
+        let radiusX = min(16, image.size.width / 2) * CGFloat(source.width) / image.size.width
+        let radiusY = min(16, image.size.height / 2) * CGFloat(source.height) / image.size.height
         context.addPath(CGPath(roundedRect: rect, cornerWidth: radiusX, cornerHeight: radiusY, transform: nil))
         context.clip()
         context.draw(source, in: rect)

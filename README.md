@@ -57,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *当前源码使用 macOS 26 SDK，请使用 Xcode 26 或更新版本；应用部署目标为 macOS 13.0。*
 
-有可用签名身份时可运行 `bash build_release.sh` 打包；脚本不公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次改动见 [1.3.0 更新说明](docs/releases/1.3.0.md)。
+配置有效的 Developer ID Application 证书后可运行 `bash build_release.sh` 打包。没有该证书、仍选择临时签名发行时，明确运行 `bash build_release.sh --ad-hoc`；这种构建每次更新后可能要重新授予录屏和输入监控权限，也不能提交 Apple 公证。脚本会核对所选签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次改动见 [1.3.0 更新说明](docs/releases/1.3.0.md)。
 
 ## 🚀 使用指南
 

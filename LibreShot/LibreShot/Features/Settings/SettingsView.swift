@@ -178,6 +178,7 @@ struct GeneralSettingsView: View {
                         }
                         .pickerStyle(.radioGroup)
                         .horizontalRadioGroupLayout()
+                        .help("圆角输出为透明 PNG；在白色背景上查看白色截图时可能不明显。")
                     }
                 }
                 .padding(8)
