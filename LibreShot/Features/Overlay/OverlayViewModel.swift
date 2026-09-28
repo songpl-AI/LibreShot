@@ -236,6 +236,20 @@ class OverlayViewModel: ObservableObject {
         selectedAnnotationID = nil
     }
 
+    func canToggleTranslationPreview(from start: CGPoint, to end: CGPoint) -> Bool {
+        guard state == .editing, translationSource != nil, translatedSelection != nil,
+              selectedTool == nil, !isEditingText,
+              abs(end.x - start.x) < 5, abs(end.y - start.y) < 5,
+              selectionRect.insetBy(dx: min(8, selectionRect.width / 4),
+                                    dy: min(8, selectionRect.height / 4)).contains(start),
+              annotationID(at: start) == nil else { return false }
+        return true
+    }
+
+    func toggleTranslationPreview() {
+        showsOriginalTranslation.toggle()
+    }
+
     func confirmSaveAs() {
         guard canExportSelection else { return }
         commitTextInput()

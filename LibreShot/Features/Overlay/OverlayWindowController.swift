@@ -6,6 +6,7 @@ class OverlayWindowController: NSWindowController {
     private var cursorPushed = false
     private let viewModel = OverlayViewModel()
     private let previewCaptureService = CaptureService()
+    var previewImageLoader: ((CGDirectDisplayID?) async throws -> NSImage)?
     private var currentCaptureMode: CaptureMode = .normal
     private var previousFrontmostApplication: NSRunningApplication?
     private var longCaptureGuideOverlay: LongCaptureGuideOverlay?
@@ -13,6 +14,8 @@ class OverlayWindowController: NSWindowController {
     private var longCaptureStartTask: Task<Void, Never>?
     private var longCaptureSubscriptions: Set<AnyCancellable> = []
     private var longCaptureActionInFlight = false
+    private var previewErrorHandler: ((Error) -> Void)?
+    private var previewRequestID = UUID()
     
     private func pushCrosshairCursor() {
         if !cursorPushed {
@@ -73,10 +76,14 @@ class OverlayWindowController: NSWindowController {
         onCapture: @escaping (CGRect, [Annotation], CaptureAction, CGImage?) -> Void,
         onLongCapture: ((NSImage) -> Void)? = nil,
         onLongCaptureError: ((Error) -> Void)? = nil,
+        onPreviewError: ((Error) -> Void)? = nil,
         onCancel: @escaping () -> Void
     ) {
         guard let overlayWindow = window as? OverlayWindow else { return }
         currentCaptureMode = captureMode
+        previewErrorHandler = onPreviewError
+        let requestID = UUID()
+        previewRequestID = requestID
         
         // 1. Reset State
         cleanupLongCaptureState()
@@ -140,7 +147,12 @@ class OverlayWindowController: NSWindowController {
                 // Wait a tiny bit for any previous events to settle
                 try? await Task.sleep(nanoseconds: 10 * 1_000_000)
                 
-                let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                let image: NSImage
+                if let previewImageLoader {
+                    image = try await previewImageLoader(getCurrentDisplayID())
+                } else {
+                    image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                }
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 
                 // Calculate scale factor from the captured image (Pixels) vs Screen Frame (Points)
@@ -149,6 +161,7 @@ class OverlayWindowController: NSWindowController {
                 let scale = pixelWidth / screenWidth
                 
                 await MainActor.run {
+                    guard self.previewRequestID == requestID else { return }
                     self.viewModel.updatePreviewImage(cgImage, scale: scale)
                     
                     // Now that we have the screenshot (including menus), we can show the window and take focus
@@ -159,12 +172,8 @@ class OverlayWindowController: NSWindowController {
                 }
             } catch {
                 await MainActor.run {
-                    self.viewModel.updatePreviewImage(nil)
-                    // Even if failed, we need to activate to show error or allow exit
-                    overlayWindow.orderFront(nil)
-                    self.pushCrosshairCursor()
-                    NSApp.activate(ignoringOtherApps: true)
-                    overlayWindow.makeKeyAndOrderFront(nil)
+                    guard self.previewRequestID == requestID else { return }
+                    self.failPreview(error)
                 }
             }
         }
@@ -323,6 +332,7 @@ class OverlayWindowController: NSWindowController {
     }
     
     private func finishOverlaySession() {
+        previewRequestID = UUID()
         #if DEBUG
         let hadLongSession = longCaptureSession != nil
         #endif
@@ -333,6 +343,12 @@ class OverlayWindowController: NSWindowController {
         #if DEBUG
         if hadLongSession { MemoryTrace.markAfterRelease("long_session_released") }
         #endif
+    }
+
+    private func failPreview(_ error: Error) {
+        // A blank screenSaver-level window would cover the system authorization prompt.
+        finishOverlaySession()
+        previewErrorHandler?(error)
     }
     
     private func installLongCaptureKeyMonitors(
@@ -399,6 +415,8 @@ class OverlayWindowController: NSWindowController {
     
     // Public method to reset capture session (for re-triggering while active)
     func resetCapture() {
+        let requestID = UUID()
+        previewRequestID = requestID
         // 1. Reset View Model (clears selection, annotations, preview)
         cleanupLongCaptureState()
         viewModel.reset()
@@ -434,7 +452,12 @@ class OverlayWindowController: NSWindowController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                let image: NSImage
+                if let previewImageLoader {
+                    image = try await previewImageLoader(getCurrentDisplayID())
+                } else {
+                    image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                }
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 
                 // Calculate scale factor from the captured image (Pixels) vs Screen Frame (Points)
@@ -443,6 +466,7 @@ class OverlayWindowController: NSWindowController {
                 let scale = pixelWidth / screenWidth
                 
                 await MainActor.run {
+                    guard self.previewRequestID == requestID else { return }
                     self.viewModel.updatePreviewImage(cgImage, scale: scale)
                     self.pushCrosshairCursor()
                     NSApp.activate(ignoringOtherApps: true)
@@ -450,7 +474,8 @@ class OverlayWindowController: NSWindowController {
                 }
             } catch {
                 await MainActor.run {
-                    self.viewModel.updatePreviewImage(nil)
+                    guard self.previewRequestID == requestID else { return }
+                    self.failPreview(error)
                 }
             }
         }

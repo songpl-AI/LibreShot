@@ -22,6 +22,16 @@ struct ToolbarRegressionChecks {
                      "Screen capture permission failures must explain how to authorize LibreShot")
         let systemFailure = NSError(domain: "LibreShot.Test.ScreenContent", code: 42,
                                     userInfo: [NSLocalizedDescriptionKey: "Screen content fixture failure"])
+        do {
+            _ = try await ScreenCaptureAccess.content(
+                preflight: { false }, request: { false },
+                load: { throw systemFailure }, requestGate: ScreenCaptureRequestGate()
+            )
+            preconditionFailure("The first system permission request must not load content")
+        } catch let error as CaptureServiceError {
+            precondition(!error.shouldPresentAlert,
+                         "The first system authorization dialog must not be covered by an app error alert")
+        }
         for (hasAccess, grantsAccess) in [(false, false), (false, true), (true, false)] {
             var requests = 0
             var loads = 0
@@ -29,10 +39,11 @@ struct ToolbarRegressionChecks {
                 _ = try await ScreenCaptureAccess.content(
                     preflight: { hasAccess },
                     request: { requests += 1; return grantsAccess },
-                    load: { loads += 1; throw systemFailure }
+                    load: { loads += 1; throw systemFailure },
+                    requestGate: ScreenCaptureRequestGate()
                 )
                 preconditionFailure("The fixture must throw")
-            } catch CaptureServiceError.permissionDenied {
+            } catch CaptureServiceError.permissionRequestPending {
                 precondition(!hasAccess && !grantsAccess && loads == 0)
             } catch CaptureServiceError.screenContentUnavailable(let underlying) {
                 precondition((hasAccess || grantsAccess) && loads == 1)
@@ -43,9 +54,43 @@ struct ToolbarRegressionChecks {
             }
             precondition(requests == (hasAccess ? 0 : 1))
         }
+        var repeatedRequests = 0
+        let requestGate = ScreenCaptureRequestGate()
+        for attempt in 0..<2 {
+            do {
+                _ = try await ScreenCaptureAccess.content(
+                    preflight: { false },
+                    request: { repeatedRequests += 1; return false },
+                    load: { throw systemFailure },
+                    requestGate: requestGate
+                )
+                preconditionFailure("Denied access must stop before loading screen content")
+            } catch CaptureServiceError.permissionRequestPending {
+                precondition(attempt == 0)
+            } catch CaptureServiceError.permissionDenied {
+                precondition(attempt == 1)
+            }
+        }
+        precondition(repeatedRequests == 1, "A denied permission should not trigger a system request on every screenshot")
+        precondition(requestGate.claimPermissionAlert())
+        precondition(!requestGate.claimPermissionAlert(), "A denied permission should not show the app alert on every screenshot")
+        do {
+            _ = try await ScreenCaptureAccess.content(
+                preflight: { true }, request: { preconditionFailure("Already authorized") },
+                load: { throw systemFailure }, requestGate: requestGate
+            )
+        } catch CaptureServiceError.screenContentUnavailable { }
+        precondition(requestGate.claimRequest(), "A later valid authorization resets the request gate")
+        precondition(!requestGate.claimPermissionAlert(), "A preflight result alone must not reset the app alert after screen content fails")
+        requestGate.markContentLoaded()
+        precondition(requestGate.claimPermissionAlert(), "Successful screen content resets the permission explanation")
         let declined = NSError(domain: SCStreamErrorDomain, code: SCStreamError.Code.userDeclined.rawValue)
         let denialMessage = CaptureServiceError.screenContentUnavailable(underlying: declined).localizedDescription
         precondition(denialMessage.contains("屏幕录制权限") && denialMessage.contains("-3801"))
+        precondition(CaptureServiceError.permissionDenied.isPermissionFailure)
+        precondition(CaptureServiceError.permissionRequestPending.isPermissionFailure)
+        precondition(CaptureServiceError.screenContentUnavailable(underlying: declined).isPermissionFailure)
+        precondition(!CaptureServiceError.screenContentUnavailable(underlying: systemFailure).isPermissionFailure)
         print("PASS: Chinese permission guidance, newly granted access continues, system error identity preserved")
 
         let suite = "LibreShot.ToolbarChecks.\(UUID().uuidString)"

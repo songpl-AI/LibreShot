@@ -27,7 +27,7 @@ struct EditorToolbarView: View {
         }
         .padding(ToolbarLayout.padding)
         .frame(width: layout.size.width, height: layout.size.height)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
         .overlay(alignment: .topLeading) {
@@ -113,6 +113,7 @@ struct EditorToolbarView: View {
         case .undo where isDisabled(item): label = "撤销（当前没有标注）"
         case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
         case .translate where isDisabled(item): label = "原图翻译需要 macOS 26 或更新版本"
+        case .translate where viewModel.translationSource != nil: label = "点击选区切换原文/译文；点击此按钮显示或隐藏翻译设置"
         default: label = item.title
         }
         return viewModel.shortcutTitle(for: item).map { "\(label)（\($0)）" } ?? label

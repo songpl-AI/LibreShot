@@ -57,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-With a valid signing identity, run `bash build_release.sh` to create a signed app, DMG, and SHA256 checksum in a new `dist/` subdirectory. The script preserves existing outputs and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.0 release notes](docs/releases/1.3.0.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the upcoming [1.3.1 release notes](docs/releases/1.3.1.md).
 
 ## 🚀 Usage Guide
 
