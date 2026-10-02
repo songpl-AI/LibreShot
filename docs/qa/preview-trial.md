@@ -1,12 +1,12 @@
 # LibreShot Preview 本地试用
 
-这是本地构建的 1.3.0 Preview（build 8），不是公开正式版本。它使用临时签名，未公证；源码版本见同目录 `BUILD-INFO.json`。包含 Apple Silicon 和 Intel 架构。原生 QA 在 Apple Silicon / macOS 26 上通过；最终试用包仅完成构建、签名和打包检查，尚未启动，以免与正在运行的正式版争用快捷键。
+这是本地开发预览包，不是公开正式版本。版本、构建号、应用身份与源码提交见同目录 `BUILD-INFO.json`。它使用临时签名，未公证；源码版本见同目录 `BUILD-INFO.json`。包含 Apple Silicon 和 Intel 架构。原生 QA 在 Apple Silicon / macOS 26 上通过。安装版实测状态以对应验收记录为准；构建和签名检查本身不代表实测通过。
 
 ## 启动
 
 1. 先从菜单栏退出原版 LibreShot，避免两份应用争用全局快捷键。
 2. 打开同目录的 `LibreShot Preview.app`，无需替换 `/Applications/LibreShot.app`。它是菜单栏应用，入口为剪刀图标。
-3. Preview 使用独立 Bundle ID `com.allensong.LibreShot.Preview`，不会读取或修改正式版的快捷键、保存目录与其他设置。先在设置中选择保存目录。
+3. Preview 使用独立 Bundle ID（默认 `com.allensong.LibreShot.Preview`，本次 Issue #9 验收为 `com.allensong.LibreShot.Preview.Issue9`），不会读取或修改正式版的快捷键、保存目录与其他设置。先在设置中选择保存目录。
 4. 首次截图需由你在系统设置中授权 Preview 的屏幕录制权限。双击 Option 默认关闭；开启后需另行授权输入监控。未授权时先不要把无法触发当成截图算法故障。
 
 不删除或重置正式版权限，不关闭系统安全检查。如果 macOS 阻止此本地构建，请保留完整提示用于定位，不执行移除隔离属性或关闭 Gatekeeper 的命令。
@@ -36,3 +36,5 @@
 ## 回退
 
 从 Preview 的菜单栏退出，再启动原来的 LibreShot。正式版没有被替换，设置也没有迁移；无需卸载原版或重置其权限。
+
+本次新增操作：单击和轻微抖动不新增形状；画完后控制点立即显示；选择旧标注后可调整并继续画；Delete 删除、⌘Z 撤销；箭头首尾可调整；在工具栏排序行配置快捷键。记录见 `docs/qa/issue-9-20261002.md`。

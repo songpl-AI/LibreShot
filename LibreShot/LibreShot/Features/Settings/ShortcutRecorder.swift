@@ -11,6 +11,7 @@ struct ShortcutRecorder: View {
     var onShortcutRecorded: ((Int, Int) -> Void)? = nil
     var onClear: (() -> Void)? = nil
     var allowsUnmodified = false
+    var recordingWidth: CGFloat = 140
     
     @State private var isRecording = false
     @State private var isHovering = false
@@ -46,7 +47,7 @@ struct ShortcutRecorder: View {
                         }
                     }
                 }
-                .frame(width: 140, height: 28)
+                .frame(width: recordingWidth, height: 28)
             }
             .buttonStyle(.plain)
             .onHover { hover in

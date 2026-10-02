@@ -69,8 +69,6 @@ final class ScreenCaptureRequestGate {
         return true
     }
 
-    func resetRequestAfterPreflight() { requested = false }
-
     func markContentLoaded() {
         requested = false
         presentedPermissionAlert = false
@@ -86,13 +84,12 @@ enum ScreenCaptureAccess {
         requestGate: ScreenCaptureRequestGate? = nil
     ) async throws -> SCShareableContent {
         let requestGate = requestGate ?? .shared
-        if preflight() {
-            requestGate.resetRequestAfterPreflight()
-        } else {
+        if !preflight() {
             guard requestGate.claimRequest() else {
                 throw CaptureServiceError.permissionDenied
             }
-            guard request() else {
+            let granted = request()
+            guard granted || preflight() else {
                 throw CaptureServiceError.permissionRequestPending
             }
         }

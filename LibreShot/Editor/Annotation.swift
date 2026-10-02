@@ -94,7 +94,7 @@ extension Annotation {
     }
 }
 
-struct Annotation: Identifiable {
+struct Annotation: Identifiable, Equatable {
     let id = UUID()
     var type: AnnotationType
     var color: Color

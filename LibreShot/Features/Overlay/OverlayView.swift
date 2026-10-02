@@ -28,7 +28,7 @@ struct OverlayView: View {
                 Path { path in
                     path.addRect(geometry.frame(in: .local))
                     if viewModel.selectionRect != .zero {
-                        path.addRect(viewModel.selectionRect)
+                        path.addRoundedRect(in: viewModel.selectionRect, cornerSize: CGSize(width: viewModel.selectionCornerRadius, height: viewModel.selectionCornerRadius))
                     }
                 }
                 .fill(Color.black.opacity(0.3), style: FillStyle(eoFill: true))
@@ -37,13 +37,15 @@ struct OverlayView: View {
                 // Layer 2: Annotations (Inside Selection)
                 if viewModel.state == .editing {
                     Canvas { context, size in
-                        // Draw existing annotations
+                        var drawingContext = context
+                        drawingContext.clip(to: Path(roundedRect: viewModel.selectionRect, cornerRadius: viewModel.selectionCornerRadius))
+                        // Control points remain outside this clip so they are always visible.
                         for annotation in viewModel.annotations {
                             // 正在编辑的文字标注不渲染（避免与编辑器重叠显示）
                             if annotation.id == viewModel.editingTextAnnotationID {
                                 continue
                             }
-                            drawAnnotation(context: context, annotation: annotation, canvasSize: size)
+                            drawAnnotation(context: drawingContext, annotation: annotation, canvasSize: size)
                             // Highlight selected annotation
                             if annotation.id == viewModel.selectedAnnotationID {
                                 // Draw selection halo/border
@@ -59,14 +61,24 @@ struct OverlayView: View {
                                 
                                 // Draw Halo
                                 let haloPath = Path(rect.insetBy(dx: -5, dy: -5))
-                                context.stroke(haloPath, with: .color(.blue.opacity(0.5)), lineWidth: 2)
+                                if ![AnnotationType.rectangle, .ellipse, .arrow].contains(annotation.type) {
+                                    context.stroke(haloPath, with: .color(.blue.opacity(0.5)), lineWidth: 2)
+                                }
+                                if annotation.type == .arrow {
+                                    for point in [annotation.startPoint, annotation.endPoint] {
+                                        let circle = Path(ellipseIn: CGRect(x: point.x - 4, y: point.y - 4, width: 8, height: 8))
+                                        context.fill(circle, with: .color(.blue))
+                                        context.stroke(circle, with: .color(.white), lineWidth: 1.5)
+                                    }
+                                }
 
                                 if let shapeRect = viewModel.selectedShapeRect {
                                     for handle in SelectionHandle.allCases {
                                         let position = handle.position(in: shapeRect)
                                         let box = CGRect(x: position.x - 4, y: position.y - 4, width: 8, height: 8)
-                                        context.fill(Path(box), with: .color(.white))
-                                        context.stroke(Path(box), with: .color(.blue), lineWidth: 1.5)
+                                        let circle = Path(ellipseIn: box)
+                                        context.fill(circle, with: .color(.blue))
+                                        context.stroke(circle, with: .color(.white), lineWidth: 1.5)
                                     }
                                 }
                                 // 文字选中：右下角缩放手柄
@@ -80,7 +92,7 @@ struct OverlayView: View {
                         }
                         // Draw current annotation being dragged
                         if let current = viewModel.currentAnnotation {
-                            drawAnnotation(context: context, annotation: current, canvasSize: size)
+                            drawAnnotation(context: drawingContext, annotation: current, canvasSize: size)
                         }
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -91,7 +103,7 @@ struct OverlayView: View {
                 if viewModel.selectionRect != .zero {
                     let rect = viewModel.selectionRect
                     ZStack {
-                        Rectangle()
+                        RoundedRectangle(cornerRadius: viewModel.selectionCornerRadius)
                             .stroke(Color.accentColor, lineWidth: 1.5)
                             .frame(width: rect.width, height: rect.height)
                             .position(x: rect.midX, y: rect.midY)
@@ -171,6 +183,22 @@ struct OverlayView: View {
                         .position(x: statusPos.x, y: statusPos.y)
                 }
             }
+            .onContinuousHover(coordinateSpace: .named("overlay")) { phase in
+                switch phase {
+                case .active(let point):
+                    let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
+                    let accessoryHeight: CGFloat = viewModel.translationSource != nil && viewModel.showsTranslationControls ? 78 : 0
+                    let center = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,
+                                                 accessorySize: CGSize(width: accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0, height: accessoryHeight))
+                    let toolbar = CGRect(x: center.x - max(layout.size.width, accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0) / 2,
+                                         y: center.y - (layout.size.height + accessoryHeight) / 2,
+                                         width: max(layout.size.width, accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0),
+                                         height: layout.size.height + accessoryHeight)
+                    if viewModel.showsStylePopover || (showsToolbar && viewModel.state == .editing && toolbar.contains(point)) { NSCursor.arrow.set() }
+                    else { OverlayPointerCursor.cursor(for: viewModel.cursorStyle(at: point)).set() }
+                case .ended: NSCursor.arrow.set()
+                }
+            }
             .coordinateSpace(name: "overlay")
             .contentShape(Rectangle())
             .gesture(
@@ -182,6 +210,7 @@ struct OverlayView: View {
                         ) {
                             return
                         }
+                        if viewModel.handleTextResizeDrag(from: value.startLocation, to: value.location) { return }
                         if viewModel.handleSelectedShapeDrag(from: value.startLocation, to: value.location,
                                                              within: geometry.frame(in: .named("overlay"))) {
                             return
@@ -273,10 +302,7 @@ struct OverlayView: View {
                             
                             // 3. Drawing Logic
                             if viewModel.state == .editing, viewModel.selectedTool != nil {
-                                if viewModel.currentAnnotation == nil {
-                                    viewModel.startDrawing(at: value.location)
-                                }
-                                viewModel.updateDrawing(to: value.location)
+                                viewModel.handleDrawingDrag(from: value.startLocation, to: value.location)
                             }
                         }
                     }
@@ -291,6 +317,11 @@ struct OverlayView: View {
                                 return
                             }
                             
+                            if viewModel.isResizingText {
+                                viewModel.updateTextResize(to: value.location)
+                                viewModel.endTextResize()
+                                return
+                            }
                             if viewModel.isTransformingShape {
                                 viewModel.handleSelectedShapeDrag(from: value.startLocation, to: value.location,
                                                                   within: geometry.frame(in: .named("overlay")))
@@ -331,9 +362,8 @@ struct OverlayView: View {
                             }
                             // Drawing Mode
                             else if viewModel.state == .editing {
-                                if viewModel.currentAnnotation != nil {
-                                    viewModel.endDrawing()
-                                }
+                                viewModel.updateDrawing(to: value.location)
+                                viewModel.endDrawing()
                             }
                         }
                     }
@@ -526,5 +556,35 @@ struct LongCaptureInlineStatusView: View {
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 4)
+    }
+}
+
+/// Diagonal resize cursors also work on the deployment target, macOS 13.
+private enum OverlayPointerCursor {
+    static let diagonalDown = diagonal(rising: false)
+    static let diagonalUp = diagonal(rising: true)
+    static func cursor(for style: OverlayViewModel.CursorStyle) -> NSCursor {
+        switch style {
+        case .crosshair: return .crosshair
+        case .move: return .openHand
+        case .horizontal: return .resizeLeftRight
+        case .vertical: return .resizeUpDown
+        case .diagonalDown: return diagonalDown
+        case .diagonalUp: return diagonalUp
+        }
+    }
+    private static func diagonal(rising: Bool) -> NSCursor {
+        let image = NSImage(size: CGSize(width: 24, height: 24), flipped: false) { _ in
+            let path = NSBezierPath()
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: rising ? y : 24 - y) }
+            path.move(to: point(5, 5)); path.line(to: point(19, 19))
+            path.move(to: point(5, 11)); path.line(to: point(5, 5)); path.line(to: point(11, 5))
+            path.move(to: point(13, 19)); path.line(to: point(19, 19)); path.line(to: point(19, 13))
+            path.lineCapStyle = .round; path.lineJoinStyle = .round
+            NSColor.white.setStroke(); path.lineWidth = 4; path.stroke()
+            NSColor.black.setStroke(); path.lineWidth = 2; path.stroke()
+            return true
+        }
+        return NSCursor(image: image, hotSpot: CGPoint(x: 12, y: 12))
     }
 }

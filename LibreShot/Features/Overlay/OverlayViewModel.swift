@@ -64,10 +64,16 @@ class OverlayViewModel: ObservableObject {
     // Freeze visibility for the current capture session.
     @Published private(set) var toolbarConfiguration: ToolbarConfiguration
     private let settings: SettingsService
+    @Published private(set) var useRoundedCorners: Bool
+
+    var selectionCornerRadius: CGFloat {
+        useRoundedCorners && captureMode != .longScreenshot ? min(16, selectionRect.width / 2, selectionRect.height / 2) : 0
+    }
 
     init(settings: SettingsService = .shared) {
         self.settings = settings
         self.toolbarConfiguration = settings.toolbarConfiguration
+        self.useRoundedCorners = settings.useRoundedCorners
     }
 
     var visibleToolbarItems: [ToolbarItem] {
@@ -80,6 +86,13 @@ class OverlayViewModel: ObservableObject {
     }
     @Published var annotations: [Annotation] = []
     @Published var currentAnnotation: Annotation?
+    private var pendingDrawing: Annotation?
+    var hasDrawingGesture: Bool { currentAnnotation != nil || pendingDrawing != nil }
+    private enum AnnotationUndo {
+        case remove(UUID)
+        case restore(Annotation, Int)
+    }
+    private var annotationUndo: [AnnotationUndo] = []
     @Published var selectedColor: Color = .red
     @Published var selectedFontSize: CGFloat = Annotation.textInputFontSize
     @Published var activeSelectionHandle: SelectionHandle?
@@ -128,7 +141,7 @@ class OverlayViewModel: ObservableObject {
             if #available(macOS 26.0, *) { return true }
             return false
         }
-        if item == .undo { return !annotations.isEmpty }
+        if item == .undo { return !annotations.isEmpty || !annotationUndo.isEmpty }
         if item == .longCapture { return captureMode == .normal && annotations.isEmpty && !isEditingText && translationSource == nil }
         return true
     }
@@ -159,6 +172,11 @@ class OverlayViewModel: ObservableObject {
         guard state == .editing, !selectionRect.isEmpty, event.type == .keyDown else { return false }
         let editing = isEditingText || textResponder
         let modifiers = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
+        if [51, 117].contains(event.keyCode), modifiers == 0, !editing, !showsStylePopover {
+            guard selectedAnnotationID != nil else { return false }
+            if !event.isARepeat { return deleteSelectedAnnotation() }
+            return true
+        }
         if event.keyCode == 49, modifiers == 0, !editing, !showsStylePopover {
             guard settings.editorSpaceAction != .disabled else { return false }
             if !event.isARepeat {
@@ -270,6 +288,8 @@ class OverlayViewModel: ObservableObject {
         guard state == .editing, captureMode == .normal, !selectionRect.isEmpty else { return }
         
         annotations = []
+        annotationUndo = []
+        pendingDrawing = nil
         currentAnnotation = nil
         selectedTool = nil
         selectedAnnotationID = nil
@@ -359,7 +379,7 @@ class OverlayViewModel: ObservableObject {
         press.dragged = press.dragged || hypot(point.x - start.x, point.y - start.y) >= annotationClickTolerance
         annotationPress = press
         if press.dragged, press.tool != .text, press.tool != .number {
-            if currentAnnotation == nil { startDrawing(at: start) }
+            if !hasDrawingGesture { startDrawing(at: start) }
             updateDrawing(to: point)
         }
         return true
@@ -371,12 +391,11 @@ class OverlayViewModel: ObservableObject {
         let dragged = press.dragged || hypot(point.x - start.x, point.y - start.y) >= annotationClickTolerance
         if dragged {
             if press.tool != .text, press.tool != .number {
-                if currentAnnotation == nil { startDrawing(at: start) }
+                if !hasDrawingGesture { startDrawing(at: start) }
                 updateDrawing(to: point)
                 endDrawing()
             }
         } else if state == .editing, selectionRect.contains(point), annotations.contains(where: { $0.id == id }) {
-            selectedTool = nil
             selectExistingAnnotation(id: id)
         }
         currentPoint = nil
@@ -391,12 +410,13 @@ class OverlayViewModel: ObservableObject {
         let annotation: Annotation
         let start: CGPoint
         let handle: SelectionHandle?
+        var arrowEndpoint: Bool? = nil
     }
     private var shapeDrag: ShapeDrag?
     var isTransformingShape: Bool { shapeDrag != nil }
 
     var selectedShapeRect: CGRect? {
-        guard state == .editing, selectedTool == nil, !isEditingText,
+        guard state == .editing, !isEditingText,
               let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
               annotation.type == .rectangle || annotation.type == .ellipse else { return nil }
         return CGRect(from: annotation.startPoint, to: annotation.endPoint)
@@ -407,23 +427,39 @@ class OverlayViewModel: ObservableObject {
     @discardableResult
     func handleSelectedShapeDrag(from start: CGPoint, to point: CGPoint, within bounds: CGRect) -> Bool {
         if shapeDrag == nil {
-            guard !isMovingSelection, !isResizingText, activeSelectionHandle == nil,
-                  let rect = selectedShapeRect,
+            guard state == .editing, !isEditingText, !isMovingSelection, !isResizingText, activeSelectionHandle == nil,
                   let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) else { return false }
-            let handle = SelectionHandle.allCases.filter {
+            let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
+            let handle = (selectedShapeRect == nil ? [] : SelectionHandle.allCases).filter {
                 let p = $0.position(in: rect)
                 return abs(start.x - p.x) <= 8 && abs(start.y - p.y) <= 8
             }.min {
                 let a = $0.position(in: rect), b = $1.position(in: rect)
                 return hypot(start.x - a.x, start.y - a.y) < hypot(start.x - b.x, start.y - b.y)
             }
-            if handle == nil {
+            let arrowEndpoint: Bool?
+            if annotation.type == .arrow, hypot(start.x - annotation.startPoint.x, start.y - annotation.startPoint.y) <= 8 { arrowEndpoint = true }
+            else if annotation.type == .arrow, hypot(start.x - annotation.endPoint.x, start.y - annotation.endPoint.y) <= 8 { arrowEndpoint = false }
+            else { arrowEndpoint = nil }
+            if handle == nil && arrowEndpoint == nil {
                 let hit = hitTest(at: start)
-                guard hit == annotation.id || (hit == nil && rect.contains(start)) else { return false }
+                guard hit == annotation.id || (hit == nil && selectedShapeRect != nil && rect.contains(start)) else { return false }
+                if annotation.type == .text, hypot(point.x - start.x, point.y - start.y) < 5 { return false }
             }
-            shapeDrag = ShapeDrag(annotation: annotation, start: start, handle: handle)
+            shapeDrag = ShapeDrag(annotation: annotation, start: start, handle: handle, arrowEndpoint: arrowEndpoint)
         }
         guard let drag = shapeDrag, let index = annotations.firstIndex(where: { $0.id == drag.annotation.id }) else { return false }
+        if let tail = drag.arrowEndpoint {
+            let originalPoint = tail ? drag.annotation.startPoint : drag.annotation.endPoint
+            let endpoint = clampPoint(CGPoint(x: originalPoint.x + point.x - drag.start.x,
+                                             y: originalPoint.y + point.y - drag.start.y), to: bounds)
+            let opposite = tail ? drag.annotation.endPoint : drag.annotation.startPoint
+            if hypot(endpoint.x - opposite.x, endpoint.y - opposite.y) >= 5 {
+                if tail { annotations[index].startPoint = endpoint }
+                else { annotations[index].endPoint = endpoint }
+            }
+            return true
+        }
         let original = CGRect(from: drag.annotation.startPoint, to: drag.annotation.endPoint)
         let dx = point.x - drag.start.x, dy = point.y - drag.start.y
         let updated: CGRect
@@ -447,12 +483,22 @@ class OverlayViewModel: ObservableObject {
         } else {
             updated = original.offsetBy(dx: dx, dy: dy)
         }
-        annotations[index].startPoint = updated.origin
-        annotations[index].endPoint = CGPoint(x: updated.maxX, y: updated.maxY)
+        if drag.handle == nil {
+            annotations[index].startPoint = CGPoint(x: drag.annotation.startPoint.x + dx, y: drag.annotation.startPoint.y + dy)
+            annotations[index].endPoint = CGPoint(x: drag.annotation.endPoint.x + dx, y: drag.annotation.endPoint.y + dy)
+            annotations[index].points = drag.annotation.points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
+        } else {
+            annotations[index].startPoint = updated.origin
+            annotations[index].endPoint = CGPoint(x: updated.maxX, y: updated.maxY)
+        }
         return true
     }
 
     func endSelectedShapeDrag() {
+        if let drag = shapeDrag, let index = annotations.firstIndex(where: { $0.id == drag.annotation.id }),
+           annotations[index] != drag.annotation {
+            annotationUndo.append(.restore(drag.annotation, index))
+        }
         shapeDrag = nil
         currentPoint = nil
     }
@@ -460,6 +506,7 @@ class OverlayViewModel: ObservableObject {
     private func selectExistingAnnotation(id: UUID) {
         guard let annotation = annotations.first(where: { $0.id == id }) else { return }
         selectedAnnotationID = id
+        selectedTool = visibleToolbarItems.contains(where: { $0.annotationType == annotation.type }) ? annotation.type : nil
         selectedColor = annotation.color
         if annotation.type == .text {
             selectedFontSize = annotation.fontSize
@@ -479,6 +526,12 @@ class OverlayViewModel: ObservableObject {
     }
 
     func startDrawing(at point: CGPoint) {
+        // A second click on selected text remains an edit gesture.
+        if let id = selectedAnnotationID, hitTest(at: point) == id,
+           annotations.first(where: { $0.id == id })?.type == .text {
+            selectExistingAnnotation(id: id)
+            return
+        }
         // If no tool selected, try to select an annotation
         if selectedTool == nil {
             if let id = hitTest(at: point) {
@@ -507,43 +560,45 @@ class OverlayViewModel: ObservableObject {
         if tool == .mosaic || tool == .blur {
             annotation.lineWidth = 24
         }
-        currentAnnotation = annotation
-        
+        if [.rectangle, .ellipse, .arrow, .mosaic].contains(tool) {
+            pendingDrawing = annotation
+            currentAnnotation = nil
+        } else {
+            currentAnnotation = annotation
+        }
+
         // Deselect any existing annotation when drawing new one
         selectedAnnotationID = nil
     }
     
     func updateDrawing(to point: CGPoint) {
-        // If moving an existing annotation
-        if selectedTool == nil, let id = selectedAnnotationID, annotations.contains(where: { $0.id == id }) {
-            // Wait, for move we need a reference point. 
-            // Let's use currentPoint as 'previous' and point as 'new'
-            
-            // NOTE: This simple drag logic relies on the View calling updateDrawing continuously
-            // We need 'startPoint' of the drag, or delta.
-            // Let's assume the View calculates delta or we track 'currentPoint' as last position.
-            
-            // Actually, better to have a dedicated move function or handle it here.
-            // Let's rely on `currentPoint` being the *previous* drag location in this context?
-            // No, `currentPoint` is currently used for Selection Rect.
-            
-            // Let's use `editingTextPosition` as temporary storage for drag start? No, dirty.
-            // Let's just calculate delta from the previous point passed to this function?
-            // The View's DragGesture gives us `value.translation`.
-            
-            return // Actual move logic will be in `moveSelectedAnnotation(by:)`
-        }
-        
-        guard state == .editing, var annotation = currentAnnotation else { return }
+        if selectedTool == nil, selectedAnnotationID != nil { return }
+
+        guard state == .editing, var annotation = currentAnnotation ?? pendingDrawing else { return }
         
         let nextPoint = (annotation.type == .mosaic || annotation.type == .blur) ? clampPoint(point, to: selectionRect) : point
         annotation.endPoint = nextPoint
         if annotation.type == .pen || annotation.type == .blur {
             annotation.points.append(nextPoint)
         }
-        currentAnnotation = annotation
+        let distance = hypot(annotation.endPoint.x - annotation.startPoint.x, annotation.endPoint.y - annotation.startPoint.y)
+        let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
+        let valid: Bool
+        switch annotation.type {
+        case .rectangle, .ellipse, .mosaic: valid = rect.width >= 3 && rect.height >= 3 && distance >= 5
+        case .arrow: valid = distance >= 5
+        default: valid = true
+        }
+        currentAnnotation = valid ? annotation : nil
+        pendingDrawing = valid ? nil : annotation
     }
-    
+
+    /// Preserve the pointer-down location, even if SwiftUI's first callback has moved.
+    func handleDrawingDrag(from start: CGPoint, to point: CGPoint) {
+        if !hasDrawingGesture { startDrawing(at: start) }
+        updateDrawing(to: point)
+    }
+
     func moveSelectedAnnotation(offset: CGSize) {
         guard let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
         var annotation = annotations[index]
@@ -563,14 +618,38 @@ class OverlayViewModel: ObservableObject {
     func endDrawing() {
         if let annotation = currentAnnotation {
             annotations.append(annotation)
-            currentAnnotation = nil
+            annotationUndo.append(.remove(annotation.id))
+            selectedAnnotationID = annotation.id
         }
+        currentAnnotation = nil
+        pendingDrawing = nil
     }
-    
+
+    @discardableResult
+    func deleteSelectedAnnotation() -> Bool {
+        guard state == .editing, !isEditingText, let id = selectedAnnotationID,
+              let index = annotations.firstIndex(where: { $0.id == id }) else { return false }
+        annotationUndo.append(.restore(annotations.remove(at: index), index))
+        selectedAnnotationID = nil
+        endSelectedShapeDrag()
+        clearAnnotationPress()
+        currentAnnotation = nil
+        pendingDrawing = nil
+        return true
+    }
+
     func undoLastAnnotation() {
-        if !annotations.isEmpty {
+        if let edit = annotationUndo.popLast() {
+            switch edit {
+            case .remove(let id): annotations.removeAll { $0.id == id }
+            case .restore(let annotation, let index):
+                annotations.removeAll { $0.id == annotation.id }
+                annotations.insert(annotation, at: min(index, annotations.count))
+            }
+        } else if !annotations.isEmpty {
             annotations.removeLast()
         }
+        if !annotations.contains(where: { $0.id == selectedAnnotationID }) { selectedAnnotationID = nil }
     }
     
     func reset() {
@@ -579,11 +658,14 @@ class OverlayViewModel: ObservableObject {
         endSelectedShapeDrag()
         clearAnnotationPress()
         toolbarConfiguration = settings.toolbarConfiguration
+        useRoundedCorners = settings.useRoundedCorners
         startPoint = nil
         currentPoint = nil
         selectionRect = .zero
         state = .idle
         annotations = []
+        annotationUndo = []
+        pendingDrawing = nil
         currentAnnotation = nil
         selectedTool = nil
         selectedAnnotationID = nil
@@ -594,6 +676,7 @@ class OverlayViewModel: ObservableObject {
         activeSelectionHandle = nil
         isMovingSelection = false
         isResizingText = false
+        textResizeOriginal = nil
         previewImage = nil
         previewScale = 1.0
         previewBitmap = nil
@@ -650,7 +733,10 @@ class OverlayViewModel: ObservableObject {
 
         if let editingID = editingTextAnnotationID,
            let index = annotations.firstIndex(where: { $0.id == editingID }) {
-            // 编辑已有文字：更新内容与位置；清空则删除
+            // Keep text edits and removal in the same undo history as other edits.
+            if annotations[index].text != editingTextContent {
+                annotationUndo.append(.restore(annotations[index], index))
+            }
             if editingTextContent.isEmpty {
                 annotations.remove(at: index)
             } else {
@@ -664,6 +750,7 @@ class OverlayViewModel: ObservableObject {
             annotation.text = editingTextContent
             annotation.fontSize = selectedFontSize
             annotations.append(annotation)
+            annotationUndo.append(.remove(annotation.id))
         }
 
         isEditingText = false
@@ -685,6 +772,9 @@ class OverlayViewModel: ObservableObject {
         endSelectedShapeDrag()
         clearAnnotationPress()
         selectedTool = tool
+        selectedAnnotationID = nil
+        currentAnnotation = nil
+        pendingDrawing = nil
         if tool != .text {
             cancelTextInput()
         }
@@ -702,6 +792,7 @@ class OverlayViewModel: ObservableObject {
         annotation.text = String(nextNumber)
         annotation.fontSize = Annotation.numberFontSize
         annotations.append(annotation)
+        annotationUndo.append(.remove(annotation.id))
         nextNumber += 1
         selectedAnnotationID = nil
     }
@@ -752,6 +843,52 @@ class OverlayViewModel: ObservableObject {
         return NSBitmapImageRep(cgImage: scaled)
     }
     
+    enum CursorStyle: Equatable {
+        case crosshair, move, horizontal, vertical, diagonalDown, diagonalUp
+    }
+
+    func cursorStyle(at point: CGPoint) -> CursorStyle {
+        func nearest(_ rect: CGRect, tolerance: CGFloat) -> SelectionHandle? {
+            SelectionHandle.allCases.filter {
+                let p = $0.position(in: rect)
+                return abs(point.x - p.x) <= tolerance && abs(point.y - p.y) <= tolerance
+            }.min {
+                let a = $0.position(in: rect), b = $1.position(in: rect)
+                return hypot(point.x - a.x, point.y - a.y) < hypot(point.x - b.x, point.y - b.y)
+            }
+        }
+        func style(_ handle: SelectionHandle) -> CursorStyle {
+            switch handle {
+            case .left, .right: return .horizontal
+            case .top, .bottom: return .vertical
+            case .topLeft, .bottomRight: return .diagonalDown
+            case .topRight, .bottomLeft: return .diagonalUp
+            }
+        }
+        if canResizeSelection, let handle = nearest(selectionRect, tolerance: 10) { return style(handle) }
+        guard state == .editing, !isEditingText else { return .crosshair }
+        if let handle = selectedTextResizeHandle, abs(point.x - handle.x) <= 8, abs(point.y - handle.y) <= 8 { return .diagonalDown }
+        if let rect = selectedShapeRect, let handle = nearest(rect, tolerance: 8) { return style(handle) }
+        if let a = annotations.first(where: { $0.id == selectedAnnotationID }) {
+            if a.type == .arrow, [a.startPoint, a.endPoint].contains(where: { hypot(point.x - $0.x, point.y - $0.y) <= 8 }) { return .move }
+            let hit = hitTest(at: point)
+            if hit == a.id || (hit == nil && selectedShapeRect?.contains(point) == true) { return .move }
+        }
+        if selectedTool == nil, captureMode != .imageEditor, selectionRect.contains(point), hitTest(at: point) == nil { return .move }
+        return .crosshair
+    }
+
+    func handleTextResizeDrag(from start: CGPoint, to point: CGPoint) -> Bool {
+        guard state == .editing, !isEditingText else { return false }
+        if !isResizingText {
+            guard let handle = selectedTextResizeHandle,
+                  abs(start.x - handle.x) <= 8, abs(start.y - handle.y) <= 8 else { return false }
+            beginTextResize(at: start)
+        }
+        updateTextResize(to: point)
+        return true
+    }
+
     // MARK: - Style Updates
     func updateSelectedStyle(color: Color? = nil, fontSize: CGFloat? = nil) {
         guard let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
@@ -781,6 +918,7 @@ class OverlayViewModel: ObservableObject {
     private var textResizeAnchor: CGPoint = .zero
     private var textResizeStartFontSize: CGFloat = 24
     private var textResizeStartDiag: CGFloat = 1
+    private var textResizeOriginal: Annotation?
 
     /// 选中文字标注的右下角缩放手柄位置（无选中/非文字返回 nil）
     var selectedTextResizeHandle: CGPoint? {
@@ -796,6 +934,7 @@ class OverlayViewModel: ObservableObject {
               let annotation = annotations.first(where: { $0.id == id }),
               annotation.type == .text else { return }
         isResizingText = true
+        textResizeOriginal = annotation
         textResizeAnchor = annotation.startPoint
         textResizeStartFontSize = annotation.fontSize
         let size = annotation.textBoundingSize
@@ -813,6 +952,9 @@ class OverlayViewModel: ObservableObject {
     }
 
     func endTextResize() {
+        if let original = textResizeOriginal, let index = annotations.firstIndex(where: { $0.id == original.id }),
+           annotations[index] != original { annotationUndo.append(.restore(original, index)) }
+        textResizeOriginal = nil
         isResizingText = false
     }
 

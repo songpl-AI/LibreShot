@@ -80,7 +80,7 @@ struct ToolbarRegressionChecks {
                 load: { throw systemFailure }, requestGate: requestGate
             )
         } catch CaptureServiceError.screenContentUnavailable { }
-        precondition(requestGate.claimRequest(), "A later valid authorization resets the request gate")
+        precondition(!requestGate.claimRequest(), "Preflight alone must not reset the system request gate when loading content fails")
         precondition(!requestGate.claimPermissionAlert(), "A preflight result alone must not reset the app alert after screen content fails")
         requestGate.markContentLoaded()
         precondition(requestGate.claimPermissionAlert(), "Successful screen content resets the permission explanation")
@@ -491,7 +491,7 @@ struct ToolbarRegressionChecks {
                 precondition(vm.currentAnnotation == nil && vm.annotations.count == 1 && vm.selectedTool == tool)
                 precondition(vm.handleAnnotationPressEnded(from: point, to: CGPoint(x: point.x + 1, y: point.y + 1)))
                 vm.clearAnnotationPress()
-                precondition(vm.selectedAnnotationID == a.id && vm.selectedTool == nil && vm.annotations.count == 1)
+                precondition(vm.selectedAnnotationID == a.id && vm.selectedTool == a.type && vm.annotations.count == 1)
                 vm.moveSelectedAnnotation(offset: CGSize(width: 12, height: 9))
                 precondition(vm.annotations[0].startPoint == CGPoint(x: a.startPoint.x + 12, y: a.startPoint.y + 9))
             }
@@ -504,7 +504,9 @@ struct ToolbarRegressionChecks {
             precondition(vm.handleAnnotationPressChanged(from: point, to: end))
             precondition(vm.handleAnnotationPressEnded(from: point, to: end))
             vm.clearAnnotationPress()
-            precondition(vm.selectedTool == tool && vm.selectedAnnotationID == nil)
+            precondition(vm.selectedTool == tool)
+            precondition(vm.selectedAnnotationID == ((tool == .text || tool == .number) ? nil : vm.annotations.last?.id),
+                         "A completed drawing is selected without changing the active tool")
             precondition(vm.annotations[0].startPoint == rect.startPoint)
             if tool == .text || tool == .number {
                 precondition(vm.annotations.count == 1 && !vm.isEditingText)

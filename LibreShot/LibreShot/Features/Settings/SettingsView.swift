@@ -39,12 +39,13 @@ struct SettingsView: View {
 
 struct ToolbarSettingsView: View {
     @ObservedObject var settings: SettingsService
+    @State private var shortcutRestoreError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("自定义截图工具栏")
                 .font(.headline)
-            Text("勾选工具并拖动排序；工具按此顺序显示，窄窗口会自动换行。")
+            Text("勾选、拖动排序，并在同一行设置快捷键。窄窗口会自动换行。")
                 .font(.callout)
                 .foregroundColor(.secondary)
 
@@ -75,6 +76,11 @@ struct ToolbarSettingsView: View {
                         if item.isRequired {
                             Text("始终显示").font(.caption).foregroundColor(.secondary)
                         }
+                        if item == .cancel {
+                            Text("Esc").font(.system(.caption, design: .monospaced)).frame(width: 142)
+                        } else {
+                            ToolbarShortcutRecorder(settings: settings, item: item).frame(width: 142)
+                        }
                         Button { move(item, upwards: true) } label: {
                             Image(systemName: "chevron.up")
                         }
@@ -104,11 +110,19 @@ struct ToolbarSettingsView: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let shortcutRestoreError {
+                Text(shortcutRestoreError).font(.caption).foregroundStyle(.red)
+            }
             HStack {
                 Text("已显示 \(settings.toolbarConfiguration.visibleItems.count) 个按钮")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
+                Button("恢复快捷键") {
+                    settings.restoreDefaultEditorShortcuts()
+                    shortcutRestoreError = settings.editorShortcuts.count == EditorShortcut.defaults.count ? nil : "与全局截图冲突的默认快捷键未恢复，请逐行设置。"
+                }
+                    .help("恢复编辑快捷键；与全局快捷键冲突的项需另行设置")
                 Button("恢复默认") { settings.restoreDefaultToolbar() }
                     .help("恢复全部工具的显示和默认顺序")
             }
@@ -281,8 +295,6 @@ struct GeneralSettingsView: View {
 struct ShortcutSettingsView: View {
     @ObservedObject var settings: SettingsService
     @State private var registerError: Bool = false
-    @State private var editorShortcutError: String?
-    @State private var editorShortcutErrorItem: ToolbarItem?
     @State private var optionPermissionMissing = false
     
     var body: some View {
@@ -373,35 +385,9 @@ struct ShortcutSettingsView: View {
                             Text(action.title).tag(action)
                         }
                     }
-                    ForEach(ToolbarItem.allCases.filter { $0 != .cancel }) { item in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Label(item.title, systemImage: item.iconName)
-                                Spacer()
-                                ShortcutRecorder(
-                                    keyCode: .constant(settings.editorShortcuts[item.rawValue]?.keyCode ?? -1),
-                                    modifiers: .constant(settings.editorShortcuts[item.rawValue]?.modifiers ?? 0),
-                                    onShortcutRecorded: { key, modifiers in
-                                        editorShortcutErrorItem = item
-                                        editorShortcutError = settings.setEditorShortcut(.init(keyCode: key, modifiers: modifiers), for: item)
-                                    },
-                                    onClear: {
-                                        editorShortcutErrorItem = nil
-                                        editorShortcutError = settings.setEditorShortcut(nil, for: item)
-                                    },
-                                    allowsUnmodified: true
-                                )
-                            }
-                            if editorShortcutErrorItem == item, let editorShortcutError {
-                                Text(editorShortcutError).font(.caption).foregroundStyle(.red)
-                            }
-                        }
-                    }
-                    Button("恢复编辑快捷键") {
-                        settings.restoreDefaultEditorShortcuts()
-                        editorShortcutErrorItem = .save
-                        editorShortcutError = settings.editorShortcuts.count == EditorShortcut.defaults.count ? nil : "与全局截图冲突的默认快捷键未恢复"
-                    }
+                    Text("标注工具和保存等编辑快捷键，可在“工具栏”页按排序逐行设置。选中标注后按 Delete 删除，⌘Z 撤销。")
+                        .font(.caption).foregroundStyle(.secondary)
+
                 }
                 .padding(24)
             }
@@ -518,5 +504,28 @@ struct AboutSettingsView: View {
                 .padding(.bottom)
         }
         .padding()
+    }
+}
+
+private struct ToolbarShortcutRecorder: View {
+    @ObservedObject var settings: SettingsService
+    let item: ToolbarItem
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ShortcutRecorder(
+                keyCode: .constant(settings.editorShortcuts[item.rawValue]?.keyCode ?? -1),
+                modifiers: .constant(settings.editorShortcuts[item.rawValue]?.modifiers ?? 0),
+                onShortcutRecorded: { key, modifiers in
+                    error = settings.setEditorShortcut(.init(keyCode: key, modifiers: modifiers), for: item)
+                },
+                onClear: { error = settings.setEditorShortcut(nil, for: item) },
+                allowsUnmodified: true,
+                recordingWidth: 116
+            )
+            .accessibilityLabel("\(item.title)快捷键")
+            if let error { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+        }
     }
 }

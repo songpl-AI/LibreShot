@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
     let model: OverlayViewModel
-    private let image: NSImage
+    private var image: NSImage?
     private var actionInFlight = false
     var onClose: (() -> Void)?
     var onAction: ((NSImage, CaptureAction) async throws -> Void)?
@@ -41,6 +41,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func renderedImage(base: CGImage? = nil) -> NSImage {
+        guard let image else { return NSImage() }
         model.commitTextInput()
         let background = (base ?? model.imageForExport()).map { NSImage(cgImage: $0, size: image.size) } ?? image
         return CaptureService.shared.composite(image: background, annotations: model.annotations)
@@ -70,9 +71,14 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         (window as? OverlayWindow)?.clearEditingActions()
         model.onCapture = nil
-        model.clearImageTranslation()
+        model.onCancel = nil
+        model.reset()
+        image = nil
+        onAction = nil
         window?.contentView = nil
-        onClose?()
+        let completion = onClose
+        onClose = nil
+        completion?()
     }
 }
 
