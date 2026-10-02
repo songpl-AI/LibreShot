@@ -4,6 +4,8 @@ import CoreImage
 import CoreGraphics
 import Vision
 import Combine
+import ImageIO
+import UniformTypeIdentifiers
 
 enum CaptureServiceError: LocalizedError {
     case noDisplay
@@ -241,8 +243,9 @@ class CaptureService {
         
         pasteboard.setData(pngData, forType: .png)
         
-        if let normalizedImage = NSImage(data: pngData),
-           let tiffData = normalizedImage.tiffRepresentation {
+        // Decode the normalized PNG so both formats have the same pixels and DPI.
+        if let normalizedBitmap = NSBitmapImageRep(data: pngData),
+           let tiffData = encodedData(from: normalizedBitmap, type: .tiff) {
             pasteboard.setData(tiffData, forType: .tiff)
         }
         // Both representations already belong to the same pasteboard item.
@@ -502,7 +505,33 @@ class CaptureService {
     }
 
     func pngData(from image: NSImage) -> Data? {
-        bitmapRep(from: styledImage(image))?.representation(using: .png, properties: [:])
+        guard let bitmap = bitmapRep(from: styledImage(image)) else { return nil }
+        return encodedData(from: bitmap, type: .png)
+    }
+
+    /// File-backed output avoids growing large in-memory encoder buffers on each
+    /// copy. The private temporary file is unlinked once its mapped data is ready;
+    /// consumers own the data normally, including after it reaches the pasteboard.
+    private func encodedData(from bitmap: NSBitmapImageRep, type: UTType) -> Data? {
+        guard let image = bitmap.cgImage, bitmap.size.width > 0, bitmap.size.height > 0 else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("libreshot-encode-\(UUID().uuidString)")
+        guard FileManager.default.createFile(atPath: url.path, contents: nil,
+                                             attributes: [.posixPermissions: 0o600]) else { return nil }
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        var properties: [CFString: Any] = [
+            kCGImagePropertyDPIWidth: Double(bitmap.pixelsWide) / bitmap.size.width * 72,
+            kCGImagePropertyDPIHeight: Double(bitmap.pixelsHigh) / bitmap.size.height * 72
+        ]
+        if type == .tiff {
+            properties[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5] // Lossless LZW.
+        }
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return try? Data(contentsOf: url, options: .mappedIfSafe)
     }
 }
 

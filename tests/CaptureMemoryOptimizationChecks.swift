@@ -71,6 +71,17 @@ struct CaptureMemoryOptimizationChecks {
             check(cropImage.width == expectedWidth && cropImage.height == expectedHeight,
                   "\(label) crop keeps the selected pixel dimensions")
             check(rgbaPixels(cropImage) == expectedPixels, "\(label) crop keeps color and alpha pixels")
+            let exportService = CaptureService(settings: settings, pasteboard: board)
+            let referencePNG = exportService.bitmapRep(from: exportService.styledImage(cropped))!
+                .representation(using: .png, properties: [:])!
+            exportService.copyToClipboard(cropped)
+            let exportedPNG = NSBitmapImageRep(data: board.data(forType: .png)!)!.cgImage!
+            let exportedTIFF = NSBitmapImageRep(data: board.data(forType: .tiff)!)!.cgImage!
+            let referenceExport = NSBitmapImageRep(data: referencePNG)!.cgImage!
+            check(rgbaPixels(exportedPNG) == rgbaPixels(referenceExport),
+                  "\(label) file-backed PNG keeps normalized color and alpha pixels")
+            check(rgbaPixels(exportedTIFF) == rgbaPixels(exportedPNG),
+                  "\(label) file-backed lossless TIFF agrees with PNG pixels")
             croppedForCopy = cropped
         }
 
