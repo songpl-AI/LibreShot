@@ -527,5 +527,6 @@ private struct ToolbarShortcutRecorder: View {
             .accessibilityLabel("\(item.title)快捷键")
             if let error { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
         }
+        .onChange(of: settings.editorShortcuts) { _ in error = nil }
     }
 }
