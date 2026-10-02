@@ -66,6 +66,8 @@ LIBRESHOT_MEMORY_BATCHES=3 bash tests/run-memory-stress-profile.sh ocr
 - `tests/run-capture-memory-optimization-checks.sh`：单条 PNG/TIFF、裁剪缓冲释放、单次 PNG 编码、文件与剪贴板一致；新增 sRGB/Display P3 归一化导出像素和 PNG/TIFF 一致性检查。
 - `tests/run-toolbar-checks.sh`：自动保存与失败保留剪贴板、快捷键、标注及现有 OCR/翻译回归。
 
+最终代码回归共 169 项通过（119 + 24 + 26）。源码提交 `72ac5d5` 已构建独立预览 `dist/LibreShot-Issue9-Preview-20261002-memory/LibreShot Preview.app`，版本 1.3.1、build 18、arm64/x86_64；Release 构建、沙盒 entitlement、签名校验和架构检查通过。构建保留既有图标尺寸警告。本包未替换正式应用，也未在完整应用中重做上述重复操作压测。
+
 ## OCR 与完整应用观测
 
 独立 OCR 进程实际识别 15 次，每 5 次之后闲置 60 秒，分别为 105.1、89.6、105.5 MiB。首末差约 0.34 MiB，没有本样例的逐批持续增长；这仍明显高于其约 7.2 MiB 的服务基线。支持继续把首次框架加载与复制增长分开调查，不能宣称 Vision 内部缓存已全部归因或达到冷启动目标。
