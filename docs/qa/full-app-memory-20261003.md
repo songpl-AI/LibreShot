@@ -41,8 +41,14 @@
 
 本包启用 sandbox，拥有 Desktop 与 user-selected read-write entitlement；默认保存目录没有预先选择的 security-scoped bookmark。拒绝写入与此权限配置一致，尚未以独立默认目录回归关闭根因。已恢复自动保存关闭，保存位置保持原样，后续验证另存为的用户文件选择流程。不得以此前非沙盒服务回归通过代替这次完整应用失败。
 
-### 第二次截图的另存为验证（进行中）
+### 第二次截图的另存为验证（已通过）
 
 用户再次触发遮罩，同样公开区域及矩形标注成功，打开“保存截图”面板。工具设置文件名并通过“前往”选择目录后，AX 树显示保存按钮 disabled。换到以前成功过的 `/tmp/LibreShot-Issue9-LiveQA`、实际键盘输入 `real-region-save-as-20261003.png` 和回车提交后仍无输出文件；面板 screenshot 接口只返回空白，不能把这一工具观测直接认定为产品保存功能故障。
 
-已请用户确认物理界面上的保存按钮是否可点击。尚不计作另存为通过。保存面板仍打开时进程 footprint 116.2 MiB、峰值 138.2 MiB，日志 `second-region-save-panel-vmmap.log`；此时截图/导出仍在进行，不能与完成后闲置值直接作泄漏判断。
+此前请用户确认物理界面上的保存按钮是否可点击。保存面板仍打开时进程 footprint 116.2 MiB、峰值 138.2 MiB，日志 `second-region-save-panel-vmmap.log`；此时截图/导出仍在进行，不能与完成后闲置值直接作泄漏判断。
+
+用户点击保存后，实际生成 `/tmp/LibreShot-Issue9-LiveQA/real-region-save-as-20261003.png`（48,349 字节），面板关闭且无错误提示。复制到 `dist/live-memory-20261003/` 后校验 SHA-256 一致：`af1c7f63580cfc89f44cdf86011523b82d492afc666df68d5938eafb28718dff`。像素检查通过：360×500、逻辑尺寸 180×250、四个角透明、中心不透明、红色矩形存在；视觉检查没有控制点。用户只负责菜单入口和最终面板保存，其余框选、标注与文件核对由工具完成。另存为产品路径本次通过；工具的 disabled 观测不作为应用保存缺陷。
+
+保存结束后的独立观测起点、15 秒、60 秒 physical footprint 均为 71.7 MiB，进程记录峰值 138.2 MiB。起点不等于物理点击保存的瞬间，三个观测包含 `vmmap` 执行开销；期间未再执行截图。日志 `after-save-idle-0s-vmmap.log`、`after-save-idle-15s-vmmap.log`、`after-save-idle-60s-vmmap.log`。此次两张小图业务验收不等于 30 次循环压测，也不能将约 36 MiB 的启动后增量全部归因为泄漏。
+
+当前结论：干净重新授权后，两次真实区域截图均可完成；标注、PNG/TIFF 复制与另存为通过。默认 Pictures 自动保存仍待修复；完整应用重复操作及 OCR 高驻留仍未结案。自动保存设置保持原来的关闭，正式应用未替换。
