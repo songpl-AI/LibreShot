@@ -15,7 +15,7 @@ private final class WeakOCRReferences {
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.first == "worker" {
             let image = NSImage(contentsOfFile: arguments[1])!
-            let regions = try await OCRService.shared.recognizeRegions(from: image)
+            let regions = try await OCRRecognitionOperation().run(image: image.cgImage(forProposedRect:nil,context:nil,hints:nil)!)
             let rows = regions.map { region -> [String:Any] in
                 ["id":region.id,"text":region.text,"confidence":region.confidence,
                  "bounds":[region.bounds.minX,region.bounds.minY,region.bounds.width,region.bounds.height]]
@@ -26,7 +26,7 @@ private final class WeakOCRReferences {
             return
         }
         let mode = arguments.first ?? "in-process"
-        precondition(["in-process","in-process-png","in-process-cancel","worker-parent","window-only"].contains(mode))
+        precondition(["in-process","in-process-png","in-process-cancel","worker-parent","window-only","production"].contains(mode))
         let baseline = report("baseline")
         if mode == "window-only" {
             var retainedWindow: OCRResultWindowController?
@@ -66,7 +66,11 @@ private final class WeakOCRReferences {
         var firstRows: [[String:Any]]?
         var references: [WeakOCRReferences] = []
         for iteration in 1...5 {
-            if mode.hasPrefix("in-process") {
+            if mode == "production" {
+                let regions = try await OCRService.shared.recognizeRegions(from: image!)
+                precondition(!regions.isEmpty)
+                print("PRODUCTION worker exited x\(iteration)")
+            } else if mode.hasPrefix("in-process") {
                 // VN request and operation ownership match OCRService's call site.
                 let cgImage = image!.cgImage(forProposedRect:nil,context:nil,hints:nil)!
                 let reference = WeakOCRReferences()

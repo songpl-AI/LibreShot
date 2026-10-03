@@ -108,6 +108,7 @@
 				9FE4E2672F36D4E100F19710 /* Sources */,
 				9FE4E2682F36D4E100F19710 /* Frameworks */,
 				9FE4E2692F36D4E100F19710 /* Resources */,
+				A0C000000000000000000001 /* Build OCR Worker */,
 			);
 			buildRules = (
 			);
@@ -166,6 +167,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+        A0C000000000000000000001 /* Build OCR Worker */ = {
+            isa = PBXShellScriptBuildPhase;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = (
+                "$(SRCROOT)/../scripts/build_ocr_worker.sh",
+                "$(SRCROOT)/../OCRWorker/Worker.swift",
+                "$(SRCROOT)/../OCRWorker/Worker.entitlements",
+                "$(SRCROOT)/LibreShot/Core/OCR/OCREngine.swift",
+                "$(SRCROOT)/LibreShot/Core/OCR/OCRWire.swift",
+            );
+            name = "Build OCR Worker";
+            outputPaths = (
+                "$(DERIVED_FILE_DIR)/OCRWorker",
+                "$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/LibreShotOCRWorker",
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/bash;
+            shellScript = "bash \"$SRCROOT/../scripts/build_ocr_worker.sh\"\n";
+        };
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		9FE4E2672F36D4E100F19710 /* Sources */ = {

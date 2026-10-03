@@ -37,7 +37,7 @@ if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")" != "$p
     printf 'Preview identity verification failed.\n' >&2
     exit 1
 fi
-codesign --verify --deep --strict "$app"
+bash scripts/verify_release_signing.sh --allow-ad-hoc "$app"
 codesign -d --entitlements :- "$app" > "$output/entitlements.plist" 2> "$output/signature.log"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$output/entitlements.plist")" == true ]]
 lipo "$app/Contents/MacOS/LibreShotPreview" -verify_arch arm64 x86_64

@@ -16,6 +16,9 @@ xcrun swiftc "${task_flags[@]}" \
   LibreShot/LibreShot/Core/InlineTextEditor.swift \
   LibreShot/LibreShot/Core/OverlayWindow.swift \
   LibreShot/LibreShot/Core/OCR/OCRService.swift \
+  LibreShot/LibreShot/Core/OCR/OCREngine.swift \
+  LibreShot/LibreShot/Core/OCR/OCRWire.swift \
+  LibreShot/LibreShot/Core/OCR/OCRWorkerOperation.swift \
   LibreShot/LibreShot/Core/OCR/TranslationService.swift \
   LibreShot/LibreShot/Core/OCR/OCRResultWindowController.swift \
   LibreShot/LibreShot/Core/OCR/ImageTranslationRenderer.swift \
@@ -28,3 +31,7 @@ xcrun swiftc "${task_flags[@]}" \
   LibreShot/LibreShot/Features/Settings/SettingsWindowController.swift \
   LibreShot/LibreShot/Features/Settings/ShortcutRecorder.swift \
   "$@" -o "$task_output"
+xcrun swiftc -parse-as-library -O \
+  LibreShot/LibreShot/Core/OCR/OCREngine.swift \
+  LibreShot/LibreShot/Core/OCR/OCRWire.swift \
+  OCRWorker/Worker.swift -o "$(dirname "$task_output")/LibreShotOCRWorker"

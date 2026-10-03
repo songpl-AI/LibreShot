@@ -19,6 +19,7 @@ for name,extra in [('parent',{}),('worker',{'com.apple.security.inherit':True})]
         plistlib.dump({'com.apple.security.app-sandbox':True,**extra},f)
 PY
 codesign --force --sign - --options runtime --entitlements "$task_tmp/worker.plist" "$task_app/Contents/MacOS/LibreShotOCRProbeWorker"
+codesign --force --sign - --options runtime --entitlements "$task_tmp/worker.plist" "$task_app/Contents/MacOS/LibreShotOCRWorker"
 codesign --force --sign - --options runtime --entitlements "$task_tmp/parent.plist" "$task_app"
 codesign --verify --deep --strict "$task_app"
-"$task_app/Contents/MacOS/LibreShotOCRProbe" worker-parent
+"$task_app/Contents/MacOS/LibreShotOCRProbe" "${1:-worker-parent}"

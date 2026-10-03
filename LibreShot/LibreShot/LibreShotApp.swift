@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupHotkeys()
     }
     
+    func applicationWillTerminate(_ notification: Notification) {
+        OCRService.shared.cancelAll()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
