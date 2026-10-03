@@ -35,6 +35,13 @@ import Darwin
             a.id == b.id && a.text == b.text && a.confidence == b.confidence && a.bounds == b.bounds && a.lineCount == b.lineCount
         }, "Raw transport changed text/confidence/bounds")
         print("PASS: English, Chinese and columns preserve text, confidence and exact original-image coordinates")
+        let cropped = cg.cropping(to: CGRect(x: 30, y: 40, width: 903, height: 1031))!
+        let cropReference = try await OCRRecognitionOperation().run(image: cropped)
+        let cropWorker = try await OCRWorkerOperation().run(image: cropped)
+        precondition(!cropReference.isEmpty && cropReference.count == cropWorker.count && zip(cropReference, cropWorker).allSatisfy { a, b in
+            a.text == b.text && a.bounds == b.bounds && a.confidence == b.confidence
+        }, "Partial final scanline changed cropped OCR output")
+        print("PASS: cropped provider with omitted final scanline padding preserves OCR text and exact bounds")
 
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("LibreShot-Wire-\(UUID())")
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false)

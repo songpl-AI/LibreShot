@@ -29,7 +29,8 @@ nonisolated enum OCRWire {
         guard let pixels = image.dataProvider?.data,
               let profile = image.colorSpace?.copyICCData(),
               image.bytesPerRow > 0, image.height <= maximumRasterBytes / image.bytesPerRow,
-              CFDataGetLength(pixels) == image.bytesPerRow * image.height else {
+              CFDataGetLength(pixels) >= image.bytesPerRow * (image.height - 1) + (image.width * image.bitsPerPixel + 7) / 8,
+              CFDataGetLength(pixels) <= image.bytesPerRow * image.height else {
             throw OCRError.recognitionFailed("图片格式无法无损传输，或图片过大")
         }
         let components = image.colorSpace!.numberOfComponents
@@ -64,7 +65,9 @@ nonisolated enum OCRWire {
             throw CocoaError(.fileReadCorruptFile)
         }
         let data = try Data(contentsOf: directory.appendingPathComponent("raster"), options: .mappedIfSafe)
-        guard data.count == metadata.bytesPerRow * metadata.height,
+        // CGImage providers may omit padding after the last scanline, especially after cropping.
+        guard data.count >= metadata.bytesPerRow * (metadata.height - 1) + (metadata.width * metadata.bitsPerPixel + 7) / 8,
+              data.count <= metadata.bytesPerRow * metadata.height,
               let provider = CGDataProvider(data: data as CFData) else { throw CocoaError(.fileReadCorruptFile) }
         func make(_ decode: UnsafePointer<CGFloat>?) -> CGImage? {
             CGImage(width: metadata.width, height: metadata.height,
