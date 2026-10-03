@@ -13,6 +13,7 @@ enum CaptureServiceError: LocalizedError {
     case permissionDenied
     case captureFailed
     case imageConversionFailed
+    case saveDirectoryAccessFailed
     case screenContentUnavailable(underlying: Error)
 
     var isPermissionFailure: Bool {
@@ -42,6 +43,8 @@ enum CaptureServiceError: LocalizedError {
             return "截图失败，请重新选择截图区域后重试。"
         case .imageConversionFailed:
             return "无法生成截图图片，请重新截图后重试。"
+        case .saveDirectoryAccessFailed:
+            return "无法记住所选保存目录的访问权限，请在设置中重新选择保存位置。"
         case .screenContentUnavailable(let underlying):
             let error = underlying as NSError
             let reason = error.domain == SCStreamErrorDomain && error.code == SCStreamError.Code.userDeclined.rawValue
@@ -119,13 +122,34 @@ class CaptureService {
     
     private let settings: SettingsService
     private let pasteboard: NSPasteboard
+    private let directoryChooser: @MainActor (URL) -> URL?
     private let fileWriter: @Sendable (Data, URL) throws -> Void
 
     init(settings: SettingsService = .shared, pasteboard: NSPasteboard = .general,
+         directoryChooser: @escaping @MainActor (URL) -> URL? = { CaptureService.chooseSaveDirectory(suggested: $0) },
          fileWriter: @escaping @Sendable (Data, URL) throws -> Void = { data, url in try data.write(to: url) }) {
         self.settings = settings
         self.pasteboard = pasteboard
+        self.directoryChooser = directoryChooser
         self.fileWriter = fileWriter
+    }
+
+    @MainActor private static func chooseSaveDirectory(suggested: URL) -> URL? {
+        let policy = NSApp.activationPolicy()
+        if policy == .accessory { NSApp.setActivationPolicy(.regular) }
+        defer { if policy == .accessory { NSApp.setActivationPolicy(policy) } }
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.title = "选择截图保存目录"
+        panel.message = "当前目录没有写入权限。请选择保存目录，之后截图将自动保存到这里。"
+        panel.prompt = "选择"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = suggested
+        return panel.runModal() == .OK ? panel.url : nil
     }
 
     /// Copy first so a failed automatic save never discards the completed screenshot.
@@ -193,15 +217,37 @@ class CaptureService {
         return try await savePNGDataDirectly(pngData)
     }
 
-    private func savePNGDataDirectly(_ pngData: Data) async throws -> URL {
+    @MainActor private func savePNGDataDirectly(_ pngData: Data) async throws -> URL {
         let configuredDirectory = settings.saveDirectory
         let directory = configuredDirectory
             ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         let fileWriter = fileWriter
-        return try await Task.detached(priority: .userInitiated) {
-            try Self.writePNGData(pngData, to: directory, scoped: configuredDirectory != nil, using: fileWriter)
-        }.value
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try Self.writePNGData(pngData, to: directory, scoped: configuredDirectory != nil, using: fileWriter)
+            }.value
+        } catch {
+            guard Self.isSavePermissionError(error) else { throw error }
+            // A default path is not a sandbox grant. Let the user choose a directory
+            // once, retain its security-scoped bookmark, then retry the same PNG.
+            guard let chosen = directoryChooser(directory) else { throw CancellationError() }
+            guard settings.saveSaveDirectory(chosen) else { throw CaptureServiceError.saveDirectoryAccessFailed }
+            return try await Task.detached(priority: .userInitiated) {
+                try Self.writePNGData(pngData, to: chosen, scoped: true, using: fileWriter)
+            }.value
+        }
+    }
+
+    nonisolated private static func isSavePermissionError(_ error: Error) -> Bool {
+        var current = error as NSError
+        for _ in 0..<3 {
+            if current.domain == NSCocoaErrorDomain && current.code == CocoaError.fileWriteNoPermission.rawValue { return true }
+            if current.domain == NSPOSIXErrorDomain && [Int(EACCES), Int(EPERM)].contains(current.code) { return true }
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
+            current = underlying
+        }
+        return false
     }
 
     nonisolated private static func writePNGData(_ pngData: Data, to directory: URL, scoped: Bool,

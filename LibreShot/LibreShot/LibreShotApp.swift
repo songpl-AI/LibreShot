@@ -27,13 +27,13 @@ struct LibreShotApp: App {
                 Button("退出 LibreShot") { appDelegate.quitApp() }
                     .keyboardShortcut("q", modifiers: .command)
             }
-            #if DEBUG
             CommandGroup(after: .appSettings) {
-                Button("诊断：区域截图") { appDelegate.startDiagnosticSelectionCapture() }
+                Button("区域截图") { appDelegate.startSelectionCapture() }
+                #if DEBUG
                 Button("诊断：完成长截图") { HotkeyService.shared.onLongCaptureFinishTrigger?() }
                 Button("诊断：取消长截图") { HotkeyService.shared.onLongCaptureCancelTrigger?() }
+                #endif
             }
-            #endif
         }
     }
 }
@@ -227,11 +227,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
-    #if DEBUG
-    func startDiagnosticSelectionCapture() {
+    func startSelectionCapture() {
         captureSelection()
     }
-    #endif
 
     @objc private func captureFullScreen() {
         Task {
@@ -499,6 +497,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .saveAndCopy:
             do {
                 _ = try await CaptureService.shared.copyAndSaveImageDirectly(outputImage)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 throw NSError(domain: "LibreShot.SaveAndCopy", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "已复制，但保存失败。截图仍在剪贴板中。\n\(error.localizedDescription)"])
@@ -506,6 +506,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .copy:
             do {
                 _ = try await CaptureService.shared.completeCapture(outputImage)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 showAlert(title: "已复制，但自动保存失败", message: "截图仍在剪贴板中，可粘贴使用。\n\(error.localizedDescription)")
             }

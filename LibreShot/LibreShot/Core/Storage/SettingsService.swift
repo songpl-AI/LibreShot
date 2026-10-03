@@ -227,13 +227,18 @@ class SettingsService: ObservableObject {
         return try block(url)
     }
     
-    func saveSaveDirectory(_ url: URL) {
+    @discardableResult
+    func saveSaveDirectory(_ url: URL) -> Bool {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         do {
             let data = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
             // Use property setter to trigger publish/save
             saveDirectoryBookmark = data
+            return true
         } catch {
             print("Failed to create bookmark: \(error)")
+            return false
         }
     }
     
