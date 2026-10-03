@@ -42,6 +42,18 @@ import Darwin
             a.text == b.text && a.bounds == b.bounds && a.confidence == b.confidence
         }, "Partial final scanline changed cropped OCR output")
         print("PASS: cropped provider with omitted final scanline padding preserves OCR text and exact bounds")
+        let copiedDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("LibreShot-CopyCheck-\(UUID())")
+        try FileManager.default.createDirectory(at: copiedDirectory, withIntermediateDirectories: false)
+        let copiedID = UUID()
+        try OCRWire.write(image: cropped, requestID: copiedID, directory: copiedDirectory, forceRasterCopy: true)
+        let copiedImage = try OCRWire.read(directory: copiedDirectory, requestID: copiedID)
+        let copiedRegions = try await OCRRecognitionOperation().run(image: copiedImage)
+        try FileManager.default.removeItem(at: copiedDirectory)
+        precondition(cropReference.count == copiedRegions.count && zip(cropReference, copiedRegions).allSatisfy { a, b in
+            a.text == b.text && a.bounds == b.bounds && a.confidence == b.confidence
+        }, "Raster copy altered OCR output")
+        print("PASS: lazy/shared provider raster copy preserves OCR text, confidence and exact bounds")
+
 
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("LibreShot-Wire-\(UUID())")
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false)
@@ -52,7 +64,7 @@ import Darwin
             context.setFillColor(CGColor(red: 0.8, green: 0.1, blue: 0.3, alpha: 0.5))
             context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
             let source = context.makeImage()!, requestID = UUID()
-            try OCRWire.write(image: source, requestID: requestID, directory: temporary)
+            try OCRWire.write(image: source, requestID: requestID, directory: temporary, forceRasterCopy: true)
             let restored = try OCRWire.read(directory: temporary, requestID: requestID)
             precondition(source.dataProvider!.data! as Data == restored.dataProvider!.data! as Data)
             precondition(source.colorSpace!.copyICCData()! as Data == restored.colorSpace!.copyICCData()! as Data)

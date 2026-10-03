@@ -12,7 +12,8 @@ nonisolated enum OCRWire {
         let requestID: UUID
         let width, height, bitsPerComponent, bitsPerPixel, bytesPerRow: Int
         let bitmapInfo: UInt32
-        let colorProfile: Data
+        let colorProfile: Data?
+        let colorSpaceName: String?
         let decode: [CGFloat]?
         let interpolate: Bool
         let intent: Int32
@@ -25,28 +26,58 @@ nonisolated enum OCRWire {
         let error: String?
     }
 
-    static func write(image: CGImage, requestID: UUID, directory: URL) throws {
-        guard let pixels = image.dataProvider?.data,
-              let profile = image.colorSpace?.copyICCData(),
-              image.bytesPerRow > 0, image.height <= maximumRasterBytes / image.bytesPerRow,
-              CFDataGetLength(pixels) >= image.bytesPerRow * (image.height - 1) + (image.width * image.bitsPerPixel + 7) / 8,
-              CFDataGetLength(pixels) <= image.bytesPerRow * image.height else {
-            throw OCRError.recognitionFailed("图片格式无法无损传输，或图片过大")
+    static func write(image: CGImage, requestID: UUID, directory: URL, forceRasterCopy: Bool = false) throws {
+        guard image.width > 0, image.height > 0,
+              image.width <= maximumRasterBytes / max(4, image.bitsPerPixel / 8) / image.height,
+              let space = image.colorSpace else {
+            throw OCRError.recognitionFailed("无法读取图片像素，或图片超过识别大小上限")
         }
-        let components = image.colorSpace!.numberOfComponents
-        let metadata = Raster(version: version, requestID: requestID, width: image.width,
-                              height: image.height, bitsPerComponent: image.bitsPerComponent,
-                              bitsPerPixel: image.bitsPerPixel, bytesPerRow: image.bytesPerRow,
-                              bitmapInfo: image.bitmapInfo.rawValue, colorProfile: profile as Data,
-                              decode: image.decode.map { Array(UnsafeBufferPointer(start: $0, count: components * 2)) },
-                              interpolate: image.shouldInterpolate, intent: image.renderingIntent.rawValue)
+        let profile = space.copyICCData().map { $0 as Data }
+        let name = space.name.map { $0 as String }
+        guard profile != nil || name != nil else { throw OCRError.recognitionFailed("图片色彩配置不受支持") }
         let rasterURL = directory.appendingPathComponent("raster")
         let metadataURL = directory.appendingPathComponent("metadata.json")
         guard FileManager.default.createFile(atPath: rasterURL.path, contents: nil, attributes: [.posixPermissions: 0o600]),
               FileManager.default.createFile(atPath: metadataURL.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
             throw CocoaError(.fileWriteNoPermission)
         }
-        try (pixels as Data).write(to: rasterURL)
+        if !forceRasterCopy, image.bytesPerRow > 0, image.bitsPerPixel > 0,
+           image.height <= maximumRasterBytes / image.bytesPerRow,
+           let pixels = image.dataProvider?.data,
+           CFDataGetLength(pixels) >= image.bytesPerRow * (image.height - 1) + (image.width * image.bitsPerPixel + 7) / 8,
+           CFDataGetLength(pixels) <= image.bytesPerRow * image.height {
+            let metadata = Raster(version: version, requestID: requestID, width: image.width,
+                                  height: image.height, bitsPerComponent: image.bitsPerComponent,
+                                  bitsPerPixel: image.bitsPerPixel, bytesPerRow: image.bytesPerRow,
+                                  bitmapInfo: image.bitmapInfo.rawValue, colorProfile: profile, colorSpaceName: name,
+                                  decode: image.decode.map { Array(UnsafeBufferPointer(start: $0, count: space.numberOfComponents * 2)) },
+                                  interpolate: image.shouldInterpolate, intent: image.renderingIntent.rawValue)
+            try (pixels as Data).write(to: rasterURL)
+            try JSONEncoder().encode(metadata).write(to: metadataURL)
+            return
+        }
+        // Screen snapshots can have lazy or shared providers rather than a packed raster.
+        // Copy at physical size in the same color space; no PNG encoding or scaling.
+        guard let context = CGContext(data: nil, width: image.width, height: image.height,
+                                      bitsPerComponent: max(8, image.bitsPerComponent), bytesPerRow: 0,
+                                      space: space, bitmapInfo: image.bitmapInfo.rawValue)
+                  ?? CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                               bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let pixels = context.data, context.bytesPerRow > 0,
+              image.height <= maximumRasterBytes / context.bytesPerRow else {
+            throw OCRError.recognitionFailed("无法读取图片像素布局")
+        }
+        context.interpolationQuality = .none
+        context.setBlendMode(.copy)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let metadata = Raster(version: version, requestID: requestID, width: image.width,
+                              height: image.height, bitsPerComponent: context.bitsPerComponent,
+                              bitsPerPixel: context.bitsPerPixel, bytesPerRow: context.bytesPerRow,
+                              bitmapInfo: context.bitmapInfo.rawValue, colorProfile: profile, colorSpaceName: name,
+                              decode: nil, interpolate: image.shouldInterpolate, intent: image.renderingIntent.rawValue)
+        try withExtendedLifetime(context) {
+            try Data(bytesNoCopy: pixels, count: context.bytesPerRow * image.height, deallocator: .none).write(to: rasterURL)
+        }
         try JSONEncoder().encode(metadata).write(to: metadataURL)
     }
 
@@ -59,7 +90,8 @@ nonisolated enum OCRWire {
               metadata.height <= maximumRasterBytes / metadata.bytesPerRow,
               metadata.bitsPerComponent > 0, metadata.bitsPerPixel > 0,
               metadata.width <= metadata.bytesPerRow * 8 / metadata.bitsPerPixel,
-              let space = CGColorSpace(iccData: metadata.colorProfile as CFData),
+              let space = metadata.colorProfile.flatMap({ CGColorSpace(iccData: $0 as CFData) })
+                  ?? metadata.colorSpaceName.flatMap({ CGColorSpace(name: $0 as CFString) }),
               let intent = CGColorRenderingIntent(rawValue: metadata.intent),
               metadata.decode == nil || metadata.decode!.count == space.numberOfComponents * 2 else {
             throw CocoaError(.fileReadCorruptFile)

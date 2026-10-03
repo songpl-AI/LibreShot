@@ -34,7 +34,7 @@
 
 ## 接入实现（2026-10-03）
 
-生产 `OCRService` 已改为 `OCRWorkerOperation` 串行启动应用内的 `LibreShotOCRWorker`，每次识别后退出。`OCREngine` 共用准确模式、中英语言与原始坐标转换；`OCRWire` 传递 CGImage 原始栅格、ICC 配置、解码参数和物理尺寸，避免 PNG 重渲染导致文字框变化。
+生产 `OCRService` 已改为 `OCRWorkerOperation` 串行启动应用内的 `LibreShotOCRWorker`，每次识别后退出。`OCREngine` 共用准确模式、中英语言与原始坐标转换；`OCRWire` 传递 CGImage 原始栅格、ICC 配置、解码参数和物理尺寸，避免 PNG 重渲染导致文字框变化。可读取的 provider 直接传递；延迟/共享 provider 使用相同颜色空间、原始物理尺寸的栅格副本，并对照其 OCR 坐标。
 
 输入存于 0700 临时目录、0600 文件，辅助进程读取并映射后即删除文件；父进程仍以 defer 兜底删除。工作进程监控父进程退出，正常退出时应用主动取消。每次识别有 120 秒执行超时，终止后 1 秒仍未退出则强制结束并回收；排队任务取消可立即返回，不启动进程。响应限制 8 MiB，栅格限制 512 MiB，并校验版本、请求 ID、文本框、唯一 ID 和置信度；失败不会回退到主进程加载 Vision。
 
