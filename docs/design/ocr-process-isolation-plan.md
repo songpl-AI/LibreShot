@@ -40,4 +40,4 @@
 
 Xcode 的应用构建阶段同时编译并嵌套签名辅助进程，继承当前 ARCHS，故普通 Build、Archive 和预览包均包含组件。仅授予 app-sandbox 与 inherit，发布验签同时核对父子签名身份、架构及辅助进程权限。
 
-验证证据见 [接入验证记录](../qa/ocr-worker-integration-20261003.md)。完整预览操作、多屏及最低系统版本验证完成前，Issue #5 保持未结案。
+验证证据见 [接入验证记录](../qa/ocr-worker-integration-20261003.md)。完整预览 45 次操作、原图翻译和同签名重启已验证；冷基线增量未达到 10 MiB，且多屏、Intel 真机及最低系统版本尚未覆盖，Issue #5 保持未结案。
