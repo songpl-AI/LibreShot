@@ -19,3 +19,5 @@
 `run-number-tool-checks.sh`、`run-issue9-checks.sh`、`run-issue4-checks.sh`、`run-toolbar-checks.sh` 均通过。日志保存在 /tmp/libreshot-effects-*.log 及 /tmp/libreshot-effect-checks.log。既有 API 弃用警告仍存在。
 
 视觉效果是否符合使用习惯仍需用户试用，模糊/马赛克不保证敏感内容不可辨认。当前没有增加新滤镜、AI 识别、自动遮挡或不透明覆盖工具。安装状态另行记录，不将代码回归写成安装授权通过。
+
+本地安装进度见 [build 25 安装记录](1.3.6-25-package-20261005.md)。
