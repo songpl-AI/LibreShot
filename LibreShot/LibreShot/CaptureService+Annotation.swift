@@ -238,7 +238,10 @@ enum AnnotationEffectRenderer {
                 filtered = pixels
                 // Exact geometry, not the integral processing bounds.
                 let exact = CGRect(x: r.minX * sx, y: extent.height - r.maxY * sy, width: r.width * sx, height: r.height * sy)
-                mask = CIImage(color: .white).cropped(to: exact)
+                if a.isEffectBrush {
+                    guard let brush = brushMask(a, region: region, sx: sx, sy: sy, imageHeight: extent.height) else { return nil }
+                    mask = brush
+                } else { mask = CIImage(color: .white).cropped(to: exact) }
             } else {
                 let radius = max(2, min(32, a.blurRadius)) * scale
                 // Enough neighbouring source pixels for the blur; clamp only at image edges.

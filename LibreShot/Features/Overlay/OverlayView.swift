@@ -61,7 +61,7 @@ struct OverlayView: View {
                                 
                                 // Draw Halo
                                 let haloPath = Path(rect.insetBy(dx: -5, dy: -5))
-                                if ![AnnotationType.rectangle, .ellipse, .arrow, .mosaic].contains(annotation.type) {
+                                if annotation.isEffectBrush || ![AnnotationType.rectangle, .ellipse, .arrow, .mosaic, .blur].contains(annotation.type) {
                                     context.stroke(haloPath, with: .color(.blue.opacity(0.5)), lineWidth: 2)
                                 }
                                 if annotation.type == .arrow {

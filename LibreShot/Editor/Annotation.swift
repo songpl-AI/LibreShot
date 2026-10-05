@@ -27,7 +27,17 @@ enum AnnotationType: String, CaseIterable, Identifiable {
     }
 }
 
+enum EffectDrawingMode: String, CaseIterable, Identifiable {
+    case brush
+    case rectangle
+    var id: String { rawValue }
+    var title: String { self == .brush ? "涂抹" : "框选" }
+}
+
 extension Annotation {
+    // Points encode brush geometry; empty points retain rectangular effects.
+    var isEffectBrush: Bool { (type == .mosaic || type == .blur) && !points.isEmpty }
+
     /// Bounds of the whole annotation, including intermediate freehand points.
     var selectionBounds: CGRect {
         if type == .text { return textBoundingRect }
@@ -35,7 +45,7 @@ extension Annotation {
             let radius = numberRadius
             return CGRect(x: startPoint.x - radius, y: startPoint.y - radius, width: radius * 2, height: radius * 2)
         }
-        if [.pen, .blur].contains(type), !points.isEmpty {
+        if (type == .pen || isEffectBrush), !points.isEmpty {
             let xs = points.map(\.x), ys = points.map(\.y)
             return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
                 .insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
@@ -77,12 +87,6 @@ extension Annotation {
             return textBoundingRect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         case .number:
             return hypot(point.x - startPoint.x, point.y - startPoint.y) <= numberRadius + tolerance
-        case .mosaic:
-            let all = points + [startPoint, endPoint]
-            let minX = all.map(\.x).min()!, maxX = all.map(\.x).max()!
-            let minY = all.map(\.y).min()!, maxY = all.map(\.y).max()!
-            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-                .insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         case .rectangle:
             path.addRect(rect)
         case .ellipse:
@@ -96,7 +100,8 @@ extension Annotation {
                 path.addLine(to: CGPoint(x: endPoint.x - 15 * cos(angle + offset),
                                         y: endPoint.y - 15 * sin(angle + offset)))
             }
-        case .pen, .blur:
+        case .pen, .mosaic, .blur:
+            if type != .pen && !isEffectBrush { return rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) }
             if let first = points.first {
                 if points.allSatisfy({ $0 == first }) {
                     return hypot(point.x - first.x, point.y - first.y) <= lineWidth / 2 + tolerance

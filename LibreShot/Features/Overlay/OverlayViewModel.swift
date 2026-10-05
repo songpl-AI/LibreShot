@@ -320,10 +320,13 @@ class OverlayViewModel: ObservableObject {
     @Published private(set) var effectPreview: CGImage?
     @Published private(set) var effectPreviewRect: CGRect = .zero
     @Published var selectedMosaicBlockSize: CGFloat = 16
-    @Published var selectedBlurWidth: CGFloat = 36
+    @Published var selectedEffectBrushWidth: CGFloat = 36
     @Published var selectedBlurRadius: CGFloat = 12
     private let effectQueue = DispatchQueue(label: "LibreShot.effects", qos: .userInitiated)
-    private var effectWork: DispatchWorkItem?
+    @Published var selectedMosaicMode: EffectDrawingMode = .rectangle
+    @Published var selectedBlurMode: EffectDrawingMode = .brush
+    private var effectRendering = false
+    private var pendingEffectRender: (UUID, () -> (CGImage?, CGRect))?
     private var effectGeneration = UUID()
     private weak var effectSource: CGImage?
     private var effectAnnotations: [Annotation] = []
@@ -335,13 +338,24 @@ class OverlayViewModel: ObservableObject {
         return selectedTool == .mosaic || selectedTool == .blur ? selectedTool : nil
     }
 
+    func effectDrawingMode(for tool: AnnotationType) -> EffectDrawingMode {
+        tool == .mosaic ? selectedMosaicMode : selectedBlurMode
+    }
+
+    func setEffectDrawingMode(_ mode: EffectDrawingMode, for tool: AnnotationType) {
+        guard tool == .mosaic || tool == .blur else { return }
+        if tool == .mosaic { selectedMosaicMode = mode } else { selectedBlurMode = mode }
+        selectedAnnotationID = nil
+        selectedTool = tool
+    }
+
     func setEffectValue(_ value: CGFloat, parameter: String) {
         let tool = activeEffectTool
-        let previous = (selectedMosaicBlockSize, selectedBlurWidth, selectedBlurRadius)
+        let previous = (selectedMosaicBlockSize, selectedEffectBrushWidth, selectedBlurRadius)
         let bounded: CGFloat
         switch parameter {
         case "block": bounded = min(max(value, 4), 64); selectedMosaicBlockSize = bounded
-        case "width": bounded = min(max(value, 12), 120); selectedBlurWidth = bounded
+        case "width": bounded = min(max(value, 12), 120); selectedEffectBrushWidth = bounded
         default: bounded = min(max(value, 2), 32); selectedBlurRadius = bounded
         }
         guard let i = annotations.firstIndex(where: { $0.id == selectedAnnotationID }), annotations[i].type == tool else { return }
@@ -361,7 +375,7 @@ class OverlayViewModel: ObservableObject {
         let a = annotations.first(where: { $0.id == selectedAnnotationID })
         switch parameter {
         case "block": return a?.type == .mosaic ? a!.mosaicBlockSize : selectedMosaicBlockSize
-        case "width": return a?.type == .blur ? a!.lineWidth : selectedBlurWidth
+        case "width": return a?.isEffectBrush == true ? a!.lineWidth : selectedEffectBrushWidth
         default: return a?.type == .blur ? a!.blurRadius : selectedBlurRadius
         }
     }
@@ -369,24 +383,29 @@ class OverlayViewModel: ObservableObject {
     private func scheduleEffectPreview() {
         let effects = (annotations + (currentAnnotation.map { [$0] } ?? [])).filter { $0.type == .mosaic || $0.type == .blur }
         guard !effects.isEmpty, let source = imageForExport(), previewScale > 0, !selectionRect.isEmpty else {
-            effectWork?.cancel(); effectGeneration = UUID()
+            pendingEffectRender = nil; effectGeneration = UUID()
             effectSource = nil; effectAnnotations = []
             effectPreview = nil; effectPreviewRect = .zero; return
         }
         guard effects != effectAnnotations || source !== effectSource || selectionRect != effectSelection || previewScale != effectScale else { return }
+        // A new source/crop invalidates old frames. Pointer updates do not: while
+        // rendering, retain the newest request and publish intermediate frames.
+        if source !== effectSource || selectionRect != effectSelection || previewScale != effectScale {
+            effectGeneration = UUID()
+            effectPreview = nil; effectPreviewRect = .zero
+        }
         effectSource = source; effectAnnotations = effects; effectSelection = selectionRect; effectScale = previewScale
-        effectWork?.cancel()
-        let generation = UUID(); effectGeneration = generation
+        let generation = effectGeneration
         let rect = selectionRect, scale = previewScale
         let union = effects.reduce(CGRect.null) { $0.union($1.selectionBounds) }.intersection(rect)
-        guard !union.isEmpty else { effectPreview = nil; effectPreviewRect = .zero; return }
+        guard !union.isEmpty else { pendingEffectRender = nil; effectGeneration = UUID(); effectPreview = nil; effectPreviewRect = .zero; return }
         let localPixels = CGRect(x: (union.minX - rect.minX) * scale,
                                  y: (rect.maxY - union.maxY) * scale,
                                  width: union.width * scale, height: union.height * scale).integral
         let displayRect = CGRect(x: rect.minX + localPixels.minX / scale,
                                  y: rect.maxY - localPixels.maxY / scale,
                                  width: localPixels.width / scale, height: localPixels.height / scale)
-        let work = DispatchWorkItem { [weak self] in
+        pendingEffectRender = (generation, {
             let result: CGImage? = autoreleasepool {
                 let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale).integral
                 guard let crop = source.cropping(to: pixels) else { return nil }
@@ -399,13 +418,28 @@ class OverlayViewModel: ObservableObject {
                 }
                 return AnnotationEffectRenderer.render(source: crop, logicalSize: rect.size, annotations: local, outputRect: localPixels)
             }
+            return (result, displayRect)
+        })
+        startNextEffectPreview()
+    }
+
+    /// One render in flight, one latest request: continuous input cannot starve
+    /// the preview or accumulate a queue of obsolete pointer positions.
+    private func startNextEffectPreview() {
+        guard !effectRendering, let (generation, render) = pendingEffectRender else { return }
+        pendingEffectRender = nil
+        effectRendering = true
+        effectQueue.async { [weak self] in
+            let (image, rect) = render()
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.effectGeneration == generation else { return }
-                self.effectPreview = result; self.effectPreviewRect = displayRect
+                guard let self else { return }
+                self.effectRendering = false
+                if self.effectGeneration == generation {
+                    self.effectPreview = image; self.effectPreviewRect = rect
+                }
+                self.startNextEffectPreview()
             }
         }
-        effectWork = work
-        effectQueue.asyncAfter(deadline: .now() + .milliseconds(24), execute: work)
     }
 
     // MARK: - Selection Logic
@@ -518,13 +552,13 @@ class OverlayViewModel: ObservableObject {
     var selectedShapeRect: CGRect? {
         guard state == .editing, !isEditingText,
               let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
-              [.rectangle, .ellipse, .mosaic].contains(annotation.type) else { return nil }
+              ([.rectangle, .ellipse].contains(annotation.type) || ((annotation.type == .mosaic || annotation.type == .blur) && !annotation.isEffectBrush)) else { return nil }
         return CGRect(from: annotation.startPoint, to: annotation.endPoint)
     }
 
     private var selectedMoveRect: CGRect? {
         guard let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) else { return nil }
-        if [.pen, .blur].contains(annotation.type) { return annotation.selectionBounds.insetBy(dx: -5, dy: -5) }
+        if annotation.type == .pen || annotation.isEffectBrush { return annotation.selectionBounds.insetBy(dx: -5, dy: -5) }
         return selectedShapeRect
     }
 
@@ -665,11 +699,11 @@ class OverlayViewModel: ObservableObject {
         let startPoint = (tool == .mosaic || tool == .blur) ? clampPoint(point, to: selectionRect) : point
         annotation.startPoint = startPoint
         annotation.endPoint = startPoint
-        if tool == .pen || tool == .blur {
+        if tool == .pen || ((tool == .mosaic || tool == .blur) && effectDrawingMode(for: tool) == .brush) {
             annotation.points = [startPoint]
         }
         if tool == .mosaic || tool == .blur {
-            annotation.lineWidth = tool == .blur ? selectedBlurWidth : 24
+            annotation.lineWidth = selectedEffectBrushWidth
             annotation.mosaicBlockSize = selectedMosaicBlockSize
             annotation.blurRadius = selectedBlurRadius
         }
@@ -691,18 +725,20 @@ class OverlayViewModel: ObservableObject {
         
         let nextPoint = (annotation.type == .mosaic || annotation.type == .blur) ? clampPoint(point, to: selectionRect) : point
         annotation.endPoint = nextPoint
-        if annotation.type == .pen || annotation.type == .blur {
-            annotation.points.append(nextPoint)
+        if annotation.type == .pen || annotation.isEffectBrush {
+            if annotation.points.last != nextPoint { annotation.points.append(nextPoint) }
         }
         let distance = hypot(annotation.endPoint.x - annotation.startPoint.x, annotation.endPoint.y - annotation.startPoint.y)
         let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
         let valid: Bool
-        switch annotation.type {
-        case .pen, .blur:
+        if annotation.type == .pen || annotation.isEffectBrush {
             valid = annotation.points.contains { hypot($0.x - annotation.startPoint.x, $0.y - annotation.startPoint.y) >= annotationClickTolerance }
-        case .rectangle, .ellipse, .mosaic: valid = rect.width >= 3 && rect.height >= 3 && distance >= 5
-        case .arrow: valid = distance >= 5
-        default: valid = true
+        } else {
+            switch annotation.type {
+            case .rectangle, .ellipse, .mosaic, .blur: valid = rect.width >= 3 && rect.height >= 3 && distance >= 5
+            case .arrow: valid = distance >= 5
+            default: valid = true
+            }
         }
         currentAnnotation = valid ? annotation : nil
         pendingDrawing = valid ? nil : annotation
@@ -768,7 +804,7 @@ class OverlayViewModel: ObservableObject {
                 action = wrapped
             }
             if case .effect(let wrapped, let block, let width, let radius) = edit {
-                selectedMosaicBlockSize = block; selectedBlurWidth = width; selectedBlurRadius = radius
+                selectedMosaicBlockSize = block; selectedEffectBrushWidth = width; selectedBlurRadius = radius
                 action = wrapped
             }
             switch action {

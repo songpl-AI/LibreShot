@@ -114,8 +114,8 @@ struct EditorToolbarView: View {
         case .complete:
             label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
         case .save: label = settings.autoSaveEnabled ? "保存到预设目录" : "保存…"
-        case .mosaic: label = "马赛克：框选像素化区域；在样式面板调整颗粒"
-        case .blur: label = "模糊：拖动涂抹；在样式面板调整大小与强度"
+        case .mosaic: label = "马赛克：支持涂抹和框选，拖动时预览；在效果参数中切换"
+        case .blur: label = "模糊：支持涂抹和框选，拖动时预览；在效果参数中切换"
         case .style where viewModel.activeEffectTool != nil: label = "效果参数"
         case .undo where isDisabled(item): label = "撤销（当前没有标注）"
         case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
@@ -213,10 +213,21 @@ struct StylePopoverView: View {
         VStack(alignment: .leading, spacing: 12) {
             if let tool = viewModel.activeEffectTool {
                 Text(tool == .mosaic ? "马赛克效果" : "模糊效果").font(.headline)
+                Picker("应用方式", selection: Binding(
+                    get: { viewModel.effectDrawingMode(for: tool) },
+                    set: { viewModel.setEffectDrawingMode($0, for: tool) }
+                )) {
+                    ForEach(EffectDrawingMode.allCases) { mode in
+                        Label(mode.title, systemImage: mode == .brush ? "paintbrush.pointed" : "rectangle.dashed").tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                if viewModel.effectDrawingMode(for: tool) == .brush {
+                    effectPresets("笔刷大小", parameter: "width", values: [20, 36, 60, 90, 120])
+                }
                 if tool == .mosaic {
                     effectPresets("颗粒大小", parameter: "block", values: [8, 12, 16, 24, 32])
                 } else {
-                    effectPresets("笔刷大小", parameter: "width", values: [20, 36, 60, 90, 120])
                     effectPresets("模糊强度", parameter: "radius", values: [4, 8, 12, 20, 32])
                 }
             } else {

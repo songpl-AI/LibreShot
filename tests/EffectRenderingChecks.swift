@@ -92,6 +92,19 @@ struct EffectRenderingChecks {
         let m = OverlayViewModel(settings: SettingsService(defaults: defaults))
         m.selectionRect = CGRect(origin: .zero, size: size); m.state = .editing
         m.updatePreviewImage(source); m.selectTool(.blur)
+        // Keep delivering drag updates faster than the old debounce interval.
+        // No mouse-up is sent: effects must become visible while dragging.
+        m.startDrawing(at: CGPoint(x: 40, y: 80))
+        var sawPreviewDuringDrag = false
+        for step in 1...60 {
+            m.updateDrawing(to: CGPoint(x: 40 + step * 2, y: 80))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            sawPreviewDuringDrag = sawPreviewDuringDrag || m.effectPreview != nil
+        }
+        precondition(sawPreviewDuringDrag, "continuous drag must show effect before pointer-up")
+        precondition(m.annotations.isEmpty && m.currentAnnotation != nil)
+        m.endDrawing(); m.undoLastAnnotation()
+        print("PASS: continuous drag renders before pointer-up")
         m.setEffectValue(60, parameter: "width"); m.setEffectValue(8, parameter: "radius")
         m.startDrawing(at: CGPoint(x: 40, y: 80)); m.updateDrawing(to: CGPoint(x: 180, y: 80)); m.endDrawing()
         precondition(m.annotations[0].lineWidth == 60 && m.annotations[0].blurRadius == 8)
@@ -108,6 +121,67 @@ struct EffectRenderingChecks {
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         precondition(m.effectPreview == nil && m.previewImage == nil, "stale rendering must not restore a closed session")
         print("PASS: production gestures, parameter editing/undo, async preview and session cleanup")
+
+        for tool in [AnnotationType.mosaic, .blur] {
+            for mode in EffectDrawingMode.allCases {
+                m.reset()
+                m.selectionRect = CGRect(origin: .zero, size: size); m.state = .editing
+                m.updatePreviewImage(source)
+                m.setEffectDrawingMode(mode, for: tool)
+                m.startDrawing(at: CGPoint(x: 40, y: 40))
+                var frames = 0
+                var previousPreview: CGImage?
+                for step in 1...60 {
+                    m.updateDrawing(to: CGPoint(x: 40 + step * 2, y: 40 + step))
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+                    if let preview = m.effectPreview, preview !== previousPreview {
+                        frames += 1; previousPreview = preview
+                    }
+                }
+                precondition(frames >= 2, "both modes must keep refreshing during drag")
+                precondition(m.annotations.isEmpty, "preview must not commit before pointer-up")
+                let current = m.currentAnnotation!
+                precondition(current.isEffectBrush == (mode == .brush))
+                if mode == .brush {
+                    precondition(current.selectionBounds.contains(CGPoint(x: 80, y: 60)))
+                    precondition(!current.containsSelectionPoint(CGPoint(x: 45, y: 95)), "brush must not hit empty bounding-box corners")
+                } else {
+                    precondition(current.points.isEmpty)
+                    precondition(current.containsSelectionPoint(CGPoint(x: 45, y: 95)))
+                }
+                m.endDrawing()
+                // Wait for the newest frame after pointer-up, not just any frame.
+                let expected = AnnotationEffectRenderer.render(source: source, logicalSize: size, annotations: m.annotations)!
+                let until = Date().addingTimeInterval(4)
+                var matches = false
+                repeat {
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+                    if let preview = m.effectPreview, let crop = expected.cropping(to: m.effectPreviewRect) {
+                        matches = pixels(preview) == pixels(crop)
+                    }
+                } while !matches && Date() < until
+                precondition(matches, "latest live preview must match committed export")
+                let exported = service.composite(image: NSImage(cgImage: source, size: size), annotations: m.annotations).cgImage(forProposedRect: nil, context: nil, hints: nil)!
+                precondition(pixels(exported) == pixels(expected))
+                let original = m.annotations[0]
+                m.moveSelectedAnnotation(offset: CGSize(width: 3, height: 2))
+                precondition(m.annotations[0].selectionBounds == original.selectionBounds.offsetBy(dx: 3, dy: 2))
+                m.undoLastAnnotation()
+                precondition(m.annotations.isEmpty)
+            }
+        }
+        // Brush mosaic must leave pixels in its bounding box but off the path alone.
+        var painted = blur
+        painted.type = .mosaic; painted.lineWidth = 12
+        painted.points = [CGPoint(x: 40, y: 40), CGPoint(x: 160, y: 100)]
+        painted.startPoint = painted.points[0]; painted.endPoint = painted.points[1]
+        let paintedPixels = pixels(AnnotationEffectRenderer.render(source: source, logicalSize: size, annotations: [painted])!)
+        let offPath = (90 * width + 45) * 4
+        precondition(paintedPixels[offPath] == input[offPath], "mosaic brush must preserve pixels off its stroke")
+        m.reset()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        precondition(m.effectPreview == nil)
+        print("PASS: mosaic/blur brush and rectangle live frames, hit testing, move, undo and export")
 
         let output = URL(fileURLWithPath: "/tmp/libreshot-effects-qa")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)

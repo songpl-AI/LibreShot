@@ -140,4 +140,4 @@ Issue #4 补充覆盖多种截图宽高、小幅位移以及 20/32/64 px 固定�
 
 ## 马赛克与模糊共享渲染
 
-`bash tests/run-effect-checks.sh` 检查真实效果预览/导出、块平均与网格稳定、笔刷宽度/半径、重叠、Retina 与裁剪偏移、透明度、长图局部输出、参数撤销以及异步渲染关闭隔离。使用独立设置域，样例 PNG 输出至 `/tmp/libreshot-effects-qa`。见 [优化与验证记录](../docs/qa/mosaic-blur-quality-20261005.md)。
+`bash tests/run-effect-checks.sh` 检查连续拖动时松手前多次刷新、马赛克/模糊涂抹与框选四种组合的选中/移动/撤销及最终预览与导出一致性、真实效果预览/导出、块平均与网格稳定、笔刷宽度/半径、重叠、Retina 与裁剪偏移、透明度、长图局部输出、参数撤销以及异步渲染关闭隔离。使用独立设置域，样例 PNG 输出至 `/tmp/libreshot-effects-qa`。见 [优化与验证记录](../docs/qa/mosaic-blur-quality-20261005.md)。
