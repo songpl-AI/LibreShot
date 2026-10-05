@@ -37,7 +37,7 @@ LibreShot 是一款轻量、现代化的 macOS 截图与标注工具，原生开
 
 升级时先退出 LibreShot，再用新版本替换“应用程序”中的旧版本；已有工具栏和保存设置会保留。安装包同时支持 Apple Silicon 与 Intel，翻译功能需要 macOS 26+。
 
-v1.3.0 安装包使用临时 ad-hoc 签名，未经过 Apple 公证，因此 macOS 默认可能阻止直接打开。请只从本仓库 Release 下载，先用附件 `SHA256SUMS` 校验，再按 [Apple 官方的打开 App 指引](https://support.apple.com/zh-cn/102445) 在“系统设置 → 隐私与安全性”中确认；不要全局关闭 Gatekeeper。若提示文件损坏，先重新下载并核对校验值。此包不等同于 Developer ID 签名、公证后的免提示安装包。
+GitHub 安装包使用 ad-hoc 签名，未经过 Apple 公证，因此 macOS 默认可能阻止直接打开。请只从本仓库 Release 下载，先用附件 `SHA256SUMS` 校验，再按 [Apple 官方的打开 App 指引](https://support.apple.com/zh-cn/102445) 在“系统设置 → 隐私与安全性”中确认；不要全局关闭 Gatekeeper。若提示文件损坏，先重新下载并核对校验值。此包不等同于 Developer ID 签名、公证后的免提示安装包。
 
 首次截图需要在“系统设置 → 隐私与安全性”中允许 LibreShot 录制屏幕（该项目在不同系统版本中可能叫“屏幕录制”或“录屏与系统录音”）。双击 Option 还需“输入监控”权限。升级临时签名版本后，macOS 可能要求重新授予这两项权限，并退出、重新打开 LibreShot。
 
@@ -57,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *当前源码使用 macOS 26 SDK，请使用 Xcode 26 或更新版本；应用部署目标为 macOS 13.0。*
 
-GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，待发布的修复见 [1.3.1 更新说明](docs/releases/1.3.1.md)。
+GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，当前待发布的修复见 [1.3.2 更新说明](docs/releases/1.3.2.md)。
 
 ## 🚀 使用指南
 

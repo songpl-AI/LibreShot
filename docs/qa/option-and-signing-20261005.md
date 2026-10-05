@@ -23,3 +23,10 @@
 正式 Developer ID 交付需本机有可用的 Developer ID Application 签名身份（证书与对应私钥），然后运行现有 `build_release.sh --developer-id` 生成新的独立目录包并由 `scripts/verify_release_signing.sh` 检查应用和 OCR helper。该脚本明确将公证列为另一步；不能将签名通过写成公证完成。
 
 当前没有有效身份，因此不启动注定失败的正式签名构建，不把 ad-hoc 包改称正式签名包。证书就绪后，仍需公证、最终包校验和正式身份的升级授权验收。公开发布与关闭 GitHub Issue尚未执行。
+
+
+## 用户实体按键反馈与分发路线纠正
+
+用户随后反馈按 Option 后出现截图遮罩，当前权限与 Option 截图触发链路获得用户实测确认。左右按键、组合键中断和其他边界仍未完整覆盖。
+
+用户再次明确没有付费开发者账号，要求沿用之前 GitHub Release 的 ad-hoc 分发。仓库 README 和 build_release.sh 本已规定该路线为默认，因此前文 Developer ID 条件仅适用于将来选择付费签名、公证的路线，不作为当前交付阻塞。当前按 ad-hoc 构建 DMG、验证沙盒和嵌套 helper、附 SHA256SUMS 与安装/升级权限恢复说明；不承诺升级免重新授权。
