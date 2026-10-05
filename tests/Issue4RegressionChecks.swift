@@ -203,6 +203,48 @@ struct Issue4RegressionChecks {
             check(samePixels(output, supplied), "supplied mixed-content image stitches pixel-for-pixel during continuous scrolling")
         }
 
+        func paddedFrame(stride: Int, padding: UInt8, changed: Bool = false) -> CGImage {
+            var bytes = [UInt8](repeating: padding, count: stride * 40)
+            for y in 0..<40 { for x in 0..<40 { bytes[y * stride + x] = 245 } }
+            if changed { bytes[20 * stride + 20] = 40 }
+            return CGImage(width: 40, height: 40, bitsPerComponent: 8, bitsPerPixel: 8,
+                           bytesPerRow: stride, space: CGColorSpaceCreateDeviceGray(),
+                           bitmapInfo: CGBitmapInfo(rawValue: 0),
+                           provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil,
+                           shouldInterpolate: false, intent: .defaultIntent)!
+        }
+        let exactDedup = LongCaptureFrameDeduplicator()
+        exactDedup.markAccepted(.init(image: paddedFrame(stride: 41, padding: 0), timestamp: 0))
+        if case .ignore = exactDedup.process(frame: .init(image: paddedFrame(stride: 42, padding: 255), timestamp: 1)) {
+            check(true, "identical pixels with different row padding are deduplicated")
+        } else { check(false, "identical pixels with different row padding are deduplicated") }
+        if case .accept = exactDedup.process(frame: .init(image: paddedFrame(stride: 41, padding: 0, changed: true), timestamp: 2)) {
+            check(true, "a small real pixel change is not discarded as a duplicate")
+        } else { check(false, "a small real pixel change is not discarded as a duplicate") }
+
+        // Real Finder rendering: repeated labels differ only in their small row numbers.
+        // Preserve intermediate motion even when a thumbnail looks almost unchanged.
+        let finderURL = URL(fileURLWithPath: "tests/fixtures/finder-numbered-rows.png")
+        let finder = NSImage(contentsOf: finderURL)!.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+        let finderWidth = finder.width - 40
+        let finalOffset = finder.height - 620
+        for step in [4, 80, 160] {
+            let document = LongCaptureFrameAccumulator()
+            let offsets = Array(stride(from: 20, to: finalOffset, by: step)) + [finalOffset]
+            for (i, offset) in offsets.enumerated() {
+                let frame = finder.cropping(to: CGRect(x: 20, y: offset, width: finderWidth, height: 600))!
+                let progress = document.process(frame: .init(image: frame, timestamp: Double(i) * 0.1))
+                check(progress?.warning == nil, "Finder \(step)px scroll frame \(i + 1) remains connected")
+            }
+            do {
+                let output = try document.renderFinalImage().cgImage(forProposedRect: nil, context: nil, hints: nil)!
+                let expected = finder.cropping(to: CGRect(x: 20, y: 20, width: finderWidth, height: finder.height - 40))!
+                check(samePixels(output, expected), "Finder \(step)px scrolling renders every row exactly once")
+            } catch {
+                check(false, "Finder \(step)px scrolling must finish: \(error.localizedDescription)")
+            }
+        }
+
         // Colored, wide-gamut frames exercise fragment copies and the final color conversion.
         for colorSpaceName in [CGColorSpace.sRGB, CGColorSpace.displayP3] {
             let width = 480, height = 624

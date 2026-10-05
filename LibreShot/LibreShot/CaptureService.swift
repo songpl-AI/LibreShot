@@ -807,47 +807,36 @@ enum LongCaptureFrameDecision {
 }
 
 final class LongCaptureFrameDeduplicator {
-    private var accepted: LongCaptureThumbnailSignature?
+    private var acceptedImage: CGImage?
 
     func process(frame: LongCaptureFrame) -> LongCaptureFrameDecision {
-        guard let signature = LongCaptureThumbnailSignature(image: frame.image) else { return .ignore }
-        // Complete ScreenCaptureKit frames may be matched during continuous scrolling.
-        // Waiting for the scroll to stop can discard every intermediate overlapping frame.
-        if let accepted, signature.averageDifference(from: accepted) < 0.4 { return .ignore }
+        // Repeated Finder rows may differ only in a few number glyphs. A thumbnail
+        // tolerance can discard real motion and leave the next frame without overlap.
+        if let acceptedImage, Self.samePixels(acceptedImage, frame.image) { return .ignore }
         return .accept(frame)
     }
 
     /// Failed matches remain retryable and never become the deduplication baseline.
     func markAccepted(_ frame: LongCaptureFrame) {
-        accepted = LongCaptureThumbnailSignature(image: frame.image)
+        acceptedImage = frame.image
     }
-}
 
-private struct LongCaptureThumbnailSignature {
-    let pixels: [UInt8]
-    let width: Int
-    let height: Int
-    
-    init?(image: CGImage) {
-        let targetWidth = 96
-        let targetHeight = max(Int(round(CGFloat(targetWidth) * CGFloat(image.height) / CGFloat(max(image.width, 1)))), 24)
-        guard let scaledImage = LongCaptureImageSampling.scale(image: image, to: CGSize(width: targetWidth, height: targetHeight)),
-              let pixels = LongCaptureImageSampling.grayscalePixels(from: scaledImage) else {
-            return nil
+    private static func samePixels(_ a: CGImage, _ b: CGImage) -> Bool {
+        guard a.width == b.width, a.height == b.height,
+              a.bitsPerComponent == b.bitsPerComponent, a.bitsPerPixel == b.bitsPerPixel,
+              a.bitmapInfo == b.bitmapInfo, a.decode == nil, b.decode == nil,
+              let ac = a.colorSpace, let bc = b.colorSpace, CFEqual(ac, bc),
+              let ad = a.dataProvider?.data, let bd = b.dataProvider?.data,
+              let ap = CFDataGetBytePtr(ad), let bp = CFDataGetBytePtr(bd) else { return false }
+        let rowBytes = (a.width * a.bitsPerPixel + 7) / 8
+        guard rowBytes > 0, a.bytesPerRow >= rowBytes, b.bytesPerRow >= rowBytes,
+              CFDataGetLength(ad) >= (a.height - 1) * a.bytesPerRow + rowBytes,
+              CFDataGetLength(bd) >= (b.height - 1) * b.bytesPerRow + rowBytes else { return false }
+        // Padding is not image content and may differ between capture buffers.
+        for y in 0..<a.height {
+            if memcmp(ap + y * a.bytesPerRow, bp + y * b.bytesPerRow, rowBytes) != 0 { return false }
         }
-        self.pixels = pixels
-        self.width = scaledImage.width
-        self.height = scaledImage.height
-    }
-    
-    func averageDifference(from other: LongCaptureThumbnailSignature) -> Double {
-        let count = min(pixels.count, other.pixels.count)
-        guard count > 0 else { return .greatestFiniteMagnitude }
-        var total = 0.0
-        for index in 0..<count {
-            total += abs(Double(pixels[index]) - Double(other.pixels[index]))
-        }
-        return total / Double(count)
+        return true
     }
 }
 
