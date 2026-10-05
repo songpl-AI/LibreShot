@@ -2,7 +2,7 @@
 
 ## 未发布 / Unreleased
 
-暂无记录。
+- 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
 
 ## [1.3.2](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.2) — 2026-10-05
 

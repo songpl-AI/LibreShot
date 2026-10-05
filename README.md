@@ -126,7 +126,7 @@ LibreShot 是一个免费开源项目。如果您觉得它提高了您的工作�
 
 “点击已有标注自动选中”和矩形、椭圆缩放已在 1.2.0 实现，见 [更新说明](docs/releases/1.2.0.md) 和 [标注验收](docs/qa/1.2.0.md)。隐藏按钮主要用于简化操作，不等同于卸载功能或明显减少内存。
 
-v1.3.2 已在本机 Apple Silicon / macOS 26 完成发行包、安装、授权更新、截图保存、OCR 和重启授权复用检查；真实 Finder 133 帧重放逐像素正确。Intel、macOS 13/14、多显示器及更多滚动场景仍欢迎反馈。Issue #5 的约 10 MiB 内存目标仍未达到。[本版验收](docs/qa/1.3.2-20-package-20261005.md) · [基础验收](docs/qa/1.1.0.md)。
+v1.3.2 已在本机 Apple Silicon / macOS 26 完成发行包、安装、授权更新、截图保存、OCR 和重启授权复用检查；真实 Finder 133 帧重放逐像素正确。Intel、macOS 13/14、多显示器及更多滚动场景仍欢迎反馈。约 10 MiB 的内存目标已取消，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭；关闭不表示达到该数值。[本版验收](docs/qa/1.3.2-20-package-20261005.md) · [基础验收](docs/qa/1.1.0.md)。
 
 ## 🤝 贡献
 

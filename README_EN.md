@@ -124,7 +124,7 @@ Or support via [GitHub Sponsors](https://github.com/sponsors/songpl-AI).
 
 Automatic annotation selection and rectangle/ellipse resizing are available in 1.2.0. See the [release notes](docs/releases/1.2.0.md) and [annotation checks](docs/qa/1.2.0.md). Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
 
-v1.3.2 passed package, installation, permission renewal, capture/save, OCR, and same-signature restart checks on Apple Silicon / macOS 26. A real Finder replay of 133 frames produced pixel-identical output. Intel, macOS 13/14, multiple displays, and more scrolling scenarios still need feedback. Issue #5’s approximately 10 MiB memory target remains unmet. See the [v1.3.2 validation](docs/qa/1.3.2-20-package-20261005.md) and [capture checks](docs/qa/1.1.0.md).
+v1.3.2 passed package, installation, permission renewal, capture/save, OCR, and same-signature restart checks on Apple Silicon / macOS 26. A real Finder replay of 133 frames produced pixel-identical output. Intel, macOS 13/14, multiple displays, and more scrolling scenarios still need feedback. The approximately 10 MiB memory target was withdrawn on 2026-10-05 and [Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) was closed as not planned; this does not claim the target was achieved. See the [v1.3.2 validation](docs/qa/1.3.2-20-package-20261005.md) and [capture checks](docs/qa/1.1.0.md).
 
 ## 🤝 Contributing
 
