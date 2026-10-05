@@ -1,6 +1,6 @@
 # 默认工具与序号编辑：实现及验证
 
-日期：2026-10-05。基于 master 2d4e04c，在 codex/default-tool-number-editing 实现。尚未发布、未替换本机已安装的 1.3.4。
+日期：2026-10-05。基于 master 2d4e04c，在 codex/default-tool-number-editing 实现。功能实现时尚未发布；现已构建并安装本地 1.3.5 build 24，基础验收通过，见 [安装记录](1.3.5-24-package-20261005.md)。仍未公开发布。
 
 ## 实现范围
 
