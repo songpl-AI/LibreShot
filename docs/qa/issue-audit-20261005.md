@@ -1,5 +1,7 @@
 # GitHub Issue 与优化清单复核
 
+当前交付状态：马赛克遗漏已补齐并发布 [1.3.3 build 21](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.3)，本机已安装并完成真实拖动、⌘Z 与保存验收。[#9 结案说明](https://github.com/songpl-AI/LibreShot/issues/9#issuecomment-5989035898) 已逐项记录完成内容和暂缓项，Issue 已关闭；下方保留此次审核时的 1.3.2 状态，不表示所有许愿功能均已实现。
+
 复核日期：2026-10-05。代码基线：`c90e4be`；最近发行版本：1.3.2 build 20。本轮只审查，没有修改应用代码、关闭 Issue 或发布 GitHub 评论。
 
 GitHub 当前只有 [#9：来自一个女生的视觉 UI 优化建议](https://github.com/songpl-AI/LibreShot/issues/9) 开放。#1–#7 已关闭；其中 #5 是维护者取消约 10 MB 目标后按“不再计划”关闭，不表示达到该数值。不能仅凭关闭状态判断每条许愿均已实现。
