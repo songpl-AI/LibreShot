@@ -418,7 +418,7 @@ class OverlayViewModel: ObservableObject {
     var selectedShapeRect: CGRect? {
         guard state == .editing, !isEditingText,
               let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
-              annotation.type == .rectangle || annotation.type == .ellipse else { return nil }
+              [.rectangle, .ellipse, .mosaic].contains(annotation.type) else { return nil }
         return CGRect(from: annotation.startPoint, to: annotation.endPoint)
     }
 

@@ -84,6 +84,111 @@ struct Issue9RegressionChecks {
         continuous.endDrawing()
         check(continuous.annotations.count == 2 && continuous.selectedTool == .rectangle,
               "drawing can continue in empty space without reselecting the tool")
+        let mosaic = model()
+        mosaic.selectedTool = .mosaic
+        mosaic.startDrawing(at: CGPoint(x: 140, y: 120))
+        mosaic.updateDrawing(to: CGPoint(x: 80, y: 80))
+        mosaic.endDrawing()
+        let originalMosaic = mosaic.annotations[0]
+        let mosaicRect = CGRect(x: 80, y: 80, width: 60, height: 40)
+        check(mosaic.selectedShapeRect == mosaicRect && mosaic.selectedAnnotationID == originalMosaic.id,
+              "reverse-drawn mosaic is immediately selected with resize handles")
+        for handle in SelectionHandle.allCases {
+            let point = handle.position(in: mosaicRect)
+            let target = CGPoint(x: point.x + 10, y: point.y + 10)
+            let expectedCursor: OverlayViewModel.CursorStyle
+            switch handle {
+            case .left, .right: expectedCursor = .horizontal
+            case .top, .bottom: expectedCursor = .vertical
+            case .topLeft, .bottomRight: expectedCursor = .diagonalDown
+            case .topRight, .bottomLeft: expectedCursor = .diagonalUp
+            }
+            check(mosaic.cursorStyle(at: point) == expectedCursor, "mosaic \(handle) has directional hover feedback")
+            check(mosaic.handleSelectedShapeDrag(from: point, to: target, within: mosaic.selectionRect),
+                  "mosaic \(handle) accepts resizing with mosaic tool active")
+            mosaic.endSelectedShapeDrag()
+            let resized = mosaic.selectedShapeRect!
+            let leftMoves = [.left, .topLeft, .bottomLeft].contains(handle)
+            let rightMoves = [.right, .topRight, .bottomRight].contains(handle)
+            let topMoves = [.top, .topLeft, .topRight].contains(handle)
+            let bottomMoves = [.bottom, .bottomLeft, .bottomRight].contains(handle)
+            check(resized.minX == mosaicRect.minX + (leftMoves ? 10 : 0)
+                  && resized.maxX == mosaicRect.maxX + (rightMoves ? 10 : 0)
+                  && resized.minY == mosaicRect.minY + (topMoves ? 10 : 0)
+                  && resized.maxY == mosaicRect.maxY + (bottomMoves ? 10 : 0),
+                  "mosaic \(handle) adjusts only its corresponding edges")
+            mosaic.undoLastAnnotation()
+            check(mosaic.annotations == [originalMosaic], "undo restores reverse-drawn mosaic after \(handle) resize")
+        }
+        let bottomRight = SelectionHandle.bottomRight.position(in: mosaicRect)
+        _ = mosaic.handleSelectedShapeDrag(from: bottomRight, to: CGPoint(x: 500, y: 500), within: mosaic.selectionRect)
+        mosaic.endSelectedShapeDrag()
+        check(mosaic.selectedShapeRect?.maxX == mosaic.selectionRect.maxX
+              && mosaic.selectedShapeRect?.maxY == mosaic.selectionRect.maxY,
+              "mosaic resize stays inside the capture bounds")
+        mosaic.undoLastAnnotation()
+        _ = mosaic.handleSelectedShapeDrag(from: bottomRight, to: CGPoint(x: 0, y: 0), within: mosaic.selectionRect)
+        mosaic.endSelectedShapeDrag()
+        check(mosaic.selectedShapeRect?.size == CGSize(width: 12, height: 12),
+              "mosaic resize cannot invert or collapse the effect region")
+        mosaic.undoLastAnnotation()
+        check(mosaic.cursorStyle(at: CGPoint(x: 100, y: 100)) == .move,
+              "mosaic interior retains movement feedback")
+        let selectedMosaicBitmap = render(OverlayView(viewModel: mosaic, showsToolbar: false).background(Color.white))
+        mosaic.selectedAnnotationID = nil
+        let unselectedMosaicBitmap = render(OverlayView(viewModel: mosaic, showsToolbar: false).background(Color.white))
+        let mosaicScale = CGFloat(selectedMosaicBitmap.pixelsWide) / 320
+        func mosaicPixel(_ bitmap: NSBitmapImageRep, _ point: CGPoint) -> NSColor {
+            bitmap.colorAt(x: Int(point.x * mosaicScale), y: Int(point.y * mosaicScale))!.usingColorSpace(.deviceRGB)!
+        }
+        let handleColor = mosaicPixel(selectedMosaicBitmap, CGPoint(x: 110, y: 80))
+        check(handleColor.blueComponent > handleColor.redComponent + 0.2,
+              "selected mosaic renders solid blue circular handles")
+        let haloPoint = CGPoint(x: 100, y: 75)
+        check(mosaicPixel(selectedMosaicBitmap, haloPoint) == mosaicPixel(unselectedMosaicBitmap, haloPoint),
+              "selected mosaic does not render the redundant outer blue halo")
+        mosaic.selectedAnnotationID = originalMosaic.id
+        _ = mosaic.handleSelectedShapeDrag(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 110, y: 110), within: mosaic.selectionRect)
+        mosaic.endSelectedShapeDrag()
+        check(mosaic.selectedShapeRect == mosaicRect.offsetBy(dx: 10, dy: 10), "mosaic interior still moves the entire effect")
+        mosaic.undoLastAnnotation()
+        mosaic.startDrawing(at: CGPoint(x: 180, y: 150))
+        mosaic.updateDrawing(to: CGPoint(x: 220, y: 190))
+        mosaic.endDrawing()
+        check(mosaic.annotations.count == 2 && mosaic.selectedTool == .mosaic,
+              "another mosaic can be drawn without switching tools after adjustment")
+        let exportModel = model()
+        exportModel.annotations = [originalMosaic]
+        exportModel.selectedAnnotationID = originalMosaic.id
+        exportModel.selectedTool = .mosaic
+        _ = exportModel.handleSelectedShapeDrag(from: bottomRight, to: CGPoint(x: 170, y: 150), within: exportModel.selectionRect)
+        exportModel.endSelectedShapeDrag()
+        let exportContext = CGContext(data: nil, width: 320, height: 260, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        for x in 0..<320 {
+            exportContext.setFillColor(CGColor(gray: x.isMultiple(of: 2) ? 0 : 1, alpha: 1))
+            exportContext.fill(CGRect(x: x, y: 0, width: 1, height: 260))
+        }
+        let exportSource = NSImage(cgImage: exportContext.makeImage()!, size: CGSize(width: 320, height: 260))
+        let exportBoard = NSPasteboard(name: .init(suite))
+        defer { exportBoard.releaseGlobally() }
+        let exportService = CaptureService(settings: settings, pasteboard: exportBoard)
+        var expectedMosaic = originalMosaic
+        expectedMosaic.startPoint = CGPoint(x: 80, y: 80)
+        expectedMosaic.endPoint = CGPoint(x: 170, y: 150)
+        func exportedPixels(_ annotations: [Annotation]) -> Data {
+            let image = exportService.composite(image: exportSource, annotations: annotations)
+            return image.cgImage(forProposedRect: nil, context: nil, hints: nil)!.dataProvider!.data! as Data
+        }
+        let adjustedPixels = exportedPixels(exportModel.annotations)
+        check(adjustedPixels == exportedPixels([expectedMosaic]) && adjustedPixels != exportedPixels([originalMosaic]),
+              "mosaic export uses the resized effect region rather than its original bounds")
+        exportModel.selectedAnnotationID = nil
+        check(adjustedPixels == exportedPixels(exportModel.annotations),
+              "selection handles and blue feedback never enter mosaic export")
+        exportModel.undoLastAnnotation()
+        check(exportedPixels(exportModel.annotations) == exportedPixels([originalMosaic]),
+              "undo restores the original mosaic export pixels")
         let deletion = model()
         var first = Annotation(type: .rectangle, color: .red)
         first.startPoint = CGPoint(x: 80, y: 80); first.endPoint = CGPoint(x: 140, y: 120)
@@ -162,6 +267,7 @@ struct Issue9RegressionChecks {
             try opaque(settingsBitmap).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("toolbar-settings.png"))
             let overlayBitmap = render(OverlayView(viewModel: continuous, showsToolbar: false).background(Color.white))
             try overlayBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("annotation-handles.png"))
+            try selectedMosaicBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("mosaic-handles.png"))
         }
         guard failures == 0 else { exit(1) }
     }

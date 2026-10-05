@@ -4,7 +4,7 @@
 
 LibreShot 是一款轻量、现代化的 macOS 截图与标注工具，原生开发，完全免费开源。
 
-最新公开版本：[v1.3.2](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.2) · [更新说明](docs/releases/1.3.2.md) · [更新日志](CHANGELOG.md)
+最新公开版本：[v1.3.3](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.3) · [更新说明](docs/releases/1.3.3.md) · [更新日志](CHANGELOG.md)
 
 ## ✨ 特性
 
@@ -76,6 +76,9 @@ GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也�
 *(注：菜单项旁边会自动显示当前绑定的全局快捷键，方便随时查看)*
 
 ### 3. 标注与编辑
+
+
+**1.3.3 更新**：马赛克标注新增八向缩放控制点和悬停光标，取消选中时的额外蓝框；支持撤销调整。详见 [更新说明](docs/releases/1.3.3.md)。
 
 **1.3.2 更新**：单击不再产生无效图形；画完矩形、椭圆或箭头立即显示圆形控制点，选中旧标注后保留对应工具，可在空白处继续绘制。拖动已选中标注可移动，箭头可分别调整首尾。按 Delete/Backspace 删除选中项，⌘Z 撤销删除或调整；文字输入时删除键仍用于输入。选区圆角预览与输出保持一致。工具快捷键已移至“工具栏”页对应排序行，空格动作仍在“快捷键”页。验证记录见 [本次修复验收](docs/qa/issue-9-20261002.md)。
 

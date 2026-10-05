@@ -4,6 +4,12 @@
 
 - 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
 
+## [1.3.3](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.3) — 2026-10-05
+
+- 补齐马赛克标注的八向缩放控制点和悬停光标，选中后移除冗余蓝色外框；保留移动、连续绘制和撤销，导出采用调整后的区域。
+
+构建号 21。两组回归检查及本机真实截图、马赛克缩放、⌘Z 和保存验收通过；沿用 ad-hoc 分发。[更新说明](docs/releases/1.3.3.md) · [包与安装验收](docs/qa/1.3.3-21-package-20261005.md)。
+
 ## [1.3.2](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.2) — 2026-10-05
 
 - 修复 Finder 重复列表的细微变化被缩略图去重丢弃，导致长截图中间帧断开；最终仍未接上时保持完整性检查。真实 Finder 133 帧重放逐像素正确，用户越过约 100 / 120 帧后正常成图。

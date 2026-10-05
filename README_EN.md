@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.2](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.2) · [Release notes](docs/releases/1.3.2.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.3](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.3) · [Release notes](docs/releases/1.3.3.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -76,6 +76,9 @@ Click the "Scissors" icon in the menu bar to select functions:
 *(Note: The global shortcut currently bound will be displayed next to the menu item for easy reference)*
 
 ### 3. Annotation & Editing
+
+
+**New in 1.3.3:** Mosaic annotations now have eight resize handles and directional hover cursors, without the extra selection outline. Resizing supports undo. See the [release notes](docs/releases/1.3.3.md).
 
 **New in 1.3.2:** Clicks and small pointer jitter no longer create invalid shapes. Completed shapes are immediately selected, and selecting an existing annotation keeps its tool active for drawing in empty space. Drag selected annotations to move them, or drag arrow endpoints to change direction. Delete/Backspace removes the selected annotation; Cmd-Z undoes deletion and adjustments. Text input keeps its normal delete behavior. Rounded selection previews match the output. Editor shortcuts are now beside the toolbar ordering rows; the Space action remains on the Shortcuts tab. See the [validation record](docs/qa/issue-9-20261002.md).
 
