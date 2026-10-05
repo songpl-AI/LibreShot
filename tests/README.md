@@ -131,3 +131,9 @@ Issue #4 补充覆盖多种截图宽高、小幅位移以及 20/32/64 px 固定�
 `bash tests/run-ocr-worker-checks.sh` 对照真实 Vision 与生产辅助进程，检查中英文、原始文字框、P3/透明像素、缺失组件、异常退出、响应校验、超时、执行中/排队取消、串行执行和父进程退出清理。
 
 `bash tests/run-ocr-sandbox-isolation-profile.sh production` 在签名沙盒应用中调用生产 OCR 接口，连续识别 5 次并空闲 15 秒，保留增量预算 32 MiB。该预算是诊断门槛，不是 10 MiB 的产品承诺。原始 `worker-parent` 模式保留为 PNG 隔离原型对照；`in-process` 仍用于重现旧识别路径的高驻留。
+
+## 1.3.5 默认工具与序号编辑
+
+`bash tests/run-number-tool-checks.sh` 使用生产设置、标注模型、窗口与导出代码，覆盖默认工具持久化和回退、普通截图与图片编辑入口一致、双击改号、数字快捷键隔离、无效输入阻止导出、删除与撤销后的计数、中心缩放及后续大小/颜色继承，并读取实际导出像素。使用独立设置域。
+
+本次新增检查 7 组、Issue #9 回归 92 项、工具栏回归 26 组通过。程序化检查与已安装发行包的真实截图验收分别记录，见 [实现记录](../docs/qa/default-tool-number-editing-20261005.md) 和 [build 24 安装验收](../docs/qa/1.3.5-24-package-20261005.md)。

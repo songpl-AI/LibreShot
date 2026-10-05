@@ -1,6 +1,6 @@
 # 默认工具与序号编辑：实现及验证
 
-日期：2026-10-05。基于 master 2d4e04c，在 codex/default-tool-number-editing 实现。功能实现时尚未发布；现已构建并安装本地 1.3.5 build 24，基础验收通过，见 [安装记录](1.3.5-24-package-20261005.md)。仍未公开发布。
+日期：2026-10-05。基于 master 2d4e04c，在 codex/default-tool-number-editing 实现。功能实现时尚未发布；现已构建并安装本地 1.3.5 build 24，基础验收通过，见 [安装记录](1.3.5-24-package-20261005.md)。用户试用确认未发现异常，已授权发布 [1.3.5](../releases/1.3.5.md)。
 
 ## 实现范围
 
@@ -21,4 +21,4 @@
 - `bash tests/run-issue9-checks.sh`：原有笔迹/形状选中、移动、缩放与删除撤销回归。
 - `bash tests/run-toolbar-checks.sh`：工具栏、快捷键、文字编辑、图片翻译、保存回归。
 
-这些是代码与程序化交互验证，不替代安装后的用户实机体验。后续若构建试用包，需按 [安装与权限规范](../operations/install-and-permissions.md) 验证最终安装副本同包重启前后截图/保存，完成后才交付试用。
+这些是代码与程序化交互验证，不替代安装后的用户实机体验。本次最终安装包已按 [安装与权限规范](../operations/install-and-permissions.md) 验证最终安装副本同包重启前后截图/保存，并已交付用户试用确认。

@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.4](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.4) · [Release notes](docs/releases/1.3.4.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.5](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.5) · [Release notes](docs/releases/1.3.5.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -59,11 +59,11 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.4 release notes](docs/releases/1.3.4.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.5 release notes](docs/releases/1.3.5.md).
 
 ## 🚀 Usage Guide
 
-Capture editing starts in Select/Move. Choose a drawing tool explicitly when needed. Version 1.3.4 also fixes irregular freehand selection bounds and reduces accidental marks or movement.
+Capture editing defaults to Select/Move. You can choose another default annotation tool in toolbar settings. Version 1.3.4 also fixes irregular freehand selection bounds and reduces accidental marks or movement.
 
 ### 1. Shortcuts (Recommended)
 - **Area Screenshot**: Default `Cmd + Shift + X`
@@ -82,13 +82,13 @@ Click the "Scissors" icon in the menu bar to select functions:
 ### 3. Annotation & Editing
 
 
-**New in 1.3.3:** Mosaic annotations now have eight resize handles and directional hover cursors, without the extra selection outline. Resizing supports undo. See the [release notes](docs/releases/1.3.4.md).
+**New in 1.3.3:** Mosaic annotations now have eight resize handles and directional hover cursors, without the extra selection outline. Resizing supports undo. See the [release notes](docs/releases/1.3.3.md).
 
 **New in 1.3.2:** Clicks and small pointer jitter no longer create invalid shapes. Completed shapes are immediately selected, and selecting an existing annotation keeps its tool active for drawing in empty space. Drag selected annotations to move them, or drag arrow endpoints to change direction. Delete/Backspace removes the selected annotation; Cmd-Z undoes deletion and adjustments. Text input keeps its normal delete behavior. Rounded selection previews match the output. Editor shortcuts are now beside the toolbar ordering rows; the Space action remains on the Shortcuts tab. See the [validation record](docs/qa/issue-9-20261002.md).
 
 **New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it.
 
-**Development branch (not released)**: Configurable default tool, number editing and number resizing described below are not included in the 1.3.4 release.
+**New in 1.3.5:** Configure the default capture tool, double-click to edit numbers, and resize numbered annotations with size/color inheritance. See the [release notes](docs/releases/1.3.5.md).
 
 After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. While editing a number, Esc first cancels the number edit. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.
