@@ -20,3 +20,7 @@
 ## 用户验收与发布批准
 
 用户试用反馈“现在看着好像没有什么问题了”，随后明确批准上传源码、更新文档并发布 build 23。实体 Option 完整边界仍不据此标记通过。发布使用同一已验收 DMG，不重新构建或重签名；发布结果见后续记录。
+
+## 发布结果
+
+2026-10-05 已公开发布 [v1.3.4 build 23](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.4)，设置为最新稳定版。源码 master 与标签对应 fac3401；后续发布状态文档提交不改变应用本体或标签。附件为 LibreShot-1.3.4-23.dmg、SHA256SUMS 和 INSTALL-AND-PERMISSIONS.md。从 GitHub 下载全部附件后，SHA256SUMS 返回 OK，DMG 与本机已验收包逐字节一致，远端 digest 为 sha256:8de9978b6e312eecc887a1b3eef407bbc1930cb11a64e3fed8b58abb74878098。授权规范附件也与仓库文档一致。前文“未发布”是安装验收当时状态，当前以本节为准。
