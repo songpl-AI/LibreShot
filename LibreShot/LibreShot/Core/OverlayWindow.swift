@@ -25,6 +25,7 @@ class OverlayWindow: NSWindow {
     override func sendEvent(_ event: NSEvent) {
         // Handle Escape before the first responder (including the inline text editor).
         if event.type == .keyDown, event.keyCode == 53, let onEscapeKey {
+            if onEditorShortcut?(event, firstResponder is NSTextView) == true { return }
             onEscapeKey()
             return
         }

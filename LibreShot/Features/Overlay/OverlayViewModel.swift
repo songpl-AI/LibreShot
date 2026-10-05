@@ -88,12 +88,14 @@ class OverlayViewModel: ObservableObject {
     @Published var currentAnnotation: Annotation?
     private var pendingDrawing: Annotation?
     var hasDrawingGesture: Bool { currentAnnotation != nil || pendingDrawing != nil }
-    private enum AnnotationUndo {
+    private indirect enum AnnotationUndo {
+        case numbered(AnnotationUndo, Int, UUID?, CGFloat, Color)
         case remove(UUID)
         case restore(Annotation, Int)
     }
     private var annotationUndo: [AnnotationUndo] = []
     @Published var selectedColor: Color = .red
+    @Published var selectedNumberFontSize: CGFloat = Annotation.numberFontSize
     @Published var selectedFontSize: CGFloat = Annotation.textInputFontSize
     @Published var activeSelectionHandle: SelectionHandle?
     @Published var isMovingSelection: Bool = false
@@ -170,6 +172,13 @@ class OverlayViewModel: ObservableObject {
 
     func performEditorShortcut(_ event: NSEvent, textResponder: Bool = false) -> Bool {
         guard state == .editing, !selectionRect.isEmpty, event.type == .keyDown else { return false }
+        if isEditingNumber, event.keyCode == 53 {
+            cancelTextInput(); return true
+        }
+        if isEditingNumber, [36, 76].contains(event.keyCode),
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            commitTextInput(); return true
+        }
         let editing = isEditingText || textResponder
         let modifiers = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
         if [51, 117].contains(event.keyCode), modifiers == 0, !editing, !showsStylePopover {
@@ -209,35 +218,41 @@ class OverlayViewModel: ObservableObject {
     func confirmCopy() {
         guard canExportSelection else { return }
         commitTextInput()
+        guard !isEditingText else { return }
         onCapture?(selectionRect, annotations, .copy, imageForExport())
     }
     
     func confirmSave() {
         guard canExportSelection else { return }
         commitTextInput()
+        guard !isEditingText else { return }
         onCapture?(selectionRect, annotations, .save, imageForExport())
     }
 
     func confirmSaveAndCopy() {
         guard canExportSelection else { return }
         commitTextInput()
+        guard !isEditingText else { return }
         onCapture?(selectionRect, annotations, .saveAndCopy, imageForExport())
     }
     
     func confirmPin() {
         guard canExportSelection else { return }
         commitTextInput()
+        guard !isEditingText else { return }
         onCapture?(selectionRect, annotations, .pin, imageForExport())
     }
 
     func confirmOCR() {
         guard canExportSelection else { return }
         commitTextInput()
+        guard !isEditingText else { return }
         onCapture?(selectionRect, annotations, .ocr, imageForExport())
     }
 
     func confirmImageTranslation() {
         commitTextInput()
+        guard !isEditingText else { return }
         if translationSource != nil { showsTranslationControls.toggle(); return }
         guard #available(macOS 26.0, *), let image = previewImage,
               !selectionRect.isEmpty, previewScale > 0 else { return }
@@ -271,6 +286,7 @@ class OverlayViewModel: ObservableObject {
     func confirmSaveAs() {
         guard canExportSelection else { return }
         commitTextInput()
+        guard !isEditingText else { return }
         onCapture?(selectionRect, annotations, .saveAs, imageForExport())
     }
     
@@ -342,14 +358,15 @@ class OverlayViewModel: ObservableObject {
                 confirmLongCaptureRegion()
             } else {
                 state = .editing
-                // 每次框选完成进入选择/移动，标注工具由用户主动选择。
-                selectedTool = nil
+                applyInitialTool()
             }
         }
     }
     
-    // MARK: - Annotation Logic
-    
+    func applyInitialTool() {
+        selectedTool = settings.initialAnnotationTool
+    }
+
     // MARK: - Annotation Logic
     
     @Published var selectedAnnotationID: UUID?
@@ -451,7 +468,7 @@ class OverlayViewModel: ObservableObject {
             if handle == nil && arrowEndpoint == nil {
                 let hit = hitTest(at: start)
                 guard hit == annotation.id || (hit == nil && selectedMoveRect?.contains(start) == true) else { return false }
-                if annotation.type == .text, hypot(point.x - start.x, point.y - start.y) < 5 { return false }
+                if [.text, .number].contains(annotation.type), hypot(point.x - start.x, point.y - start.y) < 5 { return false }
             }
             shapeDrag = ShapeDrag(annotation: annotation, start: start, handle: handle, arrowEndpoint: arrowEndpoint)
         }
@@ -518,11 +535,13 @@ class OverlayViewModel: ObservableObject {
         selectedAnnotationID = id
         selectedTool = visibleToolbarItems.contains(where: { $0.annotationType == annotation.type }) ? annotation.type : nil
         selectedColor = annotation.color
-        if annotation.type == .text {
-            selectedFontSize = annotation.fontSize
+        if annotation.type == .number { selectedNumberFontSize = annotation.fontSize }
+        if annotation.type == .text || annotation.type == .number {
+            if annotation.type == .text { selectedFontSize = annotation.fontSize }
             if lastTextTapAnnotationID == id, let last = lastTextTapDate,
                Date().timeIntervalSince(last) < 0.35 {
-                startTextEdit(annotationID: id)
+                if annotation.type == .number { startNumberEdit(annotationID: id) }
+                else { startTextEdit(annotationID: id) }
                 lastTextTapAnnotationID = nil
                 lastTextTapDate = nil
             } else {
@@ -641,7 +660,13 @@ class OverlayViewModel: ObservableObject {
     func deleteSelectedAnnotation() -> Bool {
         guard state == .editing, !isEditingText, let id = selectedAnnotationID,
               let index = annotations.firstIndex(where: { $0.id == id }) else { return false }
-        annotationUndo.append(.restore(annotations.remove(at: index), index))
+        let removed = annotations[index]
+        recordNumberUndo(.restore(removed, index))
+        annotations.remove(at: index)
+        if removed.type == .number, removed.id == lastNumberID {
+            nextNumber = Int(removed.text) ?? nextNumber
+            lastNumberID = annotations.last(where: { $0.type == .number && Int($0.text) == nextNumber - 1 })?.id
+        }
         selectedAnnotationID = nil
         endSelectedShapeDrag()
         clearAnnotationPress()
@@ -652,7 +677,14 @@ class OverlayViewModel: ObservableObject {
 
     func undoLastAnnotation() {
         if let edit = annotationUndo.popLast() {
-            switch edit {
+            var action = edit
+            if case .numbered(let wrapped, let next, let last, let size, let color) = edit {
+                nextNumber = next; lastNumberID = last
+                selectedNumberFontSize = size; selectedColor = color
+                action = wrapped
+            }
+            switch action {
+            case .numbered: break
             case .remove(let id): annotations.removeAll { $0.id == id }
             case .restore(let annotation, let index):
                 annotations.removeAll { $0.id == annotation.id }
@@ -683,6 +715,8 @@ class OverlayViewModel: ObservableObject {
         selectedAnnotationID = nil
         cancelTextInput()
         nextNumber = 1
+        lastNumberID = nil
+        selectedNumberFontSize = Annotation.numberFontSize
         lastTextTapAnnotationID = nil
         lastTextTapDate = nil
         activeSelectionHandle = nil
@@ -740,8 +774,42 @@ class OverlayViewModel: ObservableObject {
         selectedAnnotationID = annotationID
     }
     
+    var isEditingNumber: Bool {
+        isEditingText && annotations.contains { $0.id == editingTextAnnotationID && $0.type == .number }
+    }
+
+    var inputFontSize: CGFloat { isEditingNumber ? selectedNumberFontSize : selectedFontSize }
+
+    func startNumberEdit(annotationID: UUID) {
+        guard state == .editing, let a = annotations.first(where: { $0.id == annotationID }), a.type == .number else { return }
+        cancelTextInput()
+        isEditingText = true
+        editingTextSize = CGSize(width: max(80, a.selectionBounds.width), height: a.fontSize * 1.4)
+        editingTextAnnotationID = a.id
+        editingTextContent = a.text
+        editingTextPosition = a.selectionBounds.origin
+        selectedAnnotationID = a.id
+        selectedNumberFontSize = a.fontSize
+    }
+
     func commitTextInput() {
         guard isEditingText else { return }
+        if isEditingNumber {
+            let value = editingTextContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, value.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let number = Int(value), (1...9999).contains(number),
+                  let index = annotations.firstIndex(where: { $0.id == editingTextAnnotationID }) else {
+                NSSound.beep(); return
+            }
+            recordNumberUndo(.restore(annotations[index], index))
+            annotations[index].text = String(number)
+            nextNumber = number + 1
+            lastNumberID = annotations[index].id
+            cancelTextInput()
+            selectedAnnotationID = nil
+            selectedTool = .number
+            return
+        }
 
         if let editingID = editingTextAnnotationID,
            let index = annotations.firstIndex(where: { $0.id == editingID }) {
@@ -793,18 +861,24 @@ class OverlayViewModel: ObservableObject {
     }
 
     // MARK: - Number Annotation
-    private var nextNumber = 1
+    private(set) var nextNumber = 1
+    private var lastNumberID: UUID?
+
+    private func recordNumberUndo(_ edit: AnnotationUndo) {
+        annotationUndo.append(.numbered(edit, nextNumber, lastNumberID, selectedNumberFontSize, selectedColor))
+    }
 
     func placeNumber(at point: CGPoint) {
-        guard state == .editing, selectedTool == .number else { return }
+        guard state == .editing, selectedTool == .number, !isEditingText, nextNumber <= 9999 else { return }
         guard selectionRect.contains(point) else { return }
 
         var annotation = Annotation(type: .number, color: selectedColor)
         annotation.startPoint = point
         annotation.text = String(nextNumber)
-        annotation.fontSize = Annotation.numberFontSize
+        annotation.fontSize = selectedNumberFontSize
+        recordNumberUndo(.remove(annotation.id))
         annotations.append(annotation)
-        annotationUndo.append(.remove(annotation.id))
+        lastNumberID = annotation.id
         nextNumber += 1
         selectedAnnotationID = nil
     }
@@ -905,6 +979,9 @@ class OverlayViewModel: ObservableObject {
     func updateSelectedStyle(color: Color? = nil, fontSize: CGFloat? = nil) {
         guard let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
 
+        if color != nil, annotations[index].type == .number {
+            recordNumberUndo(.restore(annotations[index], index))
+        }
         if let color = color {
             annotations[index].color = color
         }
@@ -915,8 +992,8 @@ class OverlayViewModel: ObservableObject {
 
     /// 设置当前颜色：更新 selectedColor，并立即重染选中的标注（若有）
     func setColor(_ color: Color) {
-        selectedColor = color
         updateSelectedStyle(color: color)
+        selectedColor = color
     }
 
     /// 设置字号：更新 selectedFontSize，并立即应用到选中的文字标注（若有）
@@ -931,26 +1008,28 @@ class OverlayViewModel: ObservableObject {
     private var textResizeStartFontSize: CGFloat = 24
     private var textResizeStartDiag: CGFloat = 1
     private var textResizeOriginal: Annotation?
+    private var numberResizeState: (Int, UUID?, CGFloat, Color)?
 
-    /// 选中文字标注的右下角缩放手柄位置（无选中/非文字返回 nil）
+    /// 文字与序号共用右下角字号缩放手柄；序号保持中心锚点。
     var selectedTextResizeHandle: CGPoint? {
         guard let id = selectedAnnotationID,
               let annotation = annotations.first(where: { $0.id == id }),
-              annotation.type == .text else { return nil }
-        let rect = annotation.textBoundingRect
+              [.text, .number].contains(annotation.type) else { return nil }
+        let rect = annotation.selectionBounds
         return CGPoint(x: rect.maxX, y: rect.maxY)
     }
 
     func beginTextResize(at point: CGPoint) {
         guard let id = selectedAnnotationID,
               let annotation = annotations.first(where: { $0.id == id }),
-              annotation.type == .text else { return }
+              [.text, .number].contains(annotation.type) else { return }
         isResizingText = true
         textResizeOriginal = annotation
         textResizeAnchor = annotation.startPoint
         textResizeStartFontSize = annotation.fontSize
-        let size = annotation.textBoundingSize
-        textResizeStartDiag = max(hypot(size.width, size.height), 1)
+        let handle = selectedTextResizeHandle ?? annotation.startPoint
+        textResizeStartDiag = max(hypot(handle.x - textResizeAnchor.x, handle.y - textResizeAnchor.y), 1)
+        numberResizeState = (nextNumber, lastNumberID, selectedNumberFontSize, selectedColor)
     }
 
     func updateTextResize(to point: CGPoint) {
@@ -960,12 +1039,18 @@ class OverlayViewModel: ObservableObject {
         let scale = diag / max(textResizeStartDiag, 1)
         let newSize = min(max(textResizeStartFontSize * scale, 8), 96)
         annotations[index].fontSize = newSize
-        selectedFontSize = newSize
+        if annotations[index].type == .number { selectedNumberFontSize = newSize }
+        else { selectedFontSize = newSize }
     }
 
     func endTextResize() {
         if let original = textResizeOriginal, let index = annotations.firstIndex(where: { $0.id == original.id }),
-           annotations[index] != original { annotationUndo.append(.restore(original, index)) }
+           annotations[index] != original {
+            if original.type == .number, let old = numberResizeState {
+                annotationUndo.append(.numbered(.restore(original, index), old.0, old.1, old.2, old.3))
+            } else { annotationUndo.append(.restore(original, index)) }
+        }
+        numberResizeState = nil
         textResizeOriginal = nil
         isResizingText = false
     }

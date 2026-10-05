@@ -32,7 +32,7 @@ extension Annotation {
     var selectionBounds: CGRect {
         if type == .text { return textBoundingRect }
         if type == .number {
-            let radius = fontSize / 2 + 4
+            let radius = numberRadius
             return CGRect(x: startPoint.x - radius, y: startPoint.y - radius, width: radius * 2, height: radius * 2)
         }
         if [.pen, .blur].contains(type), !points.isEmpty {
@@ -42,6 +42,12 @@ extension Annotation {
         }
         return CGRect(from: startPoint, to: endPoint)
     }
+    /// Shared geometry for live drawing, selection and exported multi-digit numbers.
+    var numberRadius: CGFloat {
+        let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize, weight: .semibold)])
+        return max(fontSize, max(size.width, size.height)) / 2 + fontSize / 4
+    }
+
     /// 文字标注的输入字号
     static let textInputFontSize: CGFloat = 24
     /// 序号标注的字号
@@ -70,7 +76,7 @@ extension Annotation {
         case .text:
             return textBoundingRect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         case .number:
-            return hypot(point.x - startPoint.x, point.y - startPoint.y) <= fontSize / 2 + 4 + tolerance
+            return hypot(point.x - startPoint.x, point.y - startPoint.y) <= numberRadius + tolerance
         case .mosaic:
             let all = points + [startPoint, endPoint]
             let minX = all.map(\.x).min()!, maxX = all.map(\.x).max()!

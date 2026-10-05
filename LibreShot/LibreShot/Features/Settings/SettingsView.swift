@@ -49,6 +49,18 @@ struct ToolbarSettingsView: View {
                 .font(.callout)
                 .foregroundColor(.secondary)
 
+            Picker("截图后的默认工具", selection: Binding(
+                get: { settings.defaultEditorTool },
+                set: { settings.setDefaultEditorTool($0) }
+            )) {
+                Text(ToolbarItem.select.title).tag(ToolbarItem.select)
+                ForEach(settings.toolbarConfiguration.visibleItems.filter { $0.annotationType != nil }) { item in
+                    Text(item.title).tag(item)
+                }
+            }
+            Text("每次新截图使用此工具；隐藏默认工具时回到选择/移动。")
+                .font(.caption).foregroundColor(.secondary)
+
             List {
                 ForEach(settings.toolbarConfiguration.orderedItems) { item in
                     HStack(spacing: 10) {

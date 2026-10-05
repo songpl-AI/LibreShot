@@ -74,7 +74,7 @@ struct OverlayView: View {
                                     }
                                 }
                                 // 文字选中：右下角缩放手柄
-                                if annotation.type == .text {
+                                if annotation.type == .text || annotation.type == .number {
                                     let handlePos = CGPoint(x: rect.maxX, y: rect.maxY)
                                     let handleRect = CGRect(x: handlePos.x - 5, y: handlePos.y - 5, width: 10, height: 10)
                                     context.fill(Path(ellipseIn: handleRect), with: .color(.white))
@@ -145,9 +145,10 @@ struct OverlayView: View {
                     if viewModel.isEditingText {
                         InlineTextEditor(
                             text: $viewModel.editingTextContent,
-                            fontSize: viewModel.selectedFontSize,
+                            fontSize: viewModel.inputFontSize,
                             color: NSColor(viewModel.selectedColor),
                             cursorAtEnd: viewModel.editingTextAnnotationID != nil,
+                            selectsAllOnFocus: viewModel.isEditingNumber,
                             allowsAncestorScrolling: viewModel.captureMode != .imageEditor,
                             onSizeChange: { size in
                                 if size != viewModel.editingTextSize {
@@ -157,8 +158,9 @@ struct OverlayView: View {
                         )
                         .frame(
                             width: max(viewModel.editingTextSize.width, 2),
-                            height: max(viewModel.editingTextSize.height, viewModel.selectedFontSize * 1.4)
+                            height: max(viewModel.editingTextSize.height, viewModel.inputFontSize * 1.4)
                         )
+                        .help(viewModel.isEditingNumber ? "输入 1–9999；回车确认，Esc 取消改号" : "输入文字，点击外部确认")
                         .overlay(
                             RoundedRectangle(cornerRadius: 3)
                                 .stroke(Color.blue.opacity(0.55), lineWidth: 1.5)
@@ -495,7 +497,7 @@ struct OverlayView: View {
             let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
             path.addEllipse(in: rect)
         case .number:
-            let radius = annotation.fontSize / 2 + 4
+            let radius = annotation.numberRadius
             let circleRect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
             path.addEllipse(in: circleRect)
         case .mosaic, .blur:

@@ -40,7 +40,7 @@ extension CaptureService {
             if annotation.type == .text {
                 rect = annotation.textBoundingRect
             } else if annotation.type == .number {
-                let radius = annotation.fontSize / 2 + 4
+                let radius = annotation.numberRadius
                 rect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
             } else {
                 let x = min(annotation.startPoint.x, annotation.endPoint.x)
@@ -152,7 +152,7 @@ extension CaptureService {
                 let height = abs(annotation.endPoint.y - annotation.startPoint.y)
                 path.addEllipse(in: CGRect(x: x, y: y, width: width, height: height))
             case .number:
-                let radius = annotation.fontSize / 2 + 4
+                let radius = annotation.numberRadius
                 path.addEllipse(in: CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2))
             case .mosaic, .blur, .text:
                 continue
@@ -172,7 +172,7 @@ extension CaptureService {
             let text = annotation.text as NSString
             let fontSize = annotation.fontSize * scaleY
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: fontSize),
+                .font: NSFont.systemFont(ofSize: fontSize, weight: annotation.type == .number ? .semibold : .regular),
                 .foregroundColor: NSColor(annotation.color)
             ]
             let size = text.size(withAttributes: attributes)

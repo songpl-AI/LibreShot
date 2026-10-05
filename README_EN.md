@@ -88,9 +88,11 @@ Click the "Scissors" icon in the menu bar to select functions:
 
 **New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it.
 
-After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
+**Development branch (not released)**: Configurable default tool, number editing and number resizing described below are not included in the 1.3.4 release.
+
+After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. While editing a number, Esc first cancels the number edit. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.
-- **Numbered Annotation**: Click the number icon to place a circled auto-incrementing number.
+- **Numbered Annotation**: Click the number icon to place a circled auto-incrementing number. Double-click a number to edit it (1–9999); Enter commits and Esc cancels the edit. Setting N makes the next number N+1. Drag the bottom-right handle to resize; subsequent numbers inherit size and color. Deleting the most recently placed or edited number rolls back the next number; middle deletions leave other numbers unchanged. Cmd-Z undoes these edits.
 - **Mosaic/Blur**: Choose the corresponding tool and select an area. Hover over a toolbar button to see its name.
 - **Text**: Click the "T" icon and click on the image to type inline (WYSIWYG); press Enter for a new line, click elsewhere to commit.
 - **Color & Font Size**: Click the four-color palette (red, yellow, blue, green) to open color presets, the system color picker, and font sizes. The thin bar below the palette shows the current color; drag the bottom-right handle of selected text to scale it proportionally.
@@ -109,12 +111,12 @@ Click the **OCR** icon on the toolbar. The software will automatically recognize
 ### 7. Settings
 Click the scissors icon in the menu bar and select "Settings...", or press `Cmd + ,` while LibreShot is active, to:
 - **Set Shortcuts**: Customize global shortcuts for "Area Screenshot" and "Full Screen Screenshot".
-- **Editor Shortcuts**: Assign keys to annotation tools. Defaults include Cmd-S to save, Shift-Cmd-S for Save As, Return to finish, and Cmd-Z to undo. Ordinary characters, Space, and Return still work while entering text; Esc always cancels.
+- **Editor Shortcuts**: Assign keys to annotation tools. Defaults include Cmd-S to save, Shift-Cmd-S for Save As, Return to finish, and Cmd-Z to undo. Ordinary characters, Space, and Return still work while entering text; Esc cancels the capture, except while editing a number, when it cancels that edit first.
 - **Double Option**: Optionally start an area capture with two Option taps. Requires Input Monitoring permission; modifier combinations, long presses, and intervening mouse actions do not trigger it.
 - **Space Action**: Choose Off (default), Finish, or Save & Copy. Finish follows Auto Save; Save & Copy always writes to the configured folder and preserves the clipboard image if saving fails.
 - **Save Path**: Customize the default save location for screenshots.
 - **Auto Save**: When enabled, ✅ copies and saves an area capture. When disabled, it only copies. If saving fails, an alert appears and the screenshot remains on the clipboard.
-- **Toolbar**: Show or hide buttons and reorder them by dragging rows or clicking the up/down arrows. Hidden tools retain their positions; Complete and Cancel can move but always remain visible. Changes are saved automatically and apply to the next capture. Restore Defaults restores both visibility and order. Hiding Rectangle starts in selection mode; click the active tool again to return to selection mode if its button is hidden. `Esc` always cancels the capture.
+- **Toolbar**: Show or hide buttons and reorder them by dragging rows or clicking the up/down arrows. Hidden tools retain their positions; Complete and Cancel can move but always remain visible. Changes are saved automatically and apply to the next capture. Choose a default annotation tool for new captures; the factory default is Select/Move. Restore Defaults restores visibility, order, and the default tool. Hiding the default tool returns to selection mode; click the active tool again to return to selection mode if its button is hidden. `Esc` cancels the capture; while editing a number, it first cancels that edit.
 - **Launch Settings**: Set whether to launch at login.
 
 ## ❤️ Support

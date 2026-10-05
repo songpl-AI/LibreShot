@@ -86,6 +86,20 @@ class SettingsService: ObservableObject {
         }
     }
 
+    @Published private(set) var defaultEditorTool: ToolbarItem {
+        didSet { defaults.set(defaultEditorTool.rawValue, forKey: "defaultEditorTool") }
+    }
+
+    var initialAnnotationTool: AnnotationType? {
+        guard toolbarConfiguration.isVisible(defaultEditorTool) else { return nil }
+        return defaultEditorTool.annotationType
+    }
+
+    func setDefaultEditorTool(_ item: ToolbarItem) {
+        guard item == .select || (item.annotationType != nil && toolbarConfiguration.isVisible(item)) else { return }
+        defaultEditorTool = item
+    }
+
     private let defaults: UserDefaults
 
     @Published private(set) var editorShortcuts: [String: EditorShortcut] {
@@ -161,6 +175,9 @@ class SettingsService: ObservableObject {
             hiddenItems: Set(defaults.stringArray(forKey: "hiddenToolbarItems") ?? []),
             itemOrder: defaults.stringArray(forKey: "toolbarItemOrder") ?? []
         )
+        let savedTool = ToolbarItem(rawValue: defaults.string(forKey: "defaultEditorTool") ?? "") ?? .select
+        self.defaultEditorTool = (savedTool == .select || savedTool.annotationType != nil)
+            && !(defaults.stringArray(forKey: "hiddenToolbarItems") ?? []).contains(savedTool.rawValue) ? savedTool : .select
         self.saveDirectoryBookmark = defaults.data(forKey: "saveDirectoryBookmark")
         
         // Defaults:
@@ -188,10 +205,12 @@ class SettingsService: ObservableObject {
     
     func setToolbarItem(_ item: ToolbarItem, visible: Bool) {
         toolbarConfiguration.setVisible(visible, for: item)
+        if !visible && defaultEditorTool == item { defaultEditorTool = .select }
     }
 
     func restoreDefaultToolbar() {
         toolbarConfiguration = ToolbarConfiguration()
+        defaultEditorTool = .select
     }
 
     func moveToolbarItems(fromOffsets source: IndexSet, toOffset destination: Int) {

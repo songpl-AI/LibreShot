@@ -10,6 +10,7 @@ struct InlineTextEditor: NSViewRepresentable {
     var color: NSColor
     /// 首次加载时是否把光标定位到文本末尾（用于重新编辑已有文字）
     var cursorAtEnd: Bool
+    var selectsAllOnFocus = false
     var allowsAncestorScrolling = true
     /// 内容尺寸变化时回调，用于动态调整编辑器大小
     var onSizeChange: (CGSize) -> Void
@@ -46,6 +47,7 @@ struct InlineTextEditor: NSViewRepresentable {
         // 等视图挂到窗口后再抢焦点
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             textView.window?.makeFirstResponder(textView)
+            if selectsAllOnFocus { textView.selectAll(nil) }
         }
         return textView
     }
