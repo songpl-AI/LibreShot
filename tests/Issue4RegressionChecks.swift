@@ -271,12 +271,12 @@ struct Issue4RegressionChecks {
         }
         let model = OverlayViewModel(settings: settings)
         model.updatePreviewImage(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
-        check(model.previewBitmap == nil, "ordinary editing does not allocate a mosaic sampling bitmap")
+        check(model.effectPreview == nil, "ordinary editing does not allocate an effect result")
         model.selectTool(.mosaic)
-        check(model.previewBitmap != nil, "mosaic selection prepares its sampling bitmap")
-        weak var mosaicBitmap = model.previewBitmap
+        check(model.effectPreview == nil, "selecting mosaic without a mark does not allocate an effect result")
+        weak var mosaicBitmap = model.effectPreview
         model.reset()
-        check(mosaicBitmap == nil && model.previewImage == nil, "reset releases source and mosaic sampling bitmap")
+        check(mosaicBitmap == nil && model.previewImage == nil, "reset releases source and effect preview")
         model.state = .editing
         model.selectionRect = CGRect(x: 0, y: 0, width: 200, height: 200)
         let window = OverlayWindow(contentRect: model.selectionRect, styleMask: [.borderless], backing: .buffered, defer: false)

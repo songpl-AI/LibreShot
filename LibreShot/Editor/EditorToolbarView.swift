@@ -55,7 +55,11 @@ struct EditorToolbarView: View {
             Button(action: { perform(item) }) {
                 Group {
                     if item == .style {
-                        ToolbarColorIcon(selectedColor: viewModel.selectedColor)
+                        if viewModel.activeEffectTool != nil {
+                            Image(systemName: "slider.horizontal.3").font(.system(size: 16))
+                        } else { ToolbarColorIcon(selectedColor: viewModel.selectedColor) }
+                    } else if item == .mosaic || item == .blur {
+                        EffectToolIcon(tool: item)
                     } else {
                         Image(systemName: item.iconName)
                             .font(.system(size: 16, weight: .regular))
@@ -69,7 +73,7 @@ struct EditorToolbarView: View {
             .buttonStyle(.plain)
             .disabled(isDisabled(item))
             .opacity(isDisabled(item) ? 0.5 : 1)
-            .accessibilityLabel(item.title)
+            .accessibilityLabel(item == .style && viewModel.activeEffectTool != nil ? "效果参数" : item.title)
             .accessibilityHint(help(for: item))
             .accessibilityValue(isSelected(item) ? "已选中" : "")
         }
@@ -110,6 +114,9 @@ struct EditorToolbarView: View {
         case .complete:
             label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
         case .save: label = settings.autoSaveEnabled ? "保存到预设目录" : "保存…"
+        case .mosaic: label = "马赛克：框选像素化区域；在样式面板调整颗粒"
+        case .blur: label = "模糊：拖动涂抹；在样式面板调整大小与强度"
+        case .style where viewModel.activeEffectTool != nil: label = "效果参数"
         case .undo where isDisabled(item): label = "撤销（当前没有标注）"
         case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
         case .translate where isDisabled(item): label = "原图翻译需要 macOS 26 或更新版本"
@@ -204,6 +211,15 @@ struct StylePopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let tool = viewModel.activeEffectTool {
+                Text(tool == .mosaic ? "马赛克效果" : "模糊效果").font(.headline)
+                if tool == .mosaic {
+                    effectPresets("颗粒大小", parameter: "block", values: [8, 12, 16, 24, 32])
+                } else {
+                    effectPresets("笔刷大小", parameter: "width", values: [20, 36, 60, 90, 120])
+                    effectPresets("模糊强度", parameter: "radius", values: [4, 8, 12, 20, 32])
+                }
+            } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text("颜色").font(.caption).foregroundColor(.secondary)
                 HStack(spacing: 6) {
@@ -248,8 +264,24 @@ struct StylePopoverView: View {
                     }
                 }
             }
+            }
         }
         .frame(width: 264)
+    }
+
+    private func effectPresets(_ title: String, parameter: String, values: [CGFloat]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption).foregroundColor(.secondary)
+            HStack {
+                ForEach(values, id: \.self) { value in
+                    Button("\(Int(value))") { viewModel.setEffectValue(value, parameter: parameter) }
+                        .buttonStyle(.plain)
+                        .frame(width: 42, height: 28)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(viewModel.effectValue(parameter) == value ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.06)))
+                        .accessibilityLabel("\(title) \(Int(value))")
+                }
+            }
+        }
     }
 }
 
@@ -269,5 +301,32 @@ struct VisualEffectView: NSViewRepresentable {
     func updateNSView(_ visualEffectView: NSVisualEffectView, context: Context) {
         visualEffectView.material = material
         visualEffectView.blendingMode = blendingMode
+    }
+}
+
+/// Pixel blocks versus a soft edge; both remain readable at toolbar size.
+struct EffectToolIcon: View {
+    let tool: ToolbarItem
+    var body: some View {
+        Group {
+            if tool == .mosaic {
+                Canvas { context, _ in
+                    let shades: [Double] = [0.35, 0.85, 0.55, 0.95, 0.5, 0.75, 0.6, 0.9, 0.4]
+                    for i in 0..<9 {
+                        context.fill(Path(CGRect(x: (i % 3) * 6, y: (i / 3) * 6, width: 5, height: 5)),
+                                     with: .color(.primary.opacity(shades[i])))
+                    }
+                }
+                .frame(width: 17, height: 17)
+            } else {
+                ZStack {
+                    Circle().fill(Color.primary.opacity(0.2)).frame(width: 18, height: 18)
+                    Circle().fill(Color.primary.opacity(0.35)).frame(width: 14, height: 14).blur(radius: 1)
+                    Circle().fill(Color.primary.opacity(0.75)).frame(width: 8, height: 8).blur(radius: 1.5)
+                }
+                .frame(width: 18, height: 18)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

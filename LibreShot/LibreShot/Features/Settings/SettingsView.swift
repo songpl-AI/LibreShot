@@ -77,7 +77,10 @@ struct ToolbarSettingsView: View {
                                 if item == .style {
                                     ToolbarColorIcon().frame(width: 20)
                                 } else {
-                                    Image(systemName: item.iconName).frame(width: 20)
+                                    Group {
+                                        if item == .mosaic || item == .blur { EffectToolIcon(tool: item) }
+                                        else { Image(systemName: item.iconName) }
+                                    }.frame(width: 20)
                                 }
                             }
                         }

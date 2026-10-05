@@ -196,128 +196,140 @@ extension CaptureService {
     }
 
     private func applyAnnotationEffects(image: NSImage, annotations: [Annotation], cropRect: CGRect?) -> NSImage {
-        let hasEffects = annotations.contains { $0.type == .mosaic || $0.type == .blur }
-        if !hasEffects { return image }
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
-        let scaleX = CGFloat(cgImage.width) / image.size.width
-        let scaleY = CGFloat(cgImage.height) / image.size.height
-        var currentImage = CIImage(cgImage: cgImage)
-        let fullExtent = currentImage.extent
-        // Use shared context to save memory
-        let context = self.context
-        for annotation in annotations {
-            if annotation.type != .mosaic && annotation.type != .blur { continue }
-            var localPoints: [CGPoint]
-            var localStart: CGPoint
-            var localEnd: CGPoint
-            if let crop = cropRect {
-                localPoints = annotation.points.map { CGPoint(x: $0.x - crop.minX, y: $0.y - crop.minY) }
-                localStart = CGPoint(x: annotation.startPoint.x - crop.minX, y: annotation.startPoint.y - crop.minY)
-                localEnd = CGPoint(x: annotation.endPoint.x - crop.minX, y: annotation.endPoint.y - crop.minY)
-            } else {
-                localPoints = annotation.points
-                localStart = annotation.startPoint
-                localEnd = annotation.endPoint
-            }
-            if let crop = cropRect {
-                let clampedPoints = localPoints.map { CGPoint(x: min(max($0.x, 0), crop.width), y: min(max($0.y, 0), crop.height)) }
-                let clampedStart = CGPoint(x: min(max(localStart.x, 0), crop.width), y: min(max(localStart.y, 0), crop.height))
-                let clampedEnd = CGPoint(x: min(max(localEnd.x, 0), crop.width), y: min(max(localEnd.y, 0), crop.height))
-                localPoints = clampedPoints
-                localStart = clampedStart
-                localEnd = clampedEnd
-            }
-            let pointsForBounds = localPoints.isEmpty ? [localStart, localEnd] : localPoints
-            let xs = pointsForBounds.map { $0.x }
-            let ys = pointsForBounds.map { $0.y }
-            guard let minX = xs.min(), let maxX = xs.max(),
-                  let minY = ys.min(), let maxY = ys.max() else { continue }
-            let boundsRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-            let effectRect: CGRect
-            if annotation.type == .mosaic {
-                effectRect = boundsRect
-            } else {
-                let half = annotation.lineWidth / 2
-                effectRect = boundsRect.insetBy(dx: -half, dy: -half)
-            }
-            if effectRect.width <= 1 || effectRect.height <= 1 { continue }
-            let pixelWidth = effectRect.width * scaleX
-            let pixelHeight = effectRect.height * scaleY
-            let pixelX = effectRect.minX * scaleX
-            let pixelY = fullExtent.height - (effectRect.maxY * scaleY)
-            let pixelRect = CGRect(x: pixelX, y: pixelY, width: pixelWidth, height: pixelHeight).intersection(fullExtent)
-            if pixelRect.isEmpty { continue }
-            let strokeScale = max(annotation.lineWidth * max(scaleX, scaleY), 1)
+        guard annotations.contains(where: { $0.type == .mosaic || $0.type == .blur }),
+              let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
+        let offset = cropRect?.origin ?? .zero
+        let local = annotations.map { annotation -> Annotation in
+            var a = annotation
+            a.startPoint.x -= offset.x; a.startPoint.y -= offset.y
+            a.endPoint.x -= offset.x; a.endPoint.y -= offset.y
+            a.points = a.points.map { CGPoint(x: $0.x - offset.x, y: $0.y - offset.y) }
+            return a
+        }
+        guard let output = AnnotationEffectRenderer.render(source: source, logicalSize: image.size, annotations: local) else { return image }
+        return NSImage(cgImage: output, size: image.size)
+    }
+}
+
+/// The same native-pixel pipeline serves live previews and exported images.
+/// Every effect samples the immutable source: overlapping equal-strength brush marks
+/// do not repeatedly blur already blurred pixels.
+enum AnnotationEffectRenderer {
+    private static let context = CIContext(options: [.cacheIntermediates: false])
+
+    static func render(source: CGImage, logicalSize: CGSize, annotations: [Annotation], outputRect: CGRect? = nil) -> CGImage? {
+        guard logicalSize.width > 0, logicalSize.height > 0 else { return nil }
+        let sx = CGFloat(source.width) / logicalSize.width
+        let sy = CGFloat(source.height) / logicalSize.height
+        let scale = max(sx, sy)
+        let original = CIImage(cgImage: source)
+        let extent = original.extent
+        var output = original
+        for a in annotations where a.type == .mosaic || a.type == .blur {
+            let r = a.selectionBounds
+            let region = CGRect(x: r.minX * sx, y: extent.height - r.maxY * sy,
+                                width: r.width * sx, height: r.height * sy).integral.intersection(extent)
+            guard !region.isEmpty else { continue }
             let filtered: CIImage
-            if annotation.type == .mosaic {
-                let blockSize = max(annotation.lineWidth * 0.8, 10)
-                let pixelBlockSize = blockSize * max(scaleX, scaleY)
-                let filter = CIFilter.pixellate()
-                filter.inputImage = currentImage
-                filter.scale = Float(max(pixelBlockSize, 8))
-                filter.center = CGPoint(x: pixelRect.midX, y: pixelRect.midY)
-                filtered = filter.outputImage?.cropped(to: fullExtent) ?? currentImage
-            } else {
-                let filter = CIFilter.gaussianBlur()
-                filter.inputImage = currentImage.clampedToExtent()
-                filter.radius = Float(max(strokeScale * 4.2, 36))
-                filtered = filter.outputImage?.cropped(to: fullExtent) ?? currentImage
-            }
             let mask: CIImage
-            if annotation.type == .mosaic {
-                mask = makeEffectMask(extent: fullExtent, rect: pixelRect)
-            } else if pointsForBounds.count >= 2 {
-                mask = makeBrushMask(extent: fullExtent, points: pointsForBounds, lineWidth: annotation.lineWidth, scaleX: scaleX, scaleY: scaleY)
+            if a.type == .mosaic {
+                let block = max(4, min(64, a.mosaicBlockSize)) * scale
+                guard let pixels = averageBlocks(image: original, region: region, block: block, extent: extent) else { return nil }
+                filtered = pixels
+                // Exact geometry, not the integral processing bounds.
+                let exact = CGRect(x: r.minX * sx, y: extent.height - r.maxY * sy, width: r.width * sx, height: r.height * sy)
+                mask = CIImage(color: .white).cropped(to: exact)
             } else {
-                mask = makeEffectMask(extent: fullExtent, rect: pixelRect)
+                let radius = max(2, min(32, a.blurRadius)) * scale
+                // Enough neighbouring source pixels for the blur; clamp only at image edges.
+                let sample = region.insetBy(dx: -ceil(radius * 3), dy: -ceil(radius * 3)).intersection(extent)
+                let blur = CIFilter.gaussianBlur()
+                blur.inputImage = original.clampedToExtent().cropped(to: sample).clampedToExtent()
+                blur.radius = Float(radius)
+                guard let result = blur.outputImage,
+                      let brush = brushMask(a, region: region, sx: sx, sy: sy, imageHeight: extent.height) else { return nil }
+                filtered = result.cropped(to: region)
+                mask = brush
             }
             let blend = CIFilter.blendWithMask()
             blend.inputImage = filtered
-            blend.backgroundImage = currentImage
-            blend.maskImage = mask
-            if let output = blend.outputImage?.cropped(to: fullExtent) {
-                currentImage = output
-            }
+            blend.backgroundImage = output
+            blend.maskImage = mask.composited(over: CIImage(color: .black).cropped(to: extent))
+            guard let result = blend.outputImage else { return nil }
+            output = result.cropped(to: extent)
         }
-        guard let outputCG = context.createCGImage(currentImage, from: fullExtent) else { return image }
-        return NSImage(cgImage: outputCG, size: image.size)
+        return context.createCGImage(output, from: outputRect?.intersection(extent) ?? extent)
     }
 
-    private func makeEffectMask(extent: CGRect, rect: CGRect) -> CIImage {
-        let base = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
-        let highlight = CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: 1)).cropped(to: rect)
-        return highlight.composited(over: base)
+    /// Average every pixel in each globally aligned block, including source pixels
+    /// outside the annotation. Resizing a rectangle never shifts its block grid.
+    private static func averageBlocks(image: CIImage, region: CGRect, block: CGFloat, extent: CGRect) -> CIImage? {
+        let step = max(1, Int(block.rounded()))
+        let grid = CGRect(x: floor(region.minX / CGFloat(step)) * CGFloat(step),
+                          y: floor(region.minY / CGFloat(step)) * CGFloat(step),
+                          width: ceil(region.maxX / CGFloat(step)) * CGFloat(step) - floor(region.minX / CGFloat(step)) * CGFloat(step),
+                          height: ceil(region.maxY / CGFloat(step)) * CGFloat(step) - floor(region.minY / CGFloat(step)) * CGFloat(step)).intersection(extent)
+        guard let cg = context.createCGImage(image, from: grid) else { return nil }
+        let w = cg.width, h = cg.height, row = w * 4
+        var bytes = [UInt8](repeating: 0, count: row * h)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ok = bytes.withUnsafeMutableBytes { data -> Bool in
+            guard let bitmap = CGContext(data: data.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                         bytesPerRow: row, space: space,
+                                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            bitmap.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            // Align to image origin even when the topmost block is truncated.
+            var y = 0
+            while y < h {
+                let globalTop = Int(grid.maxY) - y
+                let bh = min(h - y, (globalTop - 1) % step + 1)
+                var x = 0
+                while x < w {
+                    let bw = min(w - x, step - (Int(grid.minX) + x) % step)
+                    var sum = [Int](repeating: 0, count: 4)
+                    for yy in y..<(y + bh) { for xx in x..<(x + bw) {
+                        let i = yy * row + xx * 4
+                        for c in 0..<4 { sum[c] += Int(data[i + c]) }
+                    } }
+                    let n = bw * bh
+                    let average = sum.map { UInt8(($0 + n / 2) / n) }
+                    for yy in y..<(y + bh) { for xx in x..<(x + bw) {
+                        let i = yy * row + xx * 4
+                        for c in 0..<4 { data[i + c] = average[c] }
+                    } }
+                    x += bw
+                }
+                y += bh
+            }
+            return true
+        }
+        guard ok, let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let result = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: row,
+                                   space: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+                                   provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
+        return CIImage(cgImage: result).transformed(by: CGAffineTransform(translationX: grid.minX, y: grid.minY)).cropped(to: region)
     }
 
-    private func makeBrushMask(extent: CGRect, points: [CGPoint], lineWidth: CGFloat, scaleX: CGFloat, scaleY: CGFloat) -> CIImage {
-        let width = Int(extent.width)
-        let height = Int(extent.height)
-        if width <= 0 || height <= 0 {
-            return CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
+    private static func brushMask(_ a: Annotation, region: CGRect, sx: CGFloat, sy: CGFloat, imageHeight: CGFloat) -> CIImage? {
+        guard let bitmap = CGContext(data: nil, width: Int(region.width), height: Int(region.height), bitsPerComponent: 8,
+                                     bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        bitmap.setFillColor(gray: 0, alpha: 1); bitmap.fill(CGRect(origin: .zero, size: region.size))
+        bitmap.translateBy(x: -region.minX, y: -region.minY)
+        bitmap.setStrokeColor(gray: 1, alpha: 1)
+        bitmap.setFillColor(gray: 1, alpha: 1)
+        bitmap.setLineWidth(a.lineWidth * max(sx, sy)); bitmap.setLineCap(.round); bitmap.setLineJoin(.round)
+        if let first = a.points.first {
+            bitmap.move(to: CGPoint(x: first.x * sx, y: imageHeight - first.y * sy))
+            for p in a.points.dropFirst() { bitmap.addLine(to: CGPoint(x: p.x * sx, y: imageHeight - p.y * sy)) }
+            if a.points.count == 1 {
+                let radius = a.lineWidth * max(sx, sy) / 2
+                bitmap.fillEllipse(in: CGRect(x: first.x * sx - radius, y: imageHeight - first.y * sy - radius, width: radius * 2, height: radius * 2))
+            } else { bitmap.strokePath() }
+        } else {
+            let r = CGRect(from: a.startPoint, to: a.endPoint)
+            bitmap.fill(CGRect(x: r.minX * sx, y: imageHeight - r.maxY * sy, width: r.width * sx, height: r.height * sy))
         }
-        let colorSpace = CGColorSpaceCreateDeviceGray()
-        guard let cgContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width, space: colorSpace, bitmapInfo: CGImageAlphaInfo.none.rawValue) else {
-            return CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
-        }
-        cgContext.setFillColor(gray: 0, alpha: 1)
-        cgContext.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        cgContext.setStrokeColor(gray: 1, alpha: 1)
-        cgContext.setLineWidth(max(lineWidth * max(scaleX, scaleY), 1))
-        cgContext.setLineCap(.round)
-        cgContext.setLineJoin(.round)
-        let heightPixels = extent.height
-        let path = CGMutablePath()
-        if let first = points.first {
-            path.move(to: CGPoint(x: first.x * scaleX, y: heightPixels - first.y * scaleY))
-            for point in points.dropFirst() {
-                path.addLine(to: CGPoint(x: point.x * scaleX, y: heightPixels - point.y * scaleY))
-            }
-        }
-        cgContext.addPath(path)
-        cgContext.strokePath()
-        guard let maskImage = cgContext.makeImage() else {
-            return CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: extent)
-        }
-        return CIImage(cgImage: maskImage).cropped(to: extent)
+        guard let cg = bitmap.makeImage() else { return nil }
+        return CIImage(cgImage: cg).transformed(by: CGAffineTransform(translationX: region.minX, y: region.minY))
     }
 }

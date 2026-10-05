@@ -22,7 +22,7 @@ enum AnnotationType: String, CaseIterable, Identifiable {
         case .text: return "textformat"
         case .number: return "1.circle"
         case .mosaic: return "square.grid.3x3.fill"
-        case .blur: return "drop"
+        case .blur: return "camera.filters"
         }
     }
 }
@@ -121,6 +121,8 @@ struct Annotation: Identifiable, Equatable {
     var points: [CGPoint] = [] // For pen
     var startPoint: CGPoint = .zero // For shapes
     var endPoint: CGPoint = .zero // For shapes
+    var mosaicBlockSize: CGFloat = 16
+    var blurRadius: CGFloat = 12
     var lineWidth: CGFloat = 3.0
     var text: String = ""  // For text annotations
     var fontSize: CGFloat = 16.0

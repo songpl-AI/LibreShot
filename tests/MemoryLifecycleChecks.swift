@@ -28,7 +28,7 @@ struct MemoryLifecycleChecks {
             autoreleasepool {
                 let editor = ImageEditorWindowController(image: image, settings: settings)
                 if ProcessInfo.processInfo.environment["LIBRESHOT_MEMORY_BASELINE"] == nil {
-                    precondition(editor.model.previewBitmap == nil)
+                    precondition(editor.model.effectPreview == nil)
                 }
                 service.copyToClipboard(editor.renderedImage())
                 editor.close()

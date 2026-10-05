@@ -57,7 +57,7 @@ class OverlayViewModel: ObservableObject {
     @Published var startPoint: CGPoint?
     @Published var currentPoint: CGPoint?
     @Published var selectionRect: CGRect = .zero {
-        didSet { if selectionRect != oldValue { clearImageTranslation() } }
+        didSet { if selectionRect != oldValue { clearImageTranslation(); scheduleEffectPreview() } }
     }
     @Published var state: OverlayState = .idle
     
@@ -81,15 +81,14 @@ class OverlayViewModel: ObservableObject {
     }
 
     // Editor State
-    @Published var selectedTool: AnnotationType? {
-        didSet { if selectedTool == .mosaic { prepareMosaicPreview() } }
-    }
-    @Published var annotations: [Annotation] = []
-    @Published var currentAnnotation: Annotation?
+    @Published var selectedTool: AnnotationType?
+    @Published var annotations: [Annotation] = [] { didSet { scheduleEffectPreview() } }
+    @Published var currentAnnotation: Annotation? { didSet { scheduleEffectPreview() } }
     private var pendingDrawing: Annotation?
     var hasDrawingGesture: Bool { currentAnnotation != nil || pendingDrawing != nil }
     private indirect enum AnnotationUndo {
         case numbered(AnnotationUndo, Int, UUID?, CGFloat, Color)
+        case effect(AnnotationUndo, CGFloat, CGFloat, CGFloat)
         case remove(UUID)
         case restore(Annotation, Int)
     }
@@ -99,16 +98,15 @@ class OverlayViewModel: ObservableObject {
     @Published var selectedFontSize: CGFloat = Annotation.textInputFontSize
     @Published var activeSelectionHandle: SelectionHandle?
     @Published var isMovingSelection: Bool = false
-    @Published var previewImage: CGImage?
-    @Published var previewScale: CGFloat = 1.0
-    var previewBitmap: NSBitmapImageRep?
+    @Published var previewImage: CGImage? { didSet { scheduleEffectPreview() } }
+    @Published var previewScale: CGFloat = 1.0 { didSet { scheduleEffectPreview() } }
     @Published var captureMode: CaptureMode = .normal
     @Published var longCaptureStatusText: String = "拖动选择滚动区域"
     @Published var showsStylePopover = false
     @Published private(set) var translationSource: NSImage?
     @Published private(set) var translationSessionID = UUID()
-    @Published var translatedSelection: CGImage?
-    @Published var showsOriginalTranslation = false
+    @Published var translatedSelection: CGImage? { didSet { scheduleEffectPreview() } }
+    @Published var showsOriginalTranslation = false { didSet { scheduleEffectPreview() } }
     @Published var translationCanExport = false
     @Published var showsTranslationControls = false
 
@@ -317,15 +315,99 @@ class OverlayViewModel: ObservableObject {
     func updatePreviewImage(_ image: CGImage?, scale: CGFloat = 1.0) {
         previewImage = image
         previewScale = scale
-        previewBitmap = nil
-        if selectedTool == .mosaic || annotations.contains(where: { $0.type == .mosaic }) { prepareMosaicPreview() }
     }
 
-    private func prepareMosaicPreview() {
-        guard previewBitmap == nil, let image = previewImage else { return }
-        previewBitmap = makePreviewBitmap(from: image, maxDimension: 1200)
+    @Published private(set) var effectPreview: CGImage?
+    @Published private(set) var effectPreviewRect: CGRect = .zero
+    @Published var selectedMosaicBlockSize: CGFloat = 16
+    @Published var selectedBlurWidth: CGFloat = 36
+    @Published var selectedBlurRadius: CGFloat = 12
+    private let effectQueue = DispatchQueue(label: "LibreShot.effects", qos: .userInitiated)
+    private var effectWork: DispatchWorkItem?
+    private var effectGeneration = UUID()
+    private weak var effectSource: CGImage?
+    private var effectAnnotations: [Annotation] = []
+    private var effectSelection: CGRect = .zero
+    private var effectScale: CGFloat = 1
+
+    var activeEffectTool: AnnotationType? {
+        if let a = annotations.first(where: { $0.id == selectedAnnotationID }), a.type == .mosaic || a.type == .blur { return a.type }
+        return selectedTool == .mosaic || selectedTool == .blur ? selectedTool : nil
     }
-    
+
+    func setEffectValue(_ value: CGFloat, parameter: String) {
+        let tool = activeEffectTool
+        let previous = (selectedMosaicBlockSize, selectedBlurWidth, selectedBlurRadius)
+        let bounded: CGFloat
+        switch parameter {
+        case "block": bounded = min(max(value, 4), 64); selectedMosaicBlockSize = bounded
+        case "width": bounded = min(max(value, 12), 120); selectedBlurWidth = bounded
+        default: bounded = min(max(value, 2), 32); selectedBlurRadius = bounded
+        }
+        guard let i = annotations.firstIndex(where: { $0.id == selectedAnnotationID }), annotations[i].type == tool else { return }
+        let old = annotations[i]
+        var updated = old
+        switch parameter {
+        case "block": updated.mosaicBlockSize = bounded
+        case "width": updated.lineWidth = bounded
+        default: updated.blurRadius = bounded
+        }
+        guard updated != old else { return }
+        annotationUndo.append(.effect(.restore(old, i), previous.0, previous.1, previous.2))
+        annotations[i] = updated
+    }
+
+    func effectValue(_ parameter: String) -> CGFloat {
+        let a = annotations.first(where: { $0.id == selectedAnnotationID })
+        switch parameter {
+        case "block": return a?.type == .mosaic ? a!.mosaicBlockSize : selectedMosaicBlockSize
+        case "width": return a?.type == .blur ? a!.lineWidth : selectedBlurWidth
+        default: return a?.type == .blur ? a!.blurRadius : selectedBlurRadius
+        }
+    }
+
+    private func scheduleEffectPreview() {
+        let effects = (annotations + (currentAnnotation.map { [$0] } ?? [])).filter { $0.type == .mosaic || $0.type == .blur }
+        guard !effects.isEmpty, let source = imageForExport(), previewScale > 0, !selectionRect.isEmpty else {
+            effectWork?.cancel(); effectGeneration = UUID()
+            effectSource = nil; effectAnnotations = []
+            effectPreview = nil; effectPreviewRect = .zero; return
+        }
+        guard effects != effectAnnotations || source !== effectSource || selectionRect != effectSelection || previewScale != effectScale else { return }
+        effectSource = source; effectAnnotations = effects; effectSelection = selectionRect; effectScale = previewScale
+        effectWork?.cancel()
+        let generation = UUID(); effectGeneration = generation
+        let rect = selectionRect, scale = previewScale
+        let union = effects.reduce(CGRect.null) { $0.union($1.selectionBounds) }.intersection(rect)
+        guard !union.isEmpty else { effectPreview = nil; effectPreviewRect = .zero; return }
+        let localPixels = CGRect(x: (union.minX - rect.minX) * scale,
+                                 y: (rect.maxY - union.maxY) * scale,
+                                 width: union.width * scale, height: union.height * scale).integral
+        let displayRect = CGRect(x: rect.minX + localPixels.minX / scale,
+                                 y: rect.maxY - localPixels.maxY / scale,
+                                 width: localPixels.width / scale, height: localPixels.height / scale)
+        let work = DispatchWorkItem { [weak self] in
+            let result: CGImage? = autoreleasepool {
+                let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale).integral
+                guard let crop = source.cropping(to: pixels) else { return nil }
+                let local = effects.map { original -> Annotation in
+                    var a = original
+                    a.startPoint.x -= rect.minX; a.startPoint.y -= rect.minY
+                    a.endPoint.x -= rect.minX; a.endPoint.y -= rect.minY
+                    a.points = a.points.map { CGPoint(x: $0.x - rect.minX, y: $0.y - rect.minY) }
+                    return a
+                }
+                return AnnotationEffectRenderer.render(source: crop, logicalSize: rect.size, annotations: local, outputRect: localPixels)
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.effectGeneration == generation else { return }
+                self.effectPreview = result; self.effectPreviewRect = displayRect
+            }
+        }
+        effectWork = work
+        effectQueue.asyncAfter(deadline: .now() + .milliseconds(24), execute: work)
+    }
+
     // MARK: - Selection Logic
     
     func startSelection(at point: CGPoint) {
@@ -587,7 +669,9 @@ class OverlayViewModel: ObservableObject {
             annotation.points = [startPoint]
         }
         if tool == .mosaic || tool == .blur {
-            annotation.lineWidth = 24
+            annotation.lineWidth = tool == .blur ? selectedBlurWidth : 24
+            annotation.mosaicBlockSize = selectedMosaicBlockSize
+            annotation.blurRadius = selectedBlurRadius
         }
         if [.rectangle, .ellipse, .arrow, .mosaic, .pen, .blur].contains(tool) {
             pendingDrawing = annotation
@@ -683,8 +767,12 @@ class OverlayViewModel: ObservableObject {
                 selectedNumberFontSize = size; selectedColor = color
                 action = wrapped
             }
+            if case .effect(let wrapped, let block, let width, let radius) = edit {
+                selectedMosaicBlockSize = block; selectedBlurWidth = width; selectedBlurRadius = radius
+                action = wrapped
+            }
             switch action {
-            case .numbered: break
+            case .numbered, .effect: break
             case .remove(let id): annotations.removeAll { $0.id == id }
             case .restore(let annotation, let index):
                 annotations.removeAll { $0.id == annotation.id }
@@ -725,7 +813,6 @@ class OverlayViewModel: ObservableObject {
         textResizeOriginal = nil
         previewImage = nil
         previewScale = 1.0
-        previewBitmap = nil
         captureMode = .normal
         longCaptureStatusText = "拖动选择滚动区域"
     }
@@ -904,31 +991,6 @@ class OverlayViewModel: ObservableObject {
         return CGPoint(x: x, y: y)
     }
 
-    private func makePreviewBitmap(from image: CGImage, maxDimension: CGFloat) -> NSBitmapImageRep? {
-        let width = CGFloat(image.width)
-        let height = CGFloat(image.height)
-        if width <= 0 || height <= 0 {
-            return nil
-        }
-        let scale = min(maxDimension / max(width, height), 1)
-        let targetWidth = Int(width * scale)
-        let targetHeight = Int(height * scale)
-        if targetWidth <= 0 || targetHeight <= 0 {
-            return nil
-        }
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
-        guard let context = CGContext(data: nil, width: targetWidth, height: targetHeight, bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: bitmapInfo) else {
-            return nil
-        }
-        context.interpolationQuality = .medium
-        context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(targetWidth), height: CGFloat(targetHeight)))
-        guard let scaled = context.makeImage() else {
-            return nil
-        }
-        return NSBitmapImageRep(cgImage: scaled)
-    }
-    
     enum CursorStyle: Equatable {
         case crosshair, move, horizontal, vertical, diagonalDown, diagonalUp
     }
