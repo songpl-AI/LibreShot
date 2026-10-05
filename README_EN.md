@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.1) · [Release notes](docs/releases/1.3.1.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.2](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.2) · [Release notes](docs/releases/1.3.2.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -57,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the upcoming [1.3.2 release notes](docs/releases/1.3.2.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.2 release notes](docs/releases/1.3.2.md).
 
 ## 🚀 Usage Guide
 
@@ -77,7 +77,7 @@ Click the "Scissors" icon in the menu bar to select functions:
 
 ### 3. Annotation & Editing
 
-**Development build (not released):** Clicks and small pointer jitter no longer create invalid shapes. Completed shapes are immediately selected, and selecting an existing annotation keeps its tool active for drawing in empty space. Drag selected annotations to move them, or drag arrow endpoints to change direction. Delete/Backspace removes the selected annotation; Cmd-Z undoes deletion and adjustments. Text input keeps its normal delete behavior. Rounded selection previews match the output. Editor shortcuts are now beside the toolbar ordering rows; the Space action remains on the Shortcuts tab. See the [validation record](docs/qa/issue-9-20261002.md).
+**New in 1.3.2:** Clicks and small pointer jitter no longer create invalid shapes. Completed shapes are immediately selected, and selecting an existing annotation keeps its tool active for drawing in empty space. Drag selected annotations to move them, or drag arrow endpoints to change direction. Delete/Backspace removes the selected annotation; Cmd-Z undoes deletion and adjustments. Text input keeps its normal delete behavior. Rounded selection previews match the output. Editor shortcuts are now beside the toolbar ordering rows; the Space action remains on the Shortcuts tab. See the [validation record](docs/qa/issue-9-20261002.md).
 
 **New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it.
 
@@ -124,7 +124,7 @@ Or support via [GitHub Sponsors](https://github.com/sponsors/songpl-AI).
 
 Automatic annotation selection and rectangle/ellipse resizing are available in 1.2.0. See the [release notes](docs/releases/1.2.0.md) and [annotation checks](docs/qa/1.2.0.md). Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
 
-v1.3.0 passed automated checks and local trials on Apple Silicon with macOS 26.5.2. Other macOS versions, Intel hardware, and more Finder-list scrolling captures still need feedback. Idle memory has not reached the approximately 10 MB target in Issue #5. See the [v1.3.0 validation](docs/qa/1.3.0-15-local.md) and [capture checks](docs/qa/1.1.0.md).
+v1.3.2 passed package, installation, permission renewal, capture/save, OCR, and same-signature restart checks on Apple Silicon / macOS 26. A real Finder replay of 133 frames produced pixel-identical output. Intel, macOS 13/14, multiple displays, and more scrolling scenarios still need feedback. Issue #5’s approximately 10 MiB memory target remains unmet. See the [v1.3.2 validation](docs/qa/1.3.2-20-package-20261005.md) and [capture checks](docs/qa/1.1.0.md).
 
 ## 🤝 Contributing
 

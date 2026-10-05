@@ -4,7 +4,7 @@
 
 LibreShot 是一款轻量、现代化的 macOS 截图与标注工具，原生开发，完全免费开源。
 
-最新公开版本：[v1.3.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.1) · [更新说明](docs/releases/1.3.1.md) · [更新日志](CHANGELOG.md)
+最新公开版本：[v1.3.2](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.2) · [更新说明](docs/releases/1.3.2.md) · [更新日志](CHANGELOG.md)
 
 ## ✨ 特性
 
@@ -57,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *当前源码使用 macOS 26 SDK，请使用 Xcode 26 或更新版本；应用部署目标为 macOS 13.0。*
 
-GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，当前待发布的修复见 [1.3.2 更新说明](docs/releases/1.3.2.md)。
+GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次修复见 [1.3.2 更新说明](docs/releases/1.3.2.md)。
 
 ## 🚀 使用指南
 
@@ -77,7 +77,7 @@ GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也�
 
 ### 3. 标注与编辑
 
-**开发版（尚未发布）**：单击不再产生无效图形；画完矩形、椭圆或箭头立即显示圆形控制点，选中旧标注后保留对应工具，可在空白处继续绘制。拖动已选中标注可移动，箭头可分别调整首尾。按 Delete/Backspace 删除选中项，⌘Z 撤销删除或调整；文字输入时删除键仍用于输入。选区圆角预览与输出保持一致。工具快捷键已移至“工具栏”页对应排序行，空格动作仍在“快捷键”页。验证记录见 [本次修复验收](docs/qa/issue-9-20261002.md)。
+**1.3.2 更新**：单击不再产生无效图形；画完矩形、椭圆或箭头立即显示圆形控制点，选中旧标注后保留对应工具，可在空白处继续绘制。拖动已选中标注可移动，箭头可分别调整首尾。按 Delete/Backspace 删除选中项，⌘Z 撤销删除或调整；文字输入时删除键仍用于输入。选区圆角预览与输出保持一致。工具快捷键已移至“工具栏”页对应排序行，空格动作仍在“快捷键”页。验证记录见 [本次修复验收](docs/qa/issue-9-20261002.md)。
 
 **1.2.0 新增**：启用任意标注工具时，点一下已有标注即可选中；矩形、椭圆请点边框，避免把内部空白误认为图形。选中后可拖动移动；矩形、椭圆还会显示八个蓝色控制点，拖动角点或边中点可缩放，拖动内部空白也能移动。外层白色控制点调整的是截图范围。直接按住拖动仍按当前工具绘制新标注；文字仍支持双击编辑。
 
@@ -126,7 +126,7 @@ LibreShot 是一个免费开源项目。如果您觉得它提高了您的工作�
 
 “点击已有标注自动选中”和矩形、椭圆缩放已在 1.2.0 实现，见 [更新说明](docs/releases/1.2.0.md) 和 [标注验收](docs/qa/1.2.0.md)。隐藏按钮主要用于简化操作，不等同于卸载功能或明显减少内存。
 
-v1.3.0 已在 Apple Silicon、macOS 26.5.2 上完成自动检查和本机试用；其他系统版本、Intel 实机，以及 Finder 列表滚动长截图的更多真实场景仍欢迎反馈。后台空闲内存仍未达到 Issue #5 提出的约 10 MB 目标。[本版验收](docs/qa/1.3.0-15-local.md) · [基础验收](docs/qa/1.1.0.md)。
+v1.3.2 已在本机 Apple Silicon / macOS 26 完成发行包、安装、授权更新、截图保存、OCR 和重启授权复用检查；真实 Finder 133 帧重放逐像素正确。Intel、macOS 13/14、多显示器及更多滚动场景仍欢迎反馈。Issue #5 的约 10 MiB 内存目标仍未达到。[本版验收](docs/qa/1.3.2-20-package-20261005.md) · [基础验收](docs/qa/1.1.0.md)。
 
 ## 🤝 贡献
 

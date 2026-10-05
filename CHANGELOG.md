@@ -1,6 +1,10 @@
 # 更新日志 / Changelog
 
-## 未发布 / Unreleased — 1.3.2 候选
+## 未发布 / Unreleased
+
+暂无记录。
+
+## [1.3.2](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.2) — 2026-10-05
 
 - 修复 Finder 重复列表的细微变化被缩略图去重丢弃，导致长截图中间帧断开；最终仍未接上时保持完整性检查。真实 Finder 133 帧重放逐像素正确，用户越过约 100 / 120 帧后正常成图。
 - OCR 接入包内按需退出的沙盒辅助进程，完善取消、超时及异常响应；45 次真实识别与关窗验收通过，整体约 10 MiB 使用后增量目标仍未达到。
@@ -14,6 +18,8 @@
 - 关闭标注编辑器时主动清空图片和会话。固定内存样例仍有框架驻留，没有宣称解决报告者的 350 MB 场景或达到 10 MB 目标。
 - PNG/TIFF 编码改为临时文件映射输出并使用无损 LZW TIFF，改善重复复制复杂图片时的驻留增长；保留 PNG/TIFF、透明度、Retina 尺寸及应用退出后的粘贴。专项数据见 [内存验证](docs/qa/memory-special-20261002.md)。
 - 开发验收与未验证边界见 [Issue #9 修复记录](docs/qa/issue-9-20261002.md)。
+
+[更新说明](docs/releases/1.3.2.md) · [发行包与本机验收](docs/qa/1.3.2-20-package-20261005.md)。构建号 20，沿用 ad-hoc 签名，升级可能需要重新授权。
 
 ## [1.3.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.1) — 2026-09-28
 
