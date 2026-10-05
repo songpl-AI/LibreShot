@@ -4,7 +4,7 @@
 
 LibreShot 是一款轻量、现代化的 macOS 截图与标注工具，原生开发，完全免费开源。
 
-最新公开版本：[v1.3.0](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.0) · [更新说明](docs/releases/1.3.0.md) · [更新日志](CHANGELOG.md)
+最新公开版本：[v1.3.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.1) · [更新说明](docs/releases/1.3.1.md) · [更新日志](CHANGELOG.md)
 
 ## ✨ 特性
 

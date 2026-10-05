@@ -182,7 +182,6 @@
             );
             name = "Build OCR Worker";
             outputPaths = (
-                "$(DERIVED_FILE_DIR)/OCRWorker",
                 "$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/LibreShotOCRWorker",
             );
             runOnlyForDeploymentPostprocessing = 0;

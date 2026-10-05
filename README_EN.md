@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.0](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.0) · [Release notes](docs/releases/1.3.0.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.1](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.1) · [Release notes](docs/releases/1.3.1.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -37,7 +37,7 @@ Latest public release: [v1.3.0](https://github.com/songpl-AI/LibreShot/releases/
 
 To upgrade, quit LibreShot and replace the old app in Applications. Your toolbar and save preferences are retained. The installer supports Apple Silicon and Intel; translation requires macOS 26 or later.
 
-The v1.3.0 package has a temporary ad-hoc signature and is **not notarized**. macOS may block it by default. Download only from this repository's Release page, verify the `SHA256SUMS` attachment, and follow [Apple's official app-opening instructions](https://support.apple.com/102445) in System Settings → Privacy & Security. Do not disable Gatekeeper globally. If macOS reports a damaged file, redownload and verify the checksum first. This is not a friction-free Developer ID-signed, notarized installer.
+GitHub packages use ad-hoc signatures and are **not notarized**. macOS may block it by default. Download only from this repository's Release page, verify the `SHA256SUMS` attachment, and follow [Apple's official app-opening instructions](https://support.apple.com/102445) in System Settings → Privacy & Security. Do not disable Gatekeeper globally. If macOS reports a damaged file, redownload and verify the checksum first. This is not a friction-free Developer ID-signed, notarized installer.
 
 Before the first capture, allow LibreShot under Screen Recording (or Screen & System Audio Recording) in System Settings → Privacy & Security. Double-Option also requires Input Monitoring. An upgrade between temporarily signed builds may require you to grant both permissions again and quit/reopen LibreShot.
 
@@ -57,7 +57,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the upcoming [1.3.1 release notes](docs/releases/1.3.1.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the upcoming [1.3.2 release notes](docs/releases/1.3.2.md).
 
 ## 🚀 Usage Guide
 
