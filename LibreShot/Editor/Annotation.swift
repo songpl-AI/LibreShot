@@ -28,6 +28,20 @@ enum AnnotationType: String, CaseIterable, Identifiable {
 }
 
 extension Annotation {
+    /// Bounds of the whole annotation, including intermediate freehand points.
+    var selectionBounds: CGRect {
+        if type == .text { return textBoundingRect }
+        if type == .number {
+            let radius = fontSize / 2 + 4
+            return CGRect(x: startPoint.x - radius, y: startPoint.y - radius, width: radius * 2, height: radius * 2)
+        }
+        if [.pen, .blur].contains(type), !points.isEmpty {
+            let xs = points.map(\.x), ys = points.map(\.y)
+            return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+                .insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
+        }
+        return CGRect(from: startPoint, to: endPoint)
+    }
     /// 文字标注的输入字号
     static let textInputFontSize: CGFloat = 24
     /// 序号标注的字号

@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.3](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.3) · [Release notes](docs/releases/1.3.3.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.4](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.4) · [Release notes](docs/releases/1.3.4.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -41,6 +41,8 @@ GitHub packages use ad-hoc signatures and are **not notarized**. macOS may block
 
 Before the first capture, allow LibreShot under Screen Recording (or Screen & System Audio Recording) in System Settings → Privacy & Security. Double-Option also requires Input Monitoring. An upgrade between temporarily signed builds may require you to grant both permissions again and quit/reopen LibreShot.
 
+If permission is enabled but the new app still reports it missing, quit LibreShot, remove its old entry in the relevant permission panel, and add `/Applications/LibreShot.app` using “+”. Enable it and reopen the app. Check Screen Recording and Input Monitoring separately, capture and save an image, then restart the same installed app and repeat. Maintainers must follow the [installation and permission acceptance procedure (Chinese)](docs/operations/install-and-permissions.md) for every new package.
+
 ### Method 2: Build from Source
 
 If you are a developer, you can compile the source code yourself:
@@ -57,9 +59,11 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.2 release notes](docs/releases/1.3.2.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.4 release notes](docs/releases/1.3.4.md).
 
 ## 🚀 Usage Guide
+
+Capture editing starts in Select/Move. Choose a drawing tool explicitly when needed. Version 1.3.4 also fixes irregular freehand selection bounds and reduces accidental marks or movement.
 
 ### 1. Shortcuts (Recommended)
 - **Area Screenshot**: Default `Cmd + Shift + X`
@@ -78,7 +82,7 @@ Click the "Scissors" icon in the menu bar to select functions:
 ### 3. Annotation & Editing
 
 
-**New in 1.3.3:** Mosaic annotations now have eight resize handles and directional hover cursors, without the extra selection outline. Resizing supports undo. See the [release notes](docs/releases/1.3.3.md).
+**New in 1.3.3:** Mosaic annotations now have eight resize handles and directional hover cursors, without the extra selection outline. Resizing supports undo. See the [release notes](docs/releases/1.3.4.md).
 
 **New in 1.3.2:** Clicks and small pointer jitter no longer create invalid shapes. Completed shapes are immediately selected, and selecting an existing annotation keeps its tool active for drawing in empty space. Drag selected annotations to move them, or drag arrow endpoints to change direction. Delete/Backspace removes the selected annotation; Cmd-Z undoes deletion and adjustments. Text input keeps its normal delete behavior. Rounded selection previews match the output. Editor shortcuts are now beside the toolbar ordering rows; the Space action remains on the Shortcuts tab. See the [validation record](docs/qa/issue-9-20261002.md).
 

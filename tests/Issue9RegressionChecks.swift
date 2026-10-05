@@ -58,6 +58,50 @@ struct Issue9RegressionChecks {
                   "\(tool): a real drag preserves its down position")
         }
         let continuous = model()
+        let penSelection = model()
+        var loop = Annotation(type: .pen, color: .red)
+        loop.points = [CGPoint(x: 80, y: 80), CGPoint(x: 200, y: 80), CGPoint(x: 200, y: 160), CGPoint(x: 80, y: 160), CGPoint(x: 82, y: 82)]
+        loop.startPoint = loop.points.first!; loop.endPoint = loop.points.last!
+        penSelection.annotations = [loop]; penSelection.selectedAnnotationID = loop.id; penSelection.selectedTool = .pen
+        let penBitmap = render(OverlayView(viewModel: penSelection, showsToolbar: false).background(Color.white))
+        let penScale = CGFloat(penBitmap.pixelsWide) / 320
+        var blueMaxX = 0, blueMaxY = 0
+        for y in 65..<180 { for x in 65..<225 {
+            let c = penBitmap.colorAt(x: Int(CGFloat(x) * penScale), y: Int(CGFloat(y) * penScale))!.usingColorSpace(.deviceRGB)!
+            if c.blueComponent > c.redComponent + 0.1 {
+                blueMaxX = max(blueMaxX, x); blueMaxY = max(blueMaxY, y)
+            }
+        } }
+        check(blueMaxX >= 200 && blueMaxY >= 160, "closed freehand selection outline encloses every intermediate stroke point")
+        _ = penSelection.handleSelectedShapeDrag(from: CGPoint(x: 140, y: 120), to: CGPoint(x: 160, y: 135), within: penSelection.selectionRect)
+        penSelection.endSelectedShapeDrag()
+        check(penSelection.annotations[0].points == loop.points.map { CGPoint(x: $0.x + 20, y: $0.y + 15) },
+              "dragging the selected freehand bounding-box interior moves the whole stroke")
+        penSelection.undoLastAnnotation()
+        penSelection.annotations = [loop]; penSelection.selectedAnnotationID = loop.id
+        _ = penSelection.handleSelectedShapeDrag(from: loop.points[0], to: CGPoint(x: 82, y: 81), within: penSelection.selectionRect)
+        penSelection.endSelectedShapeDrag()
+        check(penSelection.annotations == [loop], "small pointer jitter on selected stroke does not move it or create an undo entry")
+        let penJitter = model(); penJitter.selectedTool = .pen
+        penJitter.handleDrawingDrag(from: CGPoint(x: 90, y: 90), to: CGPoint(x: 92, y: 91)); penJitter.endDrawing()
+        check(penJitter.annotations.isEmpty, "blank-space click jitter does not commit a new freehand stroke")
+        penJitter.startDrawing(at: loop.startPoint)
+        for point in loop.points.dropFirst() + [loop.startPoint] { penJitter.updateDrawing(to: point) }
+        penJitter.endDrawing()
+        check(penJitter.annotations.count == 1 && penJitter.annotations[0].points.count == 6,
+              "a real closed freehand stroke remains valid when it returns to its starting point")
+        let drawnLoop = penJitter.annotations[0]
+        _ = penJitter.handleSelectedShapeDrag(from: loop.startPoint, to: CGPoint(x: 82, y: 81), within: penJitter.selectionRect)
+        penJitter.endSelectedShapeDrag()
+        penJitter.undoLastAnnotation()
+        check(penJitter.annotations.isEmpty, "jitter does not add an undo step before undoing the original drawing")
+        penJitter.annotations = [drawnLoop]; penJitter.selectedAnnotationID = drawnLoop.id
+        _ = penJitter.handleSelectedShapeDrag(from: CGPoint(x: 140, y: 120), to: CGPoint(x: 160, y: 135), within: penJitter.selectionRect)
+        _ = penJitter.handleSelectedShapeDrag(from: CGPoint(x: 140, y: 120), to: CGPoint(x: 140, y: 120), within: penJitter.selectionRect)
+        penJitter.endSelectedShapeDrag()
+        check(penJitter.annotations == [drawnLoop], "moving away and back restores the exact freehand points")
+        check(penJitter.cursorStyle(at: CGPoint(x: 140, y: 120)) == .move,
+              "freehand selection interior has the same move feedback as its visible stroke")
         continuous.selectedTool = .rectangle
         continuous.startDrawing(at: CGPoint(x: 80, y: 80))
         continuous.updateDrawing(to: CGPoint(x: 140, y: 120))
@@ -268,6 +312,7 @@ struct Issue9RegressionChecks {
             let overlayBitmap = render(OverlayView(viewModel: continuous, showsToolbar: false).background(Color.white))
             try overlayBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("annotation-handles.png"))
             try selectedMosaicBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("mosaic-handles.png"))
+            try penBitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("freehand-selection.png"))
         }
         guard failures == 0 else { exit(1) }
     }

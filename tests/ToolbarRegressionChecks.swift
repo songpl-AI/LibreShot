@@ -106,10 +106,10 @@ struct ToolbarRegressionChecks {
             selection.startSelection(at: CGPoint(x: 100, y: 100))
             selection.updateSelection(to: CGPoint(x: 400, y: 300))
             selection.endSelection()
-            precondition(selection.selectedTool == .rectangle)
+            precondition(selection.selectedTool == nil)
             let initial = try render(OverlayView(viewModel: selection).background(Color.black),
                                      size: CGSize(width: 640, height: 480), path: output + "/initial.png")
-            selection.selectTool(nil) // Choose Select/Move; Esc now cancels the entire capture.
+            selection.selectTool(nil) // Select/Move is already the default; Esc cancels the entire capture.
             let selectionMode = try render(OverlayView(viewModel: selection).background(Color.black),
                                          size: CGSize(width: 640, height: 480), path: output + "/selection-mode.png")
             let scale = CGFloat(initial.pixelsWide) / 640
@@ -185,7 +185,7 @@ struct ToolbarRegressionChecks {
         model.startSelection(at: CGPoint(x: 10, y: 10))
         model.updateSelection(to: CGPoint(x: 200, y: 200))
         model.endSelection()
-        precondition(model.selectedTool == .rectangle) // Active session remains unchanged.
+        precondition(model.selectedTool == nil) // Active session keeps its toolbar snapshot and starts in Select/Move.
         model.reset()
         precondition(model.visibleToolbarItems.first == .complete)
         model.startSelection(at: CGPoint(x: 10, y: 10))

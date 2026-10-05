@@ -49,15 +49,7 @@ struct OverlayView: View {
                             // Highlight selected annotation
                             if annotation.id == viewModel.selectedAnnotationID {
                                 // Draw selection halo/border
-                                let rect: CGRect
-                                if annotation.type == .text {
-                                     rect = annotation.textBoundingRect
-                                } else if annotation.type == .number {
-                                     let radius = annotation.fontSize / 2 + 4
-                                     rect = CGRect(x: annotation.startPoint.x - radius, y: annotation.startPoint.y - radius, width: radius * 2, height: radius * 2)
-                                } else {
-                                     rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
-                                }
+                                let rect = annotation.selectionBounds
                                 
                                 // Draw Halo
                                 let haloPath = Path(rect.insetBy(dx: -5, dy: -5))

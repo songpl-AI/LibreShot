@@ -49,7 +49,10 @@ hdiutil create -volname "LibreShot $version" -srcfolder "$dmg_source" \
   -format UDZO "$release_output/$dmg_name" -quiet
 hdiutil verify "$release_output/$dmg_name" -quiet
 (cd "$release_output" && shasum -a 256 "$dmg_name" > SHA256SUMS)
+# Ship the operating procedure alongside each package; packaging is not installation acceptance.
+cp docs/operations/install-and-permissions.md "$release_output/INSTALL-AND-PERMISSIONS.md"
 echo "Package: $release_output/$dmg_name"
+echo "Before delivery, follow $release_output/INSTALL-AND-PERMISSIONS.md and record actual capture/save checks before and after restart."
 if [[ "$signing_mode" == ad-hoc ]]; then
   echo "Signing mode: ad-hoc. This package cannot be notarized; macOS permissions may need to be granted again after an update."
 else

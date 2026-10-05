@@ -4,7 +4,7 @@
 
 LibreShot 是一款轻量、现代化的 macOS 截图与标注工具，原生开发，完全免费开源。
 
-最新公开版本：[v1.3.3](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.3) · [更新说明](docs/releases/1.3.3.md) · [更新日志](CHANGELOG.md)
+最新公开版本：[v1.3.4](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.4) · [更新说明](docs/releases/1.3.4.md) · [更新日志](CHANGELOG.md)
 
 ## ✨ 特性
 
@@ -41,6 +41,8 @@ GitHub 安装包使用 ad-hoc 签名，未经过 Apple 公证，因此 macOS 默
 
 首次截图需要在“系统设置 → 隐私与安全性”中允许 LibreShot 录制屏幕（该项目在不同系统版本中可能叫“屏幕录制”或“录屏与系统录音”）。双击 Option 还需“输入监控”权限。升级临时签名版本后，macOS 可能要求重新授予这两项权限，并退出、重新打开 LibreShot。
 
+升级后即使授权开关已开启，也可能仍绑定旧包：先退出 LibreShot，在对应权限页移除旧项，再用“+”添加 `/Applications/LibreShot.app`，开启后重新打开。屏幕录制与输入监控要分别检查，完成一次实际截图和保存，再重启复验。维护者每次新包必须执行 [安装与授权验收规范](docs/operations/install-and-permissions.md)。
+
 ### 方式二：自行构建
 
 如果您是开发者，可以自行编译源码：
@@ -57,9 +59,11 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *当前源码使用 macOS 26 SDK，请使用 Xcode 26 或更新版本；应用部署目标为 macOS 13.0。*
 
-GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次修复见 [1.3.2 更新说明](docs/releases/1.3.2.md)。
+GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次修复见 [1.3.4 更新说明](docs/releases/1.3.4.md)。
 
 ## 🚀 使用指南
+
+截图框选完成后默认使用“选择/移动”；需要画笔、矩形等标注时主动选择工具。1.3.4 修复不规则笔迹选框并减少轻点抖动误操作。
 
 ### 1. 快捷键启动 (推荐)
 - **区域截图**：默认快捷键 `Cmd + Shift + X`
@@ -78,7 +82,7 @@ GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也�
 ### 3. 标注与编辑
 
 
-**1.3.3 更新**：马赛克标注新增八向缩放控制点和悬停光标，取消选中时的额外蓝框；支持撤销调整。详见 [更新说明](docs/releases/1.3.3.md)。
+**1.3.3 更新**：马赛克标注新增八向缩放控制点和悬停光标，取消选中时的额外蓝框；支持撤销调整。详见 [更新说明](docs/releases/1.3.4.md)。
 
 **1.3.2 更新**：单击不再产生无效图形；画完矩形、椭圆或箭头立即显示圆形控制点，选中旧标注后保留对应工具，可在空白处继续绘制。拖动已选中标注可移动，箭头可分别调整首尾。按 Delete/Backspace 删除选中项，⌘Z 撤销删除或调整；文字输入时删除键仍用于输入。选区圆角预览与输出保持一致。工具快捷键已移至“工具栏”页对应排序行，空格动作仍在“快捷键”页。验证记录见 [本次修复验收](docs/qa/issue-9-20261002.md)。
 

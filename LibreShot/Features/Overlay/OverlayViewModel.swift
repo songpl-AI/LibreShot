@@ -342,8 +342,8 @@ class OverlayViewModel: ObservableObject {
                 confirmLongCaptureRegion()
             } else {
                 state = .editing
-                // 默认使用矩形；用户隐藏矩形后进入选择模式。
-                selectedTool = toolbarConfiguration.isVisible(.rectangle) ? .rectangle : nil
+                // 每次框选完成进入选择/移动，标注工具由用户主动选择。
+                selectedTool = nil
             }
         }
     }
@@ -411,6 +411,7 @@ class OverlayViewModel: ObservableObject {
         let start: CGPoint
         let handle: SelectionHandle?
         var arrowEndpoint: Bool? = nil
+        var moved = false
     }
     private var shapeDrag: ShapeDrag?
     var isTransformingShape: Bool { shapeDrag != nil }
@@ -422,6 +423,12 @@ class OverlayViewModel: ObservableObject {
         return CGRect(from: annotation.startPoint, to: annotation.endPoint)
     }
 
+    private var selectedMoveRect: CGRect? {
+        guard let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) else { return nil }
+        if [.pen, .blur].contains(annotation.type) { return annotation.selectionBounds.insetBy(dx: -5, dy: -5) }
+        return selectedShapeRect
+    }
+
     /// After a shape is selected, its empty interior can move it. Visible content
     /// from another annotation still takes precedence, and crop handles run first.
     @discardableResult
@@ -429,7 +436,7 @@ class OverlayViewModel: ObservableObject {
         if shapeDrag == nil {
             guard state == .editing, !isEditingText, !isMovingSelection, !isResizingText, activeSelectionHandle == nil,
                   let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) else { return false }
-            let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
+            let rect = annotation.selectionBounds
             let handle = (selectedShapeRect == nil ? [] : SelectionHandle.allCases).filter {
                 let p = $0.position(in: rect)
                 return abs(start.x - p.x) <= 8 && abs(start.y - p.y) <= 8
@@ -443,12 +450,15 @@ class OverlayViewModel: ObservableObject {
             else { arrowEndpoint = nil }
             if handle == nil && arrowEndpoint == nil {
                 let hit = hitTest(at: start)
-                guard hit == annotation.id || (hit == nil && selectedShapeRect != nil && rect.contains(start)) else { return false }
+                guard hit == annotation.id || (hit == nil && selectedMoveRect?.contains(start) == true) else { return false }
                 if annotation.type == .text, hypot(point.x - start.x, point.y - start.y) < 5 { return false }
             }
             shapeDrag = ShapeDrag(annotation: annotation, start: start, handle: handle, arrowEndpoint: arrowEndpoint)
         }
-        guard let drag = shapeDrag, let index = annotations.firstIndex(where: { $0.id == drag.annotation.id }) else { return false }
+        guard var drag = shapeDrag, let index = annotations.firstIndex(where: { $0.id == drag.annotation.id }) else { return false }
+        drag.moved = drag.moved || hypot(point.x - drag.start.x, point.y - drag.start.y) >= annotationClickTolerance
+        shapeDrag = drag
+        guard drag.moved else { return true }
         if let tail = drag.arrowEndpoint {
             let originalPoint = tail ? drag.annotation.startPoint : drag.annotation.endPoint
             let endpoint = clampPoint(CGPoint(x: originalPoint.x + point.x - drag.start.x,
@@ -560,7 +570,7 @@ class OverlayViewModel: ObservableObject {
         if tool == .mosaic || tool == .blur {
             annotation.lineWidth = 24
         }
-        if [.rectangle, .ellipse, .arrow, .mosaic].contains(tool) {
+        if [.rectangle, .ellipse, .arrow, .mosaic, .pen, .blur].contains(tool) {
             pendingDrawing = annotation
             currentAnnotation = nil
         } else {
@@ -585,6 +595,8 @@ class OverlayViewModel: ObservableObject {
         let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
         let valid: Bool
         switch annotation.type {
+        case .pen, .blur:
+            valid = annotation.points.contains { hypot($0.x - annotation.startPoint.x, $0.y - annotation.startPoint.y) >= annotationClickTolerance }
         case .rectangle, .ellipse, .mosaic: valid = rect.width >= 3 && rect.height >= 3 && distance >= 5
         case .arrow: valid = distance >= 5
         default: valid = true
@@ -872,7 +884,7 @@ class OverlayViewModel: ObservableObject {
         if let a = annotations.first(where: { $0.id == selectedAnnotationID }) {
             if a.type == .arrow, [a.startPoint, a.endPoint].contains(where: { hypot(point.x - $0.x, point.y - $0.y) <= 8 }) { return .move }
             let hit = hitTest(at: point)
-            if hit == a.id || (hit == nil && selectedShapeRect?.contains(point) == true) { return .move }
+            if hit == a.id || (hit == nil && selectedMoveRect?.contains(point) == true) { return .move }
         }
         if selectedTool == nil, captureMode != .imageEditor, selectionRect.contains(point), hitTest(at: point) == nil { return .move }
         return .crosshair

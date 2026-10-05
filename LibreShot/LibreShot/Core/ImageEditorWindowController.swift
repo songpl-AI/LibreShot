@@ -16,7 +16,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         model.captureMode = .imageEditor
         model.state = .editing
         model.selectionRect = CGRect(origin: .zero, size: image.size)
-        model.selectedTool = .rectangle
+        model.selectedTool = nil
         let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         model.updatePreviewImage(cg, scale: CGFloat(cg?.width ?? 1) / max(image.size.width, 1))
         let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
