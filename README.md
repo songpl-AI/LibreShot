@@ -41,7 +41,7 @@ GitHub 安装包使用 ad-hoc 签名，未经过 Apple 公证，因此 macOS 默
 
 首次截图需要在“系统设置 → 隐私与安全性”中允许 LibreShot 录制屏幕（该项目在不同系统版本中可能叫“屏幕录制”或“录屏与系统录音”）。双击 Option 还需“输入监控”权限。升级临时签名版本后，macOS 可能要求重新授予这两项权限，并退出、重新打开 LibreShot。
 
-升级后即使授权开关已开启，也可能仍绑定旧包：先退出 LibreShot，在对应权限页移除旧项，再用“+”添加 `/Applications/LibreShot.app`，开启后重新打开。屏幕录制与输入监控要分别检查，完成一次实际截图和保存，再重启复验。维护者每次新包必须执行 [安装与授权验收规范](docs/operations/install-and-permissions.md)。
+升级后即使授权开关已开启，也可能仍绑定旧包：先退出 LibreShot，在对应权限页移除旧项，再用“+”添加 `/Applications/LibreShot.app`，开启后重新打开。屏幕录制与输入监控要分别检查，完成一次实际截图和保存，再重启复验。维护者每次新包使用 [本机换包脚本](docs/operations/local-upgrade-script.md)，并执行 [安装与授权验收规范](docs/operations/install-and-permissions.md)。
 
 ### 方式二：自行构建
 
