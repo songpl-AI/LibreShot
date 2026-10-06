@@ -4,7 +4,7 @@
 
 LibreShot 是一款轻量、现代化的 macOS 截图与标注工具，原生开发，完全免费开源。
 
-最新公开版本：[v1.3.8](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.8) · [更新说明](docs/releases/1.3.8.md) · [更新日志](CHANGELOG.md)
+最新公开版本：[v1.3.9](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.9) · [更新说明](docs/releases/1.3.9.md) · [更新日志](CHANGELOG.md)
 
 ## ✨ 特性
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *当前源码使用 macOS 26 SDK，请使用 Xcode 26 或更新版本；应用部署目标为 macOS 13.0。*
 
-GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次修复见 [1.3.8 更新说明](docs/releases/1.3.8.md)。
+GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次修复见 [1.3.9 更新说明](docs/releases/1.3.9.md)。
 
 ## 🚀 使用指南
 
@@ -144,3 +144,5 @@ v1.3.2 已在本机 Apple Silicon / macOS 26 完成发行包、安装、授权�
 ## 📄 许可证
 
 本项目基于 [MIT License](LICENSE) 开源。
+
+**1.3.9 更新**：已有标注命中时显示手型，单击选中后可移动；框选式马赛克/模糊提供相同提示，涂抹模式继续支持连续补涂。详见 [更新说明](docs/releases/1.3.9.md)。

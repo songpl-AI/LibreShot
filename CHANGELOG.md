@@ -2,10 +2,14 @@
 
 ## 未发布 / Unreleased
 
+- 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
+
+## [1.3.9](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.9) — 2026-10-06
+
 - Issue #19：补齐未选中矩形、椭圆、箭头、画笔、文字、序号及框选式马赛克/模糊的手型悬停提示，复用点击命中范围；保留缩放光标优先级和空白处绘制。
 - 马赛克/模糊涂抹模式保留连续补涂，不新增未选中涂抹笔迹的手型提示；切回选择/移动主动选中笔迹后仍可移动。
 
-- 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
+构建号 31。新增 48 项检查、92 项编辑回归、22 项文字/回看检查和效果 11 组通过；同包重启前后实际截图保存通过，维护者试用确认。发布原验收 DMG；内存 Issue #20 仍在排查。[更新说明](docs/releases/1.3.9.md) · [安装验收](docs/qa/1.3.9-31-package-20261006.md)。
 
 ## [1.3.8](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.8) — 2026-10-06
 

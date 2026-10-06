@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.8](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.8) · [Release notes](docs/releases/1.3.8.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.9](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.9) · [Release notes](docs/releases/1.3.9.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.8 release notes](docs/releases/1.3.8.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.9 release notes](docs/releases/1.3.9.md).
 
 ## 🚀 Usage Guide
 
@@ -142,3 +142,5 @@ Issues and Pull Requests are welcome!
 ## 📄 License
 
 This project is open source under the [MIT License](LICENSE).
+
+**New in 1.3.9:** Hand cursors identify selectable existing annotations, including rectangular mosaic/blur effects, while brush modes preserve uninterrupted repeated painting. See the [release notes](docs/releases/1.3.9.md).
