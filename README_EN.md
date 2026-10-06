@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.7](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.7) · [Release notes](docs/releases/1.3.7.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.8](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.8) · [Release notes](docs/releases/1.3.8.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.6 release notes](docs/releases/1.3.7.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.8 release notes](docs/releases/1.3.8.md).
 
 ## 🚀 Usage Guide
 
@@ -86,9 +86,9 @@ Click the "Scissors" icon in the menu bar to select functions:
 
 **New in 1.3.2:** Clicks and small pointer jitter no longer create invalid shapes. Completed shapes are immediately selected, and selecting an existing annotation keeps its tool active for drawing in empty space. Drag selected annotations to move them, or drag arrow endpoints to change direction. Delete/Backspace removes the selected annotation; Cmd-Z undoes deletion and adjustments. Text input keeps its normal delete behavior. Rounded selection previews match the output. Editor shortcuts are now beside the toolbar ordering rows; the Space action remains on the Shortcuts tab. See the [validation record](docs/qa/issue-9-20261002.md).
 
-**New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it.
+**New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. Dragging on empty space draws with the active tool; existing text and numbers can be selected and moved directly by dragging. Double-clicking text still edits it.
 
-**New in 1.3.5:** Configure the default capture tool, double-click to edit numbers, and resize numbered annotations with size/color inheritance. See the [release notes](docs/releases/1.3.7.md).
+**New in 1.3.8:** Improved initial text dragging, short reverse-scroll revisits within captured content, filled/outlined numbers, solid arrowheads and clearer text selection borders. See the [release notes](docs/releases/1.3.8.md).
 
 After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. While editing a number, Esc first cancels the number edit. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.

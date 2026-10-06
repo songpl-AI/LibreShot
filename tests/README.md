@@ -145,3 +145,7 @@ Issue #4 补充覆盖多种截图宽高、小幅位移以及 20/32/64 px 固定�
 ## Issue #16 原位编辑
 
 `bash tests/run-inline-editing-checks.sh` 使用生产 TextKit 排版、NSTextView 和成图接口，检查文字显示/编辑的字号、字重、中文回退字体、单行/多行字形坐标、导出基线，以及序号编辑圆圈中心、扩展、颜色、取消/提交/撤销。样例输出至 `/tmp/libreshot-inline-qa`，使用独立设置域。实现与验证边界见 [Issue #16 验证记录](../docs/qa/inline-editing-issue16-20261006.md)。
+
+## Issue #17 / #18 标注与长截图回看
+
+`bash tests/run-issue17-18-checks.sh` 覆盖文字/序号首次拖动和撤销、避免误建输入框、实心/描边序号持久化与导出、实心箭头命中，以及 Finder fixture 的短暂反向回看、恢复前沿、初始位置之外和缺帧拒绝。22 项检查通过；实体手势与实际 Finder 弹性回弹另行验收。[验证记录](../docs/qa/issues17-18-20261006.md)。
