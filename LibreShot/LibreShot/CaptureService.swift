@@ -787,7 +787,8 @@ final class LongCaptureFrameAccumulator {
         case .accept:
             let result = stitcher.append(frame: frame)
             hasUnmatchedFrame = !result.accepted
-            if result.accepted { deduplicator.markAccepted(frame) }
+            // Revisiting captured content must not move the forward matching baseline.
+            if result.accepted, result.appendedPixelHeight > 0 { deduplicator.markAccepted(frame) }
         }
         return LongCaptureProgress(acceptedFrameCount: stitcher.acceptedFrameCount,
                                    appendedPixelHeight: stitcher.totalPixelHeight,
@@ -846,6 +847,7 @@ final class LongCaptureStitcher {
     private var previousImage: CGImage?
     private var footerImage: CGImage?
     private var fixedFooterHeight: Int?
+    private var initialFrameHeight = 0
     private(set) var totalPixelHeight = 0
     private(set) var acceptedFrameCount = 0
     
@@ -855,14 +857,30 @@ final class LongCaptureStitcher {
                 return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
             }
             totalPixelHeight = frame.image.height
+            initialFrameHeight = frame.image.height
             acceptedFrameCount = 1
             segments = [LongCaptureSegment(image: first, yOffset: 0)]
             previousImage = frame.image
             return LongCaptureAppendResult(accepted: true, appendedPixelHeight: frame.image.height)
         }
 
-        guard let previousImage,
-              let match = overlapMatcher.match(previous: previousImage, current: frame.image) else {
+        guard let previousImage else {
+            return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
+        }
+        let forward = overlapMatcher.match(previous: previousImage, current: frame.image)
+        let reverse = overlapMatcher.match(previous: frame.image, current: previousImage)
+        // Do not guess direction in repeating content with two equally plausible seams.
+        if let forward, let reverse, abs(forward.confidence - reverse.confidence) < 0.025 {
+            return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
+        }
+        if let reverse, reverse.confidence > (forward?.confidence ?? -.infinity) {
+            let distance = frame.image.height - reverse.overlapHeight
+            guard distance <= totalPixelHeight - initialFrameHeight else {
+                return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
+            }
+            return LongCaptureAppendResult(accepted: true, appendedPixelHeight: 0)
+        }
+        guard let match = forward else {
             return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
         }
 

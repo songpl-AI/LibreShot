@@ -74,6 +74,7 @@ class OverlayViewModel: ObservableObject {
         self.settings = settings
         self.toolbarConfiguration = settings.toolbarConfiguration
         self.useRoundedCorners = settings.useRoundedCorners
+        self.selectedNumberStyle = settings.numberAnnotationStyle
     }
 
     var visibleToolbarItems: [ToolbarItem] {
@@ -87,13 +88,16 @@ class OverlayViewModel: ObservableObject {
     private var pendingDrawing: Annotation?
     var hasDrawingGesture: Bool { currentAnnotation != nil || pendingDrawing != nil }
     private indirect enum AnnotationUndo {
-        case numbered(AnnotationUndo, Int, UUID?, CGFloat, Color)
+        case numbered(AnnotationUndo, Int, UUID?, CGFloat, Color, NumberAnnotationStyle)
         case effect(AnnotationUndo, CGFloat, CGFloat, CGFloat)
         case remove(UUID)
         case restore(Annotation, Int)
     }
     private var annotationUndo: [AnnotationUndo] = []
     @Published var selectedColor: Color = .red
+    @Published var selectedNumberStyle: NumberAnnotationStyle = .filled {
+        didSet { settings.numberAnnotationStyle = selectedNumberStyle }
+    }
     @Published var selectedNumberFontSize: CGFloat = Annotation.numberFontSize
     @Published var selectedFontSize: CGFloat = Annotation.textInputFontSize
     @Published var activeSelectionHandle: SelectionHandle?
@@ -516,9 +520,22 @@ class OverlayViewModel: ObservableObject {
         guard var press = annotationPress, press.candidate != nil else { return false }
         press.dragged = press.dragged || hypot(point.x - start.x, point.y - start.y) >= annotationClickTolerance
         annotationPress = press
-        if press.dragged, press.tool != .text, press.tool != .number {
-            if !hasDrawingGesture { startDrawing(at: start) }
-            updateDrawing(to: point)
+        if press.dragged {
+            if let id = press.candidate,
+               let annotation = annotations.first(where: { $0.id == id }),
+               [.text, .number].contains(annotation.type), press.tool == .text || press.tool == .number {
+                // A first drag selects and moves the same object, without a preliminary click.
+                selectedAnnotationID = id
+                selectedColor = annotation.color
+                selectedTool = annotation.type
+                if annotation.type == .text { selectedFontSize = annotation.fontSize }
+                else { selectedNumberFontSize = annotation.fontSize; selectedNumberStyle = annotation.numberStyle }
+                lastTextTapAnnotationID = nil; lastTextTapDate = nil
+                _ = handleSelectedShapeDrag(from: start, to: point, within: selectionRect)
+            } else if press.tool != .text, press.tool != .number {
+                if !hasDrawingGesture { startDrawing(at: start) }
+                updateDrawing(to: point)
+            }
         }
         return true
     }
@@ -528,7 +545,10 @@ class OverlayViewModel: ObservableObject {
         guard let press = annotationPress, let id = press.candidate else { return false }
         let dragged = press.dragged || hypot(point.x - start.x, point.y - start.y) >= annotationClickTolerance
         if dragged {
-            if press.tool != .text, press.tool != .number {
+            if isTransformingShape {
+                _ = handleSelectedShapeDrag(from: start, to: point, within: selectionRect)
+                endSelectedShapeDrag()
+            } else if press.tool != .text, press.tool != .number {
                 if !hasDrawingGesture { startDrawing(at: start) }
                 updateDrawing(to: point)
                 endDrawing()
@@ -656,7 +676,7 @@ class OverlayViewModel: ObservableObject {
         selectedAnnotationID = id
         selectedTool = visibleToolbarItems.contains(where: { $0.annotationType == annotation.type }) ? annotation.type : nil
         selectedColor = annotation.color
-        if annotation.type == .number { selectedNumberFontSize = annotation.fontSize }
+        if annotation.type == .number { selectedNumberFontSize = annotation.fontSize; selectedNumberStyle = annotation.numberStyle }
         if annotation.type == .text || annotation.type == .number {
             if annotation.type == .text { selectedFontSize = annotation.fontSize }
             if lastTextTapAnnotationID == id, let last = lastTextTapDate,
@@ -804,9 +824,9 @@ class OverlayViewModel: ObservableObject {
     func undoLastAnnotation() {
         if let edit = annotationUndo.popLast() {
             var action = edit
-            if case .numbered(let wrapped, let next, let last, let size, let color) = edit {
+            if case .numbered(let wrapped, let next, let last, let size, let color, let style) = edit {
                 nextNumber = next; lastNumberID = last
-                selectedNumberFontSize = size; selectedColor = color
+                selectedNumberFontSize = size; selectedColor = color; selectedNumberStyle = style
                 action = wrapped
             }
             if case .effect(let wrapped, let block, let width, let radius) = edit {
@@ -902,6 +922,11 @@ class OverlayViewModel: ObservableObject {
              return
         }
 
+        if let id = hitTest(at: point) {
+            selectExistingAnnotation(id: id)
+            return
+        }
+
         editingTextSize = AnnotationTextLayout(text: "", fontSize: selectedFontSize, isNumber: false).size
         isEditingText = true
         editingTextPosition = point
@@ -944,6 +969,7 @@ class OverlayViewModel: ObservableObject {
         editingTextPosition = a.selectionBounds.origin
         selectedAnnotationID = a.id
         selectedNumberFontSize = a.fontSize
+        selectedNumberStyle = a.numberStyle
     }
 
     func commitTextInput() {
@@ -1019,7 +1045,7 @@ class OverlayViewModel: ObservableObject {
     private var lastNumberID: UUID?
 
     private func recordNumberUndo(_ edit: AnnotationUndo) {
-        annotationUndo.append(.numbered(edit, nextNumber, lastNumberID, selectedNumberFontSize, selectedColor))
+        annotationUndo.append(.numbered(edit, nextNumber, lastNumberID, selectedNumberFontSize, selectedColor, selectedNumberStyle))
     }
 
     func placeNumber(at point: CGPoint) {
@@ -1030,6 +1056,7 @@ class OverlayViewModel: ObservableObject {
         annotation.startPoint = point
         annotation.text = String(nextNumber)
         annotation.fontSize = selectedNumberFontSize
+        annotation.numberStyle = selectedNumberStyle
         recordNumberUndo(.remove(annotation.id))
         annotations.append(annotation)
         lastNumberID = annotation.id
@@ -1089,6 +1116,9 @@ class OverlayViewModel: ObservableObject {
             let hit = hitTest(at: point)
             if hit == a.id || (hit == nil && selectedMoveRect?.contains(point) == true) { return .move }
         }
+        if selectedTool == .text || selectedTool == .number,
+           let id = hitTest(at: point), let a = annotations.first(where: { $0.id == id }),
+           [.text, .number].contains(a.type) { return .move }
         if selectedTool == nil, captureMode != .imageEditor, selectionRect.contains(point), hitTest(at: point) == nil { return .move }
         return .crosshair
     }
@@ -1125,6 +1155,23 @@ class OverlayViewModel: ObservableObject {
         selectedColor = color
     }
 
+    func setNumberStyle(_ style: NumberAnnotationStyle) {
+        if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }),
+           annotations[index].type == .number, annotations[index].numberStyle != style {
+            recordNumberUndo(.restore(annotations[index], index))
+            annotations[index].numberStyle = style
+        }
+        selectedNumberStyle = style
+    }
+
+    var editingNumberAnnotation: Annotation? {
+        annotations.first { $0.id == editingTextAnnotationID && $0.type == .number }
+    }
+
+    var editingTextColor: NSColor {
+        editingNumberAnnotation?.textColor ?? NSColor(selectedColor)
+    }
+
     /// 设置字号：更新 selectedFontSize，并立即应用到选中的文字标注（若有）
     func setFontSize(_ size: CGFloat) {
         selectedFontSize = size
@@ -1137,7 +1184,7 @@ class OverlayViewModel: ObservableObject {
     private var textResizeStartFontSize: CGFloat = 24
     private var textResizeStartDiag: CGFloat = 1
     private var textResizeOriginal: Annotation?
-    private var numberResizeState: (Int, UUID?, CGFloat, Color)?
+    private var numberResizeState: (Int, UUID?, CGFloat, Color, NumberAnnotationStyle)?
 
     /// 文字与序号共用右下角字号缩放手柄；序号保持中心锚点。
     var selectedTextResizeHandle: CGPoint? {
@@ -1158,7 +1205,7 @@ class OverlayViewModel: ObservableObject {
         textResizeStartFontSize = annotation.fontSize
         let handle = selectedTextResizeHandle ?? annotation.startPoint
         textResizeStartDiag = max(hypot(handle.x - textResizeAnchor.x, handle.y - textResizeAnchor.y), 1)
-        numberResizeState = (nextNumber, lastNumberID, selectedNumberFontSize, selectedColor)
+        numberResizeState = (nextNumber, lastNumberID, selectedNumberFontSize, selectedColor, selectedNumberStyle)
     }
 
     func updateTextResize(to point: CGPoint) {
@@ -1176,7 +1223,7 @@ class OverlayViewModel: ObservableObject {
         if let original = textResizeOriginal, let index = annotations.firstIndex(where: { $0.id == original.id }),
            annotations[index] != original {
             if original.type == .number, let old = numberResizeState {
-                annotationUndo.append(.numbered(.restore(original, index), old.0, old.1, old.2, old.3))
+                annotationUndo.append(.numbered(.restore(original, index), old.0, old.1, old.2, old.3, old.4))
             } else { annotationUndo.append(.restore(original, index)) }
         }
         numberResizeState = nil

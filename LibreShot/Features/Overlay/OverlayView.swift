@@ -60,9 +60,11 @@ struct OverlayView: View {
                                 let rect = annotation.selectionBounds
                                 
                                 // Draw Halo
-                                let haloPath = Path(rect.insetBy(dx: -5, dy: -5))
+                                let haloRect = rect.insetBy(dx: -5, dy: -5)
+                                let haloPath = annotation.type == .text
+                                    ? Path(roundedRect: haloRect, cornerRadius: 4) : Path(haloRect)
                                 if annotation.isEffectBrush || ![AnnotationType.rectangle, .ellipse, .arrow, .mosaic, .blur].contains(annotation.type) {
-                                    context.stroke(haloPath, with: .color(.blue.opacity(0.5)), lineWidth: 2)
+                                    context.stroke(haloPath, with: .color(.blue.opacity(annotation.type == .text ? 0.85 : 0.5)), lineWidth: annotation.type == .text ? 1.5 : 2)
                                 }
                                 if annotation.type == .arrow {
                                     for point in [annotation.startPoint, annotation.endPoint] {
@@ -153,7 +155,8 @@ struct OverlayView: View {
                     if viewModel.isEditingText {
                         if let circle = viewModel.editingNumberCircleRect {
                             Circle()
-                                .stroke(viewModel.selectedColor, lineWidth: viewModel.annotations.first(where: { $0.id == viewModel.editingTextAnnotationID })?.lineWidth ?? 3)
+                                .fill(viewModel.editingNumberAnnotation?.numberStyle == .filled ? viewModel.selectedColor : .clear)
+                                .overlay(Circle().stroke(viewModel.selectedColor, lineWidth: viewModel.editingNumberAnnotation?.numberStyle == .filled ? 0 : (viewModel.editingNumberAnnotation?.lineWidth ?? 3)))
                                 .frame(width: circle.width, height: circle.height)
                                 .position(x: circle.midX, y: circle.midY)
                                 .allowsHitTesting(false)
@@ -161,7 +164,7 @@ struct OverlayView: View {
                         InlineTextEditor(
                             text: $viewModel.editingTextContent,
                             fontSize: viewModel.inputFontSize,
-                            color: NSColor(viewModel.selectedColor),
+                            color: viewModel.editingTextColor,
                             cursorAtEnd: viewModel.editingTextAnnotationID != nil,
                             isNumber: viewModel.isEditingNumber,
                             selectsAllOnFocus: viewModel.isEditingNumber,
@@ -178,9 +181,10 @@ struct OverlayView: View {
                         .help(viewModel.isEditingNumber ? "输入 1–9999；回车确认，Esc 取消改号" : "输入文字，点击外部确认")
                         .overlay {
                             if !viewModel.isEditingNumber {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(Color.blue.opacity(0.55), lineWidth: 1.5)
-                                    .padding(-3)
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.blue.opacity(0.85), lineWidth: 1.5)
+                                    .padding(-5)
+                                    .allowsHitTesting(false)
                             }
                         }
                         .position(
@@ -235,7 +239,7 @@ struct OverlayView: View {
                         if viewModel.isEditingText {
                             // 点击编辑器外部提交
                             let editorRect = viewModel.editingTextEditorFrame
-                            if !editorRect.contains(value.location) {
+                            if !editorRect.contains(value.startLocation) {
                                 viewModel.commitTextInput()
                             }
                             return
@@ -411,20 +415,12 @@ struct OverlayView: View {
             let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
             path.addRect(rect)
         case .arrow:
-            path.move(to: annotation.startPoint)
-            path.addLine(to: annotation.endPoint)
-            // Draw rudimentary arrow head
-            // ... (keep existing)
-            let start = annotation.startPoint
-            let end = annotation.endPoint
-            let angle = atan2(end.y - start.y, end.x - start.x)
-            let arrowLength: CGFloat = 15.0
-            let arrowAngle: CGFloat = .pi / 6
-            let p1 = CGPoint(x: end.x - arrowLength * cos(angle - arrowAngle), y: end.y - arrowLength * sin(angle - arrowAngle))
-            let p2 = CGPoint(x: end.x - arrowLength * cos(angle + arrowAngle), y: end.y - arrowLength * sin(angle + arrowAngle))
-            path.move(to: end); path.addLine(to: p1)
-            path.move(to: end); path.addLine(to: p2)
-            
+            let arrow = annotation.arrowGeometry
+            context.stroke(Path(arrow.shaft), with: .color(annotation.color),
+                           style: StrokeStyle(lineWidth: annotation.lineWidth, lineCap: .round))
+            context.fill(Path(arrow.head), with: .color(annotation.color))
+            return
+
         case .ellipse:
             let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
             path.addEllipse(in: rect)
@@ -438,13 +434,15 @@ struct OverlayView: View {
             break
         }
 
-        if annotation.type != .text {
+        if annotation.type == .number && annotation.numberStyle == .filled {
+            context.fill(path, with: .color(annotation.color))
+        } else if annotation.type != .text {
             context.stroke(path, with: .color(annotation.color), lineWidth: annotation.lineWidth)
         }
 
         if (annotation.type == .text || annotation.type == .number), !annotation.text.isEmpty {
             let layout = AnnotationTextLayout(text: annotation.text, fontSize: annotation.fontSize,
-                                              isNumber: annotation.type == .number, color: NSColor(annotation.color))
+                                              isNumber: annotation.type == .number, color: annotation.textColor)
             let origin = annotation.type == .number
                 ? CGPoint(x: annotation.startPoint.x - layout.size.width / 2,
                           y: annotation.startPoint.y - layout.size.height / 2)

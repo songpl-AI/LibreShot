@@ -90,6 +90,10 @@ class SettingsService: ObservableObject {
         didSet { defaults.set(defaultEditorTool.rawValue, forKey: "defaultEditorTool") }
     }
 
+    @Published var numberAnnotationStyle: NumberAnnotationStyle {
+        didSet { defaults.set(numberAnnotationStyle.rawValue, forKey: "numberAnnotationStyle") }
+    }
+
     var initialAnnotationTool: AnnotationType? {
         guard toolbarConfiguration.isVisible(defaultEditorTool) else { return nil }
         return defaultEditorTool.annotationType
@@ -156,6 +160,7 @@ class SettingsService: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.numberAnnotationStyle = NumberAnnotationStyle(rawValue: defaults.string(forKey: "numberAnnotationStyle") ?? "") ?? .filled
         if let data = defaults.data(forKey: "editorShortcuts"),
            let saved = try? JSONDecoder().decode([String: EditorShortcut].self, from: data) {
             var validated: [String: EditorShortcut] = [:]

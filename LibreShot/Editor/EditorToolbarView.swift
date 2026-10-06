@@ -252,6 +252,18 @@ struct StylePopoverView: View {
                 ColorPicker("更多颜色…", selection: colorBinding, supportsOpacity: false)
             }
 
+            if viewModel.selectedTool == .number {
+                Picker("序号样式", selection: Binding(
+                    get: { viewModel.selectedNumberStyle },
+                    set: { viewModel.setNumberStyle($0) }
+                )) {
+                    ForEach(NumberAnnotationStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {

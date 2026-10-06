@@ -303,7 +303,8 @@ struct Issue4RegressionChecks {
         check(actions.last == .copy, "Return completes screenshot")
         let count = actions.count
         model.selectedTool = .text
-        model.startTextInput(at: CGPoint(x: 20, y: 50))
+        // Use blank space; the old point was inside the existing text's hit margin.
+        model.startTextInput(at: CGPoint(x: 20, y: 90))
         window.keyDown(with: event("\r", code: 36, modifiers: []))
         check(actions.count == count, "Return during text editing does not finish screenshot")
         settings.editorSpaceAction = .saveAndCopy

@@ -34,6 +34,33 @@ enum EffectDrawingMode: String, CaseIterable, Identifiable {
     var title: String { self == .brush ? "涂抹" : "框选" }
 }
 
+enum NumberAnnotationStyle: String, CaseIterable, Identifiable {
+    case outline, filled
+    var id: String { rawValue }
+    var title: String { self == .filled ? "实心" : "描边" }
+}
+
+/// Shared arrow geometry for display, export and pointer hit testing.
+struct AnnotationArrowGeometry {
+    let shaft: CGPath
+    let head: CGPath
+    init(start: CGPoint, end: CGPoint, lineWidth: CGFloat) {
+        let length = hypot(end.x - start.x, end.y - start.y)
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let headLength = min(max(10, lineWidth * 4.5), length * 0.45)
+        let base = CGPoint(x: end.x - headLength * cos(angle), y: end.y - headLength * sin(angle))
+        let halfWidth = headLength * 0.45
+        let shaft = CGMutablePath()
+        shaft.move(to: start); shaft.addLine(to: base)
+        let head = CGMutablePath()
+        head.move(to: end)
+        head.addLine(to: CGPoint(x: base.x - halfWidth * sin(angle), y: base.y + halfWidth * cos(angle)))
+        head.addLine(to: CGPoint(x: base.x + halfWidth * sin(angle), y: base.y - halfWidth * cos(angle)))
+        head.closeSubpath()
+        self.shaft = shaft; self.head = head
+    }
+}
+
 extension Annotation {
     // Points encode brush geometry; empty points retain rectangular effects.
     var isEffectBrush: Bool { (type == .mosaic || type == .blur) && !points.isEmpty }
@@ -41,6 +68,10 @@ extension Annotation {
     /// Bounds of the whole annotation, including intermediate freehand points.
     var selectionBounds: CGRect {
         if type == .text { return textBoundingRect }
+        if type == .arrow {
+            return arrowGeometry.shaft.boundingBoxOfPath.union(arrowGeometry.head.boundingBoxOfPath)
+                .insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
+        }
         if type == .number {
             let radius = numberRadius
             return CGRect(x: startPoint.x - radius, y: startPoint.y - radius, width: radius * 2, height: radius * 2)
@@ -73,6 +104,20 @@ extension Annotation {
         CGRect(origin: startPoint, size: textBoundingSize)
     }
 
+    var arrowGeometry: AnnotationArrowGeometry {
+        AnnotationArrowGeometry(start: startPoint, end: endPoint, lineWidth: lineWidth)
+    }
+
+    var textColor: NSColor {
+        guard type == .number, numberStyle == .filled,
+              let rgb = NSColor(color).usingColorSpace(.sRGB) else { return NSColor(color) }
+        func linear(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
+        return luminance > 0.45 ? .black : .white
+    }
+
     /// Hit visible strokes rather than their empty bounding-box interiors.
     /// Called on pointer-down, never from a hover timer or a rendering loop.
     func containsSelectionPoint(_ point: CGPoint) -> Bool {
@@ -89,14 +134,9 @@ extension Annotation {
         case .ellipse:
             path.addEllipse(in: rect)
         case .arrow:
-            path.move(to: startPoint)
-            path.addLine(to: endPoint)
-            let angle = atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x)
-            for offset in [-CGFloat.pi / 6, CGFloat.pi / 6] {
-                path.move(to: endPoint)
-                path.addLine(to: CGPoint(x: endPoint.x - 15 * cos(angle + offset),
-                                        y: endPoint.y - 15 * sin(angle + offset)))
-            }
+            let arrow = arrowGeometry
+            if arrow.head.contains(point) { return true }
+            path.addPath(arrow.shaft); path.addPath(arrow.head)
         case .pen, .mosaic, .blur:
             if type != .pen && !isEffectBrush { return rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) }
             if let first = points.first {
@@ -128,6 +168,7 @@ struct Annotation: Identifiable, Equatable {
     var lineWidth: CGFloat = 3.0
     var text: String = ""  // For text annotations
     var fontSize: CGFloat = 16.0
+    var numberStyle: NumberAnnotationStyle = .outline
 }
 
 /// One TextKit layout for display, editing, hit bounds and export.

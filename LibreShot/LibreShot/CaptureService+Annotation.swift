@@ -124,27 +124,11 @@ extension CaptureService {
                 let height = abs(annotation.endPoint.y - annotation.startPoint.y)
                 path.addRect(CGRect(x: x, y: y, width: width, height: height))
             case .arrow:
-                let start = annotation.startPoint
-                let end = annotation.endPoint
-                path.move(to: start)
-                path.addLine(to: end)
-                
-                let angle = atan2(end.y - start.y, end.x - start.x)
-                let arrowLength: CGFloat = 15.0
-                let arrowAngle: CGFloat = .pi / 6
-                let p1 = CGPoint(
-                    x: end.x - arrowLength * cos(angle - arrowAngle),
-                    y: end.y - arrowLength * sin(angle - arrowAngle)
-                )
-                let p2 = CGPoint(
-                    x: end.x - arrowLength * cos(angle + arrowAngle),
-                    y: end.y - arrowLength * sin(angle + arrowAngle)
-                )
-                
-                path.move(to: end)
-                path.addLine(to: p1)
-                path.move(to: end)
-                path.addLine(to: p2)
+                let arrow = annotation.arrowGeometry
+                context.addPath(arrow.shaft); context.strokePath()
+                context.setFillColor(NSColor(annotation.color).cgColor)
+                context.addPath(arrow.head); context.fillPath()
+                continue
             case .ellipse:
                 let x = min(annotation.startPoint.x, annotation.endPoint.x)
                 let y = min(annotation.startPoint.y, annotation.endPoint.y)
@@ -159,7 +143,10 @@ extension CaptureService {
             }
             
             context.addPath(path)
-            context.strokePath()
+            if annotation.type == .number && annotation.numberStyle == .filled {
+                context.setFillColor(NSColor(annotation.color).cgColor)
+                context.fillPath()
+            } else { context.strokePath() }
         }
     }
     
@@ -170,7 +157,7 @@ extension CaptureService {
         
         for annotation in annotations where annotation.type == .text || annotation.type == .number {
             let layout = AnnotationTextLayout(text: annotation.text, fontSize: annotation.fontSize,
-                                              isNumber: annotation.type == .number, color: NSColor(annotation.color))
+                                              isNumber: annotation.type == .number, color: annotation.textColor)
             let size = CGSize(width: layout.size.width * scaleX, height: layout.size.height * scaleY)
             let origin = annotation.type == .number
                 ? CGPoint(x: annotation.startPoint.x * scaleX - size.width / 2,
