@@ -1,0 +1,29 @@
+# Issue #16：文字与序号原位编辑
+
+日期：2026-10-06。范围仅包含 [Issue #16](https://github.com/songpl-AI/LibreShot/issues/16) 的两项编辑体验；未改其余待审阅需求。
+
+## 原因与修改
+
+- 普通文字显示使用 medium、原生输入框使用 regular，导出也使用 regular；三条排版路径的字重和度量不同。改为共享 TextKit 字体、字体回退、文本尺寸和字形原点，显示、编辑及导出统一使用 medium。中文先修正系统回退字体，避免只在英文下保持一致。
+- 进入文字编辑时立即恢复标注的字号、颜色和实际尺寸；新建文字清除上一输入框的尺寸。已有文字保持左上角锚点，首次焦点将光标置于末尾。
+- 原序号编辑器最小宽度为 80，以圆圈包围盒左上角定位，导致编辑中心偏移，且统一显示矩形编辑边框。改为保留原圆圈、颜色、线宽和中心，数字使用 semibold 居中，按内容扩展圆圈；点击圆圈内部仍属于编辑区域。序号编辑全选数字，不显示矩形边框。
+- 改号校验、提交、取消、撤销、后续计数和缩放沿用现有逻辑。
+
+## 验证
+
+先添加中心定位检查，在旧实现上失败（`number editor must retain the original circle center`），修复后通过。
+
+`bash tests/run-inline-editing-checks.sh` 编译生产代码，并使用独立设置域验证：
+
+- 序号中心与圆圈、从 12 改为 9999 后扩展、颜色保留、提交/取消/撤销。
+- 21 组实际 NSTextView 与显示字形包围盒精确相同：英文、中文、中英混合多行、尾部换行，12/24/48 字号，以及 1/12/9999 序号。
+- 12 组文字调用生产成图接口检查导出字形坐标；考虑合成时抗锯齿，每个边缘允许最多 1 个物理像素差异。
+- 编辑已有文字恢复尺寸、坐标、颜色和字号；新建文字不继承旧输入框尺寸，提交位置正确。
+
+样例输出 `/tmp/libreshot-inline-qa` 中的 `text-editor.png` / `text-display.png` 和 `number-editor.png` / `number-display.png` 已人工查看，字形位置一致。样例为程序生成的原生输入框与渲染结果，不是已安装应用的录屏截图。
+
+最终源码的既有回归全部通过：序号工具 7 组、工具栏 26 组、Issue #9 编辑体验 92 项。日志分别为 `/tmp/libreshot-inline-numbers-final.log`、`/tmp/libreshot-inline-toolbar-final.log`、`/tmp/libreshot-inline-issue9-final.log`；新增回归日志为 `/tmp/libreshot-inline-after.log`。编译存在已有的 macOS API 弃用警告，没有编译错误。
+
+## 验证边界
+
+本轮未打包、替换安装或发布；公开版本及本机安装包仍为 1.3.6 build 28，本次修复尚未包含在其中。程序化检查不替代新包中的真实双击、输入法、鼠标手感及普通/长截图操作验收。后续打包安装必须执行 `docs/operations/install-and-permissions.md`，再记录最终安装副本的授权与截图验收。

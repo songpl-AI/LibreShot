@@ -141,3 +141,7 @@ Issue #4 补充覆盖多种截图宽高、小幅位移以及 20/32/64 px 固定�
 ## 马赛克与模糊共享渲染
 
 `bash tests/run-effect-checks.sh` 检查连续拖动时松手前多次刷新、马赛克/模糊涂抹与框选四种组合的选中/移动/撤销及最终预览与导出一致性、真实效果预览/导出、块平均与网格稳定、笔刷宽度/半径、重叠、Retina 与裁剪偏移、透明度、长图局部输出、参数撤销以及异步渲染关闭隔离。使用独立设置域，样例 PNG 输出至 `/tmp/libreshot-effects-qa`。见 [优化与验证记录](../docs/qa/mosaic-blur-quality-20261005.md)。
+
+## Issue #16 原位编辑
+
+`bash tests/run-inline-editing-checks.sh` 使用生产 TextKit 排版、NSTextView 和成图接口，检查文字显示/编辑的字号、字重、中文回退字体、单行/多行字形坐标、导出基线，以及序号编辑圆圈中心、扩展、颜色、取消/提交/撤销。样例输出至 `/tmp/libreshot-inline-qa`，使用独立设置域。实现与验证边界见 [Issue #16 验证记录](../docs/qa/inline-editing-issue16-20261006.md)。

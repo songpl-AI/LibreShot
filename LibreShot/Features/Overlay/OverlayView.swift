@@ -151,32 +151,41 @@ struct OverlayView: View {
                     }
                     // Text Input Overlay（内联编辑：所见即所得，随内容动态调整大小）
                     if viewModel.isEditingText {
+                        if let circle = viewModel.editingNumberCircleRect {
+                            Circle()
+                                .stroke(viewModel.selectedColor, lineWidth: viewModel.annotations.first(where: { $0.id == viewModel.editingTextAnnotationID })?.lineWidth ?? 3)
+                                .frame(width: circle.width, height: circle.height)
+                                .position(x: circle.midX, y: circle.midY)
+                                .allowsHitTesting(false)
+                        }
                         InlineTextEditor(
                             text: $viewModel.editingTextContent,
                             fontSize: viewModel.inputFontSize,
                             color: NSColor(viewModel.selectedColor),
                             cursorAtEnd: viewModel.editingTextAnnotationID != nil,
+                            isNumber: viewModel.isEditingNumber,
                             selectsAllOnFocus: viewModel.isEditingNumber,
                             allowsAncestorScrolling: viewModel.captureMode != .imageEditor,
                             onSizeChange: { size in
-                                if size != viewModel.editingTextSize {
-                                    viewModel.editingTextSize = size
-                                }
+                                viewModel.updateEditingTextSize(size)
                             }
                         )
+                        .id(viewModel.editingTextAnnotationID)
                         .frame(
                             width: max(viewModel.editingTextSize.width, 2),
-                            height: max(viewModel.editingTextSize.height, viewModel.inputFontSize * 1.4)
+                            height: viewModel.editingTextSize.height
                         )
                         .help(viewModel.isEditingNumber ? "输入 1–9999；回车确认，Esc 取消改号" : "输入文字，点击外部确认")
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(Color.blue.opacity(0.55), lineWidth: 1.5)
-                                .padding(-3)
-                        )
+                        .overlay {
+                            if !viewModel.isEditingNumber {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(Color.blue.opacity(0.55), lineWidth: 1.5)
+                                    .padding(-3)
+                            }
+                        }
                         .position(
-                            x: viewModel.editingTextPosition.x + viewModel.editingTextSize.width / 2,
-                            y: viewModel.editingTextPosition.y + viewModel.editingTextSize.height / 2
+                            x: viewModel.editingTextContentFrame.midX,
+                            y: viewModel.editingTextContentFrame.midY
                         )
                     }
                 } else if viewModel.state == .longCapturing {
@@ -433,18 +442,14 @@ struct OverlayView: View {
             context.stroke(path, with: .color(annotation.color), lineWidth: annotation.lineWidth)
         }
 
-        if annotation.type == .text && !annotation.text.isEmpty {
-            let text = Text(annotation.text)
-                .font(.system(size: annotation.fontSize, weight: .medium))
-                .foregroundColor(annotation.color)
-            context.draw(text, at: annotation.startPoint, anchor: .topLeading)
-        }
-
-        if annotation.type == .number && !annotation.text.isEmpty {
-            let text = Text(annotation.text)
-                .font(.system(size: annotation.fontSize, weight: .semibold))
-                .foregroundColor(annotation.color)
-            context.draw(text, at: annotation.startPoint, anchor: .center)
+        if (annotation.type == .text || annotation.type == .number), !annotation.text.isEmpty {
+            let layout = AnnotationTextLayout(text: annotation.text, fontSize: annotation.fontSize,
+                                              isNumber: annotation.type == .number, color: NSColor(annotation.color))
+            let origin = annotation.type == .number
+                ? CGPoint(x: annotation.startPoint.x - layout.size.width / 2,
+                          y: annotation.startPoint.y - layout.size.height / 2)
+                : annotation.startPoint
+            context.draw(Image(nsImage: layout.image()), in: CGRect(origin: origin, size: layout.size))
         }
     }
 

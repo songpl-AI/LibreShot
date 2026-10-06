@@ -10,6 +10,7 @@ struct InlineTextEditor: NSViewRepresentable {
     var color: NSColor
     /// 首次加载时是否把光标定位到文本末尾（用于重新编辑已有文字）
     var cursorAtEnd: Bool
+    var isNumber = false
     var selectsAllOnFocus = false
     var allowsAncestorScrolling = true
     /// 内容尺寸变化时回调，用于动态调整编辑器大小
@@ -19,10 +20,8 @@ struct InlineTextEditor: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSTextView {
+    static func makeTextView(fontSize: CGFloat, isNumber: Bool, color: NSColor) -> NSTextView {
         let textView = InlineAnnotationTextView()
-        textView.allowsAncestorScrolling = allowsAncestorScrolling
-        textView.delegate = context.coordinator
         textView.isRichText = false
         textView.importsGraphics = false
         textView.drawsBackground = false
@@ -40,14 +39,22 @@ struct InlineTextEditor: NSViewRepresentable {
         textView.autoresizingMask = []
         textView.maxSize = NSSize(width: 100000, height: 100000)
         textView.minSize = .zero
-        textView.font = NSFont.systemFont(ofSize: fontSize)
+        textView.font = AnnotationTextLayout.font(size: fontSize, isNumber: isNumber)
         textView.textColor = color
+        return textView
+    }
+
+    func makeNSView(context: Context) -> NSTextView {
+        let textView = Self.makeTextView(fontSize: fontSize, isNumber: isNumber, color: color)
+        (textView as? InlineAnnotationTextView)?.allowsAncestorScrolling = allowsAncestorScrolling
+        textView.delegate = context.coordinator
         textView.string = text
 
         // 等视图挂到窗口后再抢焦点
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             textView.window?.makeFirstResponder(textView)
             if selectsAllOnFocus { textView.selectAll(nil) }
+            else if cursorAtEnd { textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0)) }
         }
         return textView
     }
@@ -55,9 +62,8 @@ struct InlineTextEditor: NSViewRepresentable {
     func updateNSView(_ textView: NSTextView, context: Context) {
         context.coordinator.parent = self
 
-        if textView.font?.pointSize != fontSize {
-            textView.font = NSFont.systemFont(ofSize: fontSize)
-        }
+        let font = AnnotationTextLayout.font(size: fontSize, isNumber: isNumber)
+        if textView.font != font { textView.font = font }
         textView.textColor = color
 
         if textView.string != text {
@@ -76,7 +82,9 @@ struct InlineTextEditor: NSViewRepresentable {
               let container = textView.textContainer else { return }
         layoutManager.ensureLayout(for: container)
         let used = layoutManager.usedRect(for: container)
-        onSizeChange(CGSize(width: ceil(used.width), height: ceil(used.height)))
+        let font = AnnotationTextLayout.font(size: fontSize, isNumber: isNumber)
+        onSizeChange(CGSize(width: max(2, ceil(used.maxX)),
+                            height: max(ceil(layoutManager.defaultLineHeight(for: font)), ceil(used.maxY))))
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {

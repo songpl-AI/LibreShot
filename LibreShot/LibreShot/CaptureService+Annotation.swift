@@ -169,27 +169,16 @@ extension CaptureService {
         NSGraphicsContext.current = graphicsContext
         
         for annotation in annotations where annotation.type == .text || annotation.type == .number {
-            let text = annotation.text as NSString
-            let fontSize = annotation.fontSize * scaleY
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: fontSize, weight: annotation.type == .number ? .semibold : .regular),
-                .foregroundColor: NSColor(annotation.color)
-            ]
-            let size = text.size(withAttributes: attributes)
-            let drawPoint: CGPoint
-            if annotation.type == .number {
-                // 序号文字居中于圆圈
-                drawPoint = CGPoint(
-                    x: annotation.startPoint.x * scaleX - size.width / 2,
-                    y: logicalSize.height * scaleY - (annotation.startPoint.y * scaleY) - size.height / 2
-                )
-            } else {
-                drawPoint = CGPoint(
-                    x: annotation.startPoint.x * scaleX,
-                    y: logicalSize.height * scaleY - (annotation.startPoint.y * scaleY) - size.height
-                )
-            }
-            text.draw(at: drawPoint, withAttributes: attributes)
+            let layout = AnnotationTextLayout(text: annotation.text, fontSize: annotation.fontSize,
+                                              isNumber: annotation.type == .number, color: NSColor(annotation.color))
+            let size = CGSize(width: layout.size.width * scaleX, height: layout.size.height * scaleY)
+            let origin = annotation.type == .number
+                ? CGPoint(x: annotation.startPoint.x * scaleX - size.width / 2,
+                          y: logicalSize.height * scaleY - annotation.startPoint.y * scaleY - size.height / 2)
+                : CGPoint(x: annotation.startPoint.x * scaleX,
+                          y: logicalSize.height * scaleY - annotation.startPoint.y * scaleY - size.height)
+            layout.image().draw(in: CGRect(origin: origin, size: size), from: .zero,
+                                operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
         }
         
         NSGraphicsContext.restoreGraphicsState()

@@ -870,9 +870,28 @@ class OverlayViewModel: ObservableObject {
     /// 文字编辑器当前尺寸（由视图上报，随内容自动增长，用于定位与外部点击判定）
     @Published var editingTextSize: CGSize = CGSize(width: 120, height: 34)
 
-    /// 当前文字编辑器的 frame（左上角对齐点击位置）
+    var editingNumberCircleRect: CGRect? {
+        guard isEditingNumber, var number = annotations.first(where: { $0.id == editingTextAnnotationID }) else { return nil }
+        number.text = editingTextContent; number.fontSize = inputFontSize
+        return number.selectionBounds
+    }
+
+    var editingTextContentFrame: CGRect {
+        if let circle = editingNumberCircleRect {
+            return CGRect(x: circle.midX - editingTextSize.width / 2,
+                          y: circle.midY - editingTextSize.height / 2,
+                          width: editingTextSize.width, height: editingTextSize.height)
+        }
+        return CGRect(origin: editingTextPosition, size: editingTextSize)
+    }
+
+    /// The circle counts as inside the number editor, not an outside commit click.
     var editingTextEditorFrame: CGRect {
-        CGRect(origin: editingTextPosition, size: editingTextSize)
+        editingNumberCircleRect?.union(editingTextContentFrame) ?? editingTextContentFrame
+    }
+
+    func updateEditingTextSize(_ size: CGSize) {
+        if size != editingTextSize { editingTextSize = size }
     }
 
     func startTextInput(at point: CGPoint) {
@@ -883,6 +902,7 @@ class OverlayViewModel: ObservableObject {
              return
         }
 
+        editingTextSize = AnnotationTextLayout(text: "", fontSize: selectedFontSize, isNumber: false).size
         isEditingText = true
         editingTextPosition = point
         editingTextContent = ""
@@ -896,6 +916,10 @@ class OverlayViewModel: ObservableObject {
               let annotation = annotations.first(where: { $0.id == annotationID }),
               annotation.type == .text else { return }
 
+        cancelTextInput()
+        selectedFontSize = annotation.fontSize
+        selectedColor = annotation.color
+        editingTextSize = annotation.textBoundingSize
         isEditingText = true
         editingTextPosition = annotation.startPoint
         editingTextContent = annotation.text
@@ -913,7 +937,8 @@ class OverlayViewModel: ObservableObject {
         guard state == .editing, let a = annotations.first(where: { $0.id == annotationID }), a.type == .number else { return }
         cancelTextInput()
         isEditingText = true
-        editingTextSize = CGSize(width: max(80, a.selectionBounds.width), height: a.fontSize * 1.4)
+        editingTextSize = a.textBoundingSize
+        selectedColor = a.color
         editingTextAnnotationID = a.id
         editingTextContent = a.text
         editingTextPosition = a.selectionBounds.origin

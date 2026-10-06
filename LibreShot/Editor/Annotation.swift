@@ -54,7 +54,7 @@ extension Annotation {
     }
     /// Shared geometry for live drawing, selection and exported multi-digit numbers.
     var numberRadius: CGFloat {
-        let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize, weight: .semibold)])
+        let size = textBoundingSize
         return max(fontSize, max(size.width, size.height)) / 2 + fontSize / 4
     }
 
@@ -65,10 +65,7 @@ extension Annotation {
 
     /// 文字标注的文本包围盒尺寸（按实际字体度量，适配中英文，替代原来的 0.6 估算）
     var textBoundingSize: CGSize {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        ]
-        return (text as NSString).size(withAttributes: attrs)
+        AnnotationTextLayout(text: text, fontSize: fontSize, isNumber: type == .number).size
     }
 
     /// 文字标注的包围盒（左上角锚定 startPoint）
@@ -131,4 +128,40 @@ struct Annotation: Identifiable, Equatable {
     var lineWidth: CGFloat = 3.0
     var text: String = ""  // For text annotations
     var fontSize: CGFloat = 16.0
+}
+
+/// One TextKit layout for display, editing, hit bounds and export.
+/// Keeping glyph origins at (0, 0) avoids switching baseline conventions on edit.
+final class AnnotationTextLayout {
+    let storage: NSTextStorage
+    let manager = NSLayoutManager()
+    let container = NSTextContainer(size: NSSize(width: 100000, height: 100000))
+    let size: CGSize
+
+    static func font(size: CGFloat, isNumber: Bool) -> NSFont {
+        NSFont.systemFont(ofSize: size, weight: isNumber ? .semibold : .medium)
+    }
+
+    init(text: String, fontSize: CGFloat, isNumber: Bool, color: NSColor = .labelColor) {
+        let font = Self.font(size: fontSize, isNumber: isNumber)
+        storage = NSTextStorage(string: text, attributes: [.font: font, .foregroundColor: color])
+        container.lineFragmentPadding = 0
+        container.widthTracksTextView = false
+        container.heightTracksTextView = false
+        // NSTextView fixes fallback fonts when assigning its string (notably CJK).
+        storage.fixAttributes(in: NSRange(location: 0, length: storage.length))
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+        manager.ensureLayout(for: container)
+        let used = manager.usedRect(for: container)
+        size = CGSize(width: max(2, ceil(used.maxX)),
+                      height: max(ceil(manager.defaultLineHeight(for: font)), ceil(used.maxY)))
+    }
+
+    func image() -> NSImage {
+        NSImage(size: size, flipped: true) { [self] _ in
+            manager.drawGlyphs(forGlyphRange: manager.glyphRange(for: container), at: .zero)
+            return true
+        }
+    }
 }
