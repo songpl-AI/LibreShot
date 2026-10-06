@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.5](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.5) · [Release notes](docs/releases/1.3.5.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.6](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.6) · [Release notes](docs/releases/1.3.6.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.5 release notes](docs/releases/1.3.5.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.6 release notes](docs/releases/1.3.6.md).
 
 ## 🚀 Usage Guide
 
@@ -88,12 +88,12 @@ Click the "Scissors" icon in the menu bar to select functions:
 
 **New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. A direct drag still draws with the active tool; double-clicking text still edits it.
 
-**New in 1.3.5:** Configure the default capture tool, double-click to edit numbers, and resize numbered annotations with size/color inheritance. See the [release notes](docs/releases/1.3.5.md).
+**New in 1.3.5:** Configure the default capture tool, double-click to edit numbers, and resize numbered annotations with size/color inheritance. See the [release notes](docs/releases/1.3.6.md).
 
 After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. While editing a number, Esc first cancels the number edit. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
 - **Shapes**: Rectangle, Circle, or Arrow.
 - **Numbered Annotation**: Click the number icon to place a circled auto-incrementing number. Double-click a number to edit it (1–9999); Enter commits and Esc cancels the edit. Setting N makes the next number N+1. Drag the bottom-right handle to resize; subsequent numbers inherit size and color. Deleting the most recently placed or edited number rolls back the next number; middle deletions leave other numbers unchanged. Cmd-Z undoes these edits.
-- **Mosaic/Blur**: The development version of 1.3.6 supports Brush and Rectangle modes for both tools, selected in Effect Parameters, with continuously refreshed previews during dragging. Adjust mosaic block size, brush width and blur strength; selected effect parameters can be edited and undone. The latest live-preview changes are packaged as 1.3.6 build 26 and have passed local installation, permission renewal, and capture/save checks before and after restart; user trial feedback is pending. The public release remains 1.3.5.
+- **Mosaic/Blur**: Version 1.3.6 supports Brush and Rectangle modes for both tools, with continuously refreshed previews. Brush strokes can be continued immediately after release; the default width is 20. Adjust block size, brush width and blur strength in Effect Parameters. Use Select/Move to edit existing strokes.
 - **Text**: Click the "T" icon and click on the image to type inline (WYSIWYG); press Enter for a new line, click elsewhere to commit.
 - **Color & Font Size**: Click the four-color palette (red, yellow, blue, green) to open color presets, the system color picker, and font sizes. The thin bar below the palette shows the current color; drag the bottom-right handle of selected text to scale it proportionally.
 
