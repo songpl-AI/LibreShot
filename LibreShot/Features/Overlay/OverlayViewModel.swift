@@ -320,7 +320,7 @@ class OverlayViewModel: ObservableObject {
     @Published private(set) var effectPreview: CGImage?
     @Published private(set) var effectPreviewRect: CGRect = .zero
     @Published var selectedMosaicBlockSize: CGFloat = 16
-    @Published var selectedEffectBrushWidth: CGFloat = 36
+    @Published var selectedEffectBrushWidth: CGFloat = 20
     @Published var selectedBlurRadius: CGFloat = 12
     private let effectQueue = DispatchQueue(label: "LibreShot.effects", qos: .userInitiated)
     @Published var selectedMosaicMode: EffectDrawingMode = .rectangle
