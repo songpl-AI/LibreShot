@@ -23,3 +23,13 @@
 `run-toolbar-checks.sh` 26 组通过，日志 /tmp/libreshot-live-effects-toolbar.log。`run-issue4-checks.sh` 完整回归通过，日志 /tmp/libreshot-live-effects-issue4.log。
 
 检查编译包含生产视图与工具栏。新安装包已通过原生模式切换、四种组合绘制与导出、重启前后截图保存。自动桌面拖动接口在松手后返回，松手前连续发布的证据来自上述生产代码回归，手感仍待用户试用；不宣称大面积 4K、长图或多标注达到固定帧率。基础防误触阈值意味着极小的点按不会生成标注，正常拖动越过阈值后开始预览。本次 build 26 已独立执行安装授权规范，未沿用 build 25 的验收结论。
+
+## 2026-10-06：连续补涂交互修复（尚未安装）
+
+build 26 用户反馈涂抹松手后自动选中笔迹，出现选框，必须先取消选择才能补涂。新增生产手势回归在修复前明确失败：`effect brush must stay unselected after pointer-up`，日志 `/tmp/libreshot-repeat-brush-before.log`。
+
+根因是 `endDrawing` 对所有绘制结果自动选中，同时绘图模式中的轻点可自动选中旧笔迹。现在马赛克/模糊涂抹提交后不选中，涂抹模式也不抢占轻点去选择旧笔迹，直接继续下一笔；框选仍自动选中。需要编辑旧涂抹时主动切换“选择/移动”。绘制阈值、效果参数、导出与逐笔撤销保留。
+
+效果检查 11 组通过，包括重叠补涂、轻点不选中、首笔未移动、主动选择、撤销和框选选中；工具栏检查 26 组通过。日志 `/tmp/libreshot-repeat-brush-after.log`、`/tmp/libreshot-repeat-brush-toolbar.log`。检查编译包含生产视图。无临时调试日志。
+
+本节为源码与回归验收；本机仍运行 build 26，本次补涂修复尚未打包安装，不沿用 build 26 安装验收宣称新改动已在本机验证。

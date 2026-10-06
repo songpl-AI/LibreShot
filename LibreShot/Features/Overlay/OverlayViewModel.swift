@@ -338,6 +338,11 @@ class OverlayViewModel: ObservableObject {
         return selectedTool == .mosaic || selectedTool == .blur ? selectedTool : nil
     }
 
+    var isDrawingEffectBrush: Bool {
+        guard let tool = selectedTool, tool == .mosaic || tool == .blur else { return false }
+        return effectDrawingMode(for: tool) == .brush
+    }
+
     func effectDrawingMode(for tool: AnnotationType) -> EffectDrawingMode {
         tool == .mosaic ? selectedMosaicMode : selectedBlurMode
     }
@@ -504,7 +509,7 @@ class OverlayViewModel: ObservableObject {
     @discardableResult
     func handleAnnotationPressChanged(from start: CGPoint, to point: CGPoint) -> Bool {
         if annotationPress == nil {
-            let canSelect = state == .editing && selectedTool != nil && !isEditingText
+            let canSelect = state == .editing && selectedTool != nil && !isEditingText && !isDrawingEffectBrush
                 && currentAnnotation == nil && activeSelectionHandle == nil && selectionRect.contains(start)
             annotationPress = AnnotationPress(candidate: canSelect ? hitTest(at: start) : nil, tool: selectedTool)
         }
@@ -770,7 +775,8 @@ class OverlayViewModel: ObservableObject {
         if let annotation = currentAnnotation {
             annotations.append(annotation)
             annotationUndo.append(.remove(annotation.id))
-            selectedAnnotationID = annotation.id
+            // Brush effects stay ready for overlapping strokes; use Select/Move to edit them.
+            selectedAnnotationID = annotation.isEffectBrush ? nil : annotation.id
         }
         currentAnnotation = nil
         pendingDrawing = nil

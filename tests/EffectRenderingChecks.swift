@@ -164,12 +164,42 @@ struct EffectRenderingChecks {
                 let exported = service.composite(image: NSImage(cgImage: source, size: size), annotations: m.annotations).cgImage(forProposedRect: nil, context: nil, hints: nil)!
                 precondition(pixels(exported) == pixels(expected))
                 let original = m.annotations[0]
+                m.selectedAnnotationID = original.id
                 m.moveSelectedAnnotation(offset: CGSize(width: 3, height: 2))
                 precondition(m.annotations[0].selectionBounds == original.selectionBounds.offsetBy(dx: 3, dy: 2))
                 m.undoLastAnnotation()
                 precondition(m.annotations.isEmpty)
             }
         }
+        for tool in [AnnotationType.mosaic, .blur] {
+            m.reset(); m.selectionRect = CGRect(origin: .zero, size: size); m.state = .editing
+            m.setEffectDrawingMode(.brush, for: tool)
+            m.handleDrawingDrag(from: CGPoint(x: 40, y: 40), to: CGPoint(x: 140, y: 40)); m.endDrawing()
+            precondition(m.selectedAnnotationID == nil, "effect brush must stay unselected after pointer-up")
+            let first = m.annotations[0]
+            // A brief tap on the previous stroke must not switch into selection.
+            let start = CGPoint(x: 80, y: 40)
+            let intercepted = m.handleAnnotationPressChanged(from: start, to: start)
+            if !intercepted { m.handleDrawingDrag(from: start, to: start) }
+            if !m.handleAnnotationPressEnded(from: start, to: start) { m.endDrawing() }
+            m.clearAnnotationPress()
+            precondition(m.selectedAnnotationID == nil && m.annotations.count == 1)
+            let end = CGPoint(x: 80, y: 100)
+            if !m.handleAnnotationPressChanged(from: start, to: end) { m.handleDrawingDrag(from: start, to: end) }
+            if !m.handleAnnotationPressEnded(from: start, to: end) { m.endDrawing() }
+            m.clearAnnotationPress()
+            precondition(m.annotations.count == 2 && m.annotations[0] == first && m.selectedAnnotationID == nil,
+                         "overlapping second stroke must draw without moving or selecting first stroke")
+            m.selectedTool = nil; m.startDrawing(at: start)
+            precondition(m.selectedAnnotationID != nil, "Select/Move must still select effect brush strokes")
+            m.undoLastAnnotation(); precondition(m.annotations.count == 1 && m.annotations[0] == first)
+            m.reset(); m.selectionRect = CGRect(origin: .zero, size: size); m.state = .editing
+            m.setEffectDrawingMode(.rectangle, for: tool)
+            m.handleDrawingDrag(from: CGPoint(x: 40, y: 40), to: CGPoint(x: 140, y: 100)); m.endDrawing()
+            precondition(m.selectedAnnotationID == m.annotations[0].id, "rectangle effects retain automatic selection")
+        }
+        print("PASS: repeated effect brush strokes, incidental taps, explicit selection, undo and rectangle selection")
+
         // Brush mosaic must leave pixels in its bounding box but off the path alone.
         var painted = blur
         painted.type = .mosaic; painted.lineWidth = 12

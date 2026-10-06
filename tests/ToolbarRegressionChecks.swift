@@ -487,6 +487,8 @@ struct ToolbarRegressionChecks {
             let (a, point) = fixture(target)
             for tool in AnnotationType.allCases {
                 let vm = model(tool, a)
+                // Click-to-select remains available outside effect painting mode.
+                if tool == .blur { vm.setEffectDrawingMode(.rectangle, for: tool) }
                 precondition(vm.handleAnnotationPressChanged(from: point, to: point))
                 precondition(vm.currentAnnotation == nil && vm.annotations.count == 1 && vm.selectedTool == tool)
                 precondition(vm.handleAnnotationPressEnded(from: point, to: CGPoint(x: point.x + 1, y: point.y + 1)))
@@ -501,11 +503,11 @@ struct ToolbarRegressionChecks {
             let vm = model(tool, rect)
             let end = CGPoint(x: point.x + 80, y: point.y + 40)
             // First callback may already have moved; keep the actual down position.
-            precondition(vm.handleAnnotationPressChanged(from: point, to: end))
-            precondition(vm.handleAnnotationPressEnded(from: point, to: end))
+            if !vm.handleAnnotationPressChanged(from: point, to: end) { vm.handleDrawingDrag(from: point, to: end) }
+            if !vm.handleAnnotationPressEnded(from: point, to: end) { vm.endDrawing() }
             vm.clearAnnotationPress()
             precondition(vm.selectedTool == tool)
-            precondition(vm.selectedAnnotationID == ((tool == .text || tool == .number) ? nil : vm.annotations.last?.id),
+            precondition(vm.selectedAnnotationID == ((tool == .text || tool == .number || vm.annotations.last?.isEffectBrush == true) ? nil : vm.annotations.last?.id),
                          "A completed drawing is selected without changing the active tool")
             precondition(vm.annotations[0].startPoint == rect.startPoint)
             if tool == .text || tool == .number {
