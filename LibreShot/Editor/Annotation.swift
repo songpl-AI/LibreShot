@@ -119,7 +119,7 @@ extension Annotation {
     }
 
     /// Hit visible strokes rather than their empty bounding-box interiors.
-    /// Called on pointer-down, never from a hover timer or a rendering loop.
+    /// Shared by pointer selection and hover feedback.
     func containsSelectionPoint(_ point: CGPoint) -> Bool {
         let tolerance: CGFloat = 6
         let rect = CGRect(from: startPoint, to: endPoint)

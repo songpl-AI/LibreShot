@@ -1116,9 +1116,12 @@ class OverlayViewModel: ObservableObject {
             let hit = hitTest(at: point)
             if hit == a.id || (hit == nil && selectedMoveRect?.contains(point) == true) { return .move }
         }
-        if selectedTool == .text || selectedTool == .number,
+        // Advertise the same visible hit area used by clicking to select.
+        // Effect brushes keep painting across existing content; their unselected
+        // strokes do not gain a hover affordance meant for editable shapes.
+        if !isDrawingEffectBrush,
            let id = hitTest(at: point), let a = annotations.first(where: { $0.id == id }),
-           [.text, .number].contains(a.type) { return .move }
+           !a.isEffectBrush { return .move }
         if selectedTool == nil, captureMode != .imageEditor, selectionRect.contains(point), hitTest(at: point) == nil { return .move }
         return .crosshair
     }
