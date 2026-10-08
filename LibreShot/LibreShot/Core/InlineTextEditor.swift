@@ -47,7 +47,7 @@ struct InlineTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextView {
         let textView = Self.makeTextView(fontSize: fontSize, isNumber: isNumber, color: color)
         (textView as? InlineAnnotationTextView)?.allowsAncestorScrolling = allowsAncestorScrolling
-        textView.delegate = context.coordinator
+        context.coordinator.attach(to: textView)
         textView.string = text
 
         // 等视图挂到窗口后再抢焦点
@@ -66,7 +66,8 @@ struct InlineTextEditor: NSViewRepresentable {
         if textView.font != font { textView.font = font }
         textView.textColor = color
 
-        if textView.string != text {
+        // The input method owns marked text until it is confirmed or cancelled.
+        if !textView.hasMarkedText(), textView.string != text {
             textView.string = text
             if cursorAtEnd && !context.coordinator.appliedCursorAtEnd {
                 let end = (text as NSString).length
@@ -95,6 +96,13 @@ struct InlineTextEditor: NSViewRepresentable {
             self.parent = parent
         }
 
+        func attach(to textView: NSTextView) {
+            textView.delegate = self
+            (textView as? InlineAnnotationTextView)?.onCompositionChange = { [weak self] view in
+                self?.parent.reportSize(view)
+            }
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
@@ -107,6 +115,22 @@ struct InlineTextEditor: NSViewRepresentable {
 /// scroll the outer viewport using the unscaled NSTextView selection rectangle.
 private final class InlineAnnotationTextView: NSTextView {
     var allowsAncestorScrolling = true
+    var onCompositionChange: ((NSTextView) -> Void)?
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        onCompositionChange?(self)
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onCompositionChange?(self)
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        super.insertText(string, replacementRange: replacementRange)
+        onCompositionChange?(self)
+    }
     override func scrollRangeToVisible(_ range: NSRange) {
         if allowsAncestorScrolling { super.scrollRangeToVisible(range) }
     }

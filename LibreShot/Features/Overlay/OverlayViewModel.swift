@@ -851,6 +851,7 @@ class OverlayViewModel: ObservableObject {
         showsStylePopover = false
         endSelectedShapeDrag()
         clearAnnotationPress()
+        endTextInputPress()
         toolbarConfiguration = settings.toolbarConfiguration
         useRoundedCorners = settings.useRoundedCorners
         startPoint = nil
@@ -886,6 +887,21 @@ class OverlayViewModel: ObservableObject {
     private(set) var editingTextAnnotationID: UUID?
     private var lastTextTapAnnotationID: UUID?
     private var lastTextTapDate: Date?
+    private(set) var didCommitTextOnPress = false
+
+    /// Consume the entire outside press, including its release, so dismissing an
+    /// empty editor cannot immediately create another editor at the same point.
+    func handleTextInputPress(from point: CGPoint) -> Bool {
+        if didCommitTextOnPress { return true }
+        guard isEditingText else { return false }
+        if !editingTextEditorFrame.contains(point) {
+            didCommitTextOnPress = true
+            commitTextInput()
+        }
+        return true
+    }
+
+    func endTextInputPress() { didCommitTextOnPress = false }
 
     /// 文字编辑器当前尺寸（由视图上报，随内容自动增长，用于定位与外部点击判定）
     @Published var editingTextSize: CGSize = CGSize(width: 120, height: 34)
@@ -1016,9 +1032,9 @@ class OverlayViewModel: ObservableObject {
         isEditingText = false
         editingTextContent = ""
         editingTextAnnotationID = nil
-        // 提交后回到选择模式（不自动选中，避免出现多余蓝框）；可直接拖拽或双击编辑
+        // Keep continuous text entry; explicit tool changes remain in selectTool.
         selectedAnnotationID = nil
-        selectedTool = nil
+        selectedTool = .text
     }
     
     func cancelTextInput() {
@@ -1108,7 +1124,7 @@ class OverlayViewModel: ObservableObject {
             }
         }
         if canResizeSelection, let handle = nearest(selectionRect, tolerance: 10) { return style(handle) }
-        guard state == .editing, !isEditingText else { return .crosshair }
+        guard state == .editing || state == .longCaptureReady, !isEditingText else { return .crosshair }
         if let handle = selectedTextResizeHandle, abs(point.x - handle.x) <= 8, abs(point.y - handle.y) <= 8 { return .diagonalDown }
         if let rect = selectedShapeRect, let handle = nearest(rect, tolerance: 8) { return style(handle) }
         if let a = annotations.first(where: { $0.id == selectedAnnotationID }) {
@@ -1122,7 +1138,7 @@ class OverlayViewModel: ObservableObject {
         if !isDrawingEffectBrush,
            let id = hitTest(at: point), let a = annotations.first(where: { $0.id == id }),
            !a.isEffectBrush { return .move }
-        if selectedTool == nil, captureMode != .imageEditor, selectionRect.contains(point), hitTest(at: point) == nil { return .move }
+        if canMoveSelection(from: point) { return .move }
         return .crosshair
     }
 
@@ -1234,9 +1250,23 @@ class OverlayViewModel: ObservableObject {
         isResizingText = false
     }
 
+    func canMoveSelection(from point: CGPoint) -> Bool {
+        guard captureMode != .imageEditor, selectedTool == nil, !isEditingText,
+              state == .editing || state == .longCaptureReady,
+              !selectionRect.isEmpty, hitTest(at: point) == nil else { return false }
+        let tolerance: CGFloat = 6
+        let outer = selectionRect.insetBy(dx: -tolerance, dy: -tolerance)
+        let inner = selectionRect.insetBy(dx: tolerance, dy: tolerance)
+        guard outer.contains(point), !inner.contains(point) else { return false }
+        // The visible eight resize handles take precedence over the move band.
+        return !SelectionHandle.allCases.contains { handle in
+            let position = handle.position(in: selectionRect)
+            return abs(point.x - position.x) <= 10 && abs(point.y - position.y) <= 10
+        }
+    }
+
     func beginMoveSelection(at point: CGPoint) {
-        guard captureMode != .imageEditor else { return }
-        guard (state == .editing || state == .longCaptureReady), selectionRect != .zero else { return }
+        guard canMoveSelection(from: point) else { return }
         isMovingSelection = true
         selectionDragStartPoint = point
         selectionDragStartRect = selectionRect

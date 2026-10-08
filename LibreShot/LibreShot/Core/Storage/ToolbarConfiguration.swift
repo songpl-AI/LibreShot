@@ -10,6 +10,12 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var isRequired: Bool { self == .complete || self == .cancel }
 
+    /// New installations and reset use this order; saved orders keep their positions.
+    static let defaultOrder: [ToolbarItem] = [
+        .select, .pen, .rectangle, .ellipse, .arrow, .text, .number, .mosaic, .blur,
+        .style, .longCapture, .ocr, .translate, .undo, .cancel, .complete, .pin, .save, .saveAs
+    ]
+
     var title: String {
         switch self {
         case .select: return "选择/移动"
@@ -71,7 +77,7 @@ struct ToolbarConfiguration {
         // Normalize once on load: discard unknown/duplicate IDs and append new tools.
         var seen = Set<ToolbarItem>()
         let savedItems = itemOrder.compactMap(ToolbarItem.init(rawValue:))
-        orderedItems = (savedItems + ToolbarItem.allCases).filter { seen.insert($0).inserted }
+        orderedItems = (savedItems + ToolbarItem.defaultOrder).filter { seen.insert($0).inserted }
     }
 
     func isVisible(_ item: ToolbarItem) -> Bool {

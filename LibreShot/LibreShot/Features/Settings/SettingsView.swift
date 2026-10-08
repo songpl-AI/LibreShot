@@ -120,7 +120,7 @@ struct ToolbarSettingsView: View {
             }
             .listStyle(.bordered)
 
-            Text("从下一次截图开始生效。按 Esc 直接取消截图。\n隐藏选择按钮后，可再次点击当前工具，切回选择模式。")
+            Text("从下一次截图开始生效。按 Esc 直接取消截图。\n再次点击当前工具可切回选择模式；拖动选区边框移动截图。")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -513,6 +513,9 @@ struct AboutSettingsView: View {
             
             Spacer()
             
+            Link("检查更新…", destination: URL(string: "https://github.com/songpl-AI/LibreShot/releases")!)
+                .help("打开 GitHub 发布页面，查看并下载最新版本")
+
             Text("© 2026 Allen. All rights reserved.")
                 .font(.footnote)
                 .foregroundColor(Color(nsColor: .tertiaryLabelColor))

@@ -219,6 +219,7 @@ struct OverlayView: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
+                        if viewModel.handleTextInputPress(from: value.startLocation) { return }
                         if viewModel.handleSelectionResizeDrag(
                             from: value.startLocation, to: value.location,
                             within: geometry.frame(in: .named("overlay"))
@@ -234,14 +235,6 @@ struct OverlayView: View {
                             return
                         }
                         if viewModel.canToggleTranslationPreview(from: value.startLocation, to: value.location) {
-                            return
-                        }
-                        if viewModel.isEditingText {
-                            // 点击编辑器外部提交
-                            let editorRect = viewModel.editingTextEditorFrame
-                            if !editorRect.contains(value.startLocation) {
-                                viewModel.commitTextInput()
-                            }
                             return
                         }
                         
@@ -260,7 +253,6 @@ struct OverlayView: View {
                             // 2. Selection/Move Logic (No tool selected)
                             if viewModel.selectedTool == nil {
                                 let bounds = geometry.frame(in: .named("overlay"))
-                                let rect = viewModel.selectionRect
                                 
                                 if viewModel.isMovingSelection {
                                     viewModel.updateMoveSelection(to: value.location, within: bounds)
@@ -276,8 +268,7 @@ struct OverlayView: View {
                                         return
                                     }
                                     
-                                    if rect.contains(value.startLocation),
-                                       viewModel.annotationID(at: value.startLocation) == nil {
+                                    if viewModel.canMoveSelection(from: value.startLocation) {
                                         viewModel.beginMoveSelection(at: value.startLocation)
                                         viewModel.updateMoveSelection(to: value.location, within: bounds)
                                         return
@@ -322,7 +313,11 @@ struct OverlayView: View {
                         }
                     }
                     .onEnded { value in
-                        defer { viewModel.clearAnnotationPress() }
+                        defer {
+                            viewModel.clearAnnotationPress()
+                            viewModel.endTextInputPress()
+                        }
+                        if viewModel.didCommitTextOnPress { return }
                         if viewModel.state == .selecting {
                             viewModel.endSelection()
                         } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {

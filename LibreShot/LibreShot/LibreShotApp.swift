@@ -101,8 +101,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "检查更新...", action: #selector(checkForUpdates), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
@@ -220,13 +218,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    @objc private func checkForUpdates() {
-        // Check for updates by opening the GitHub Releases page
-        if let url = URL(string: "https://github.com/songpl-AI/LibreShot/releases") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
     }

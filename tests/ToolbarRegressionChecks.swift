@@ -97,7 +97,7 @@ struct ToolbarRegressionChecks {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SettingsService(defaults: defaults)
-        precondition(settings.toolbarConfiguration.visibleItems == ToolbarItem.allCases)
+        precondition(settings.toolbarConfiguration.visibleItems == ToolbarItem.defaultOrder)
         checkSelectionResizing(settings: settings)
 
         if let output = ProcessInfo.processInfo.environment["LIBRESHOT_CHECK_SELECTION"] {
@@ -132,49 +132,49 @@ struct ToolbarRegressionChecks {
         }
 
         // Required actions survive hiding everything, including malformed stored preferences.
-        ToolbarItem.allCases.forEach { settings.setToolbarItem($0, visible: false) }
+        ToolbarItem.defaultOrder.forEach { settings.setToolbarItem($0, visible: false) }
         precondition(settings.toolbarConfiguration.visibleItems == [.cancel, .complete])
         let reloaded = SettingsService(defaults: defaults)
         precondition(reloaded.toolbarConfiguration.visibleItems == [.cancel, .complete])
-        defaults.set(ToolbarItem.allCases.map(\.rawValue) + ["future-tool"], forKey: "hiddenToolbarItems")
+        defaults.set(ToolbarItem.defaultOrder.map(\.rawValue) + ["future-tool"], forKey: "hiddenToolbarItems")
         precondition(SettingsService(defaults: defaults).toolbarConfiguration.visibleItems == [.cancel, .complete])
         reloaded.restoreDefaultToolbar()
-        precondition(SettingsService(defaults: defaults).toolbarConfiguration.visibleItems == ToolbarItem.allCases)
+        precondition(SettingsService(defaults: defaults).toolbarConfiguration.visibleItems == ToolbarItem.defaultOrder)
         print("PASS: visibility, required actions, persistence, unknown IDs, restore defaults")
 
         // Old preferences need no migration; partial/corrupt orders still include each tool once.
         let repairedOrder = ToolbarConfiguration(itemOrder: ["save", "unknown", "save", "complete"])
-        precondition(repairedOrder.orderedItems == [.save, .complete] + ToolbarItem.allCases.filter { $0 != .save && $0 != .complete })
+        precondition(repairedOrder.orderedItems == [.save, .complete] + ToolbarItem.defaultOrder.filter { $0 != .save && $0 != .complete })
         defaults.set(["save", "unknown", "save", "complete"], forKey: "toolbarItemOrder")
         precondition(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems == repairedOrder.orderedItems)
         defaults.set("invalid-array", forKey: "toolbarItemOrder")
-        precondition(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems == ToolbarItem.allCases)
+        precondition(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems == ToolbarItem.defaultOrder)
         settings.restoreDefaultToolbar()
-        settings.moveToolbarItems(fromOffsets: IndexSet(integer: 16), toOffset: 0)
-        precondition(settings.toolbarConfiguration.orderedItems == [.save] + ToolbarItem.allCases.filter { $0 != .save })
+        settings.moveToolbarItems(fromOffsets: IndexSet(integer: 17), toOffset: 0)
+        precondition(settings.toolbarConfiguration.orderedItems == [.save] + ToolbarItem.defaultOrder.filter { $0 != .save })
         settings.setToolbarItem(.save, visible: false)
         precondition(!settings.toolbarConfiguration.visibleItems.contains(.save))
         settings.setToolbarItem(.save, visible: true)
         precondition(settings.toolbarConfiguration.visibleItems.first == .save)
         let movedReload = SettingsService(defaults: defaults)
         precondition(movedReload.toolbarConfiguration.orderedItems == settings.toolbarConfiguration.orderedItems)
-        movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: 0), toOffset: ToolbarItem.allCases.count)
+        movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: 0), toOffset: ToolbarItem.defaultOrder.count)
         precondition(movedReload.toolbarConfiguration.orderedItems.last == .save)
-        movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: ToolbarItem.allCases.count - 1), toOffset: 16)
-        precondition(movedReload.toolbarConfiguration.orderedItems == ToolbarItem.allCases)
-        movedReload.moveToolbarItems(fromOffsets: IndexSet([11, 15]), toOffset: 0)
-        ToolbarItem.allCases.forEach { movedReload.setToolbarItem($0, visible: false) }
+        movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: ToolbarItem.defaultOrder.count - 1), toOffset: 17)
+        precondition(movedReload.toolbarConfiguration.orderedItems == ToolbarItem.defaultOrder)
+        movedReload.moveToolbarItems(fromOffsets: IndexSet([14, 15]), toOffset: 0)
+        ToolbarItem.defaultOrder.forEach { movedReload.setToolbarItem($0, visible: false) }
         precondition(movedReload.toolbarConfiguration.visibleItems == [.cancel, .complete])
         movedReload.moveToolbarItems(fromOffsets: IndexSet(integer: 1), toOffset: 0)
         precondition(movedReload.toolbarConfiguration.visibleItems == [.complete, .cancel])
         let beforeInvalidMove = movedReload.toolbarConfiguration.orderedItems
-        for (source, destination) in [(IndexSet(integer: 99), 0), (IndexSet(integer: 0), -1), (IndexSet(integer: 0), ToolbarItem.allCases.count + 1), (IndexSet(), 0)] {
+        for (source, destination) in [(IndexSet(integer: 99), 0), (IndexSet(integer: 0), -1), (IndexSet(integer: 0), ToolbarItem.defaultOrder.count + 1), (IndexSet(), 0)] {
             movedReload.moveToolbarItems(fromOffsets: source, toOffset: destination)
             precondition(movedReload.toolbarConfiguration.orderedItems == beforeInvalidMove)
         }
         movedReload.restoreDefaultToolbar()
-        precondition(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems == ToolbarItem.allCases)
-        precondition(SettingsService(defaults: defaults).toolbarConfiguration.visibleItems == ToolbarItem.allCases)
+        precondition(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems == ToolbarItem.defaultOrder)
+        precondition(SettingsService(defaults: defaults).toolbarConfiguration.visibleItems == ToolbarItem.defaultOrder)
         print("PASS: reorder up/down/multiple, persistence, hidden positions, required actions, malformed orders, reset")
 
         settings.restoreDefaultToolbar()
@@ -228,7 +228,7 @@ struct ToolbarRegressionChecks {
         // Check full, minimal, and wrapped toolbars at all screen corners.
         for width: CGFloat in [320, 640, 1280, 2560] {
             let screen = CGSize(width: width, height: 720)
-            for items in [ToolbarItem.allCases, [.cancel, .complete], [.text, .undo, .cancel, .complete], repairedOrder.orderedItems] {
+            for items in [ToolbarItem.defaultOrder, [.cancel, .complete], [.text, .undo, .cancel, .complete], repairedOrder.orderedItems] {
                 let layout = ToolbarLayout(items: items, availableWidth: width - 20)
                 precondition(layout.rows.flatMap { $0 } == items)
                 precondition(layout.size.width <= width - 20)
@@ -270,7 +270,7 @@ struct ToolbarRegressionChecks {
         }
 
         _ = NSApplication.shared
-        for item in ToolbarItem.allCases {
+        for item in ToolbarItem.defaultOrder {
             precondition(NSImage(systemSymbolName: item.iconName, accessibilityDescription: nil) != nil,
                          "Missing icon: \(item.iconName)")
         }
@@ -325,7 +325,7 @@ struct ToolbarRegressionChecks {
             let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: 900)
             try render(EditorToolbarView(viewModel: model, layout: layout).padding(16),
                        size: CGSize(width: layout.size.width + 32, height: layout.size.height + 32), path: output + "/toolbar-custom.png")
-            let compact = ToolbarLayout(items: ToolbarItem.allCases, availableWidth: 496)
+            let compact = ToolbarLayout(items: ToolbarItem.defaultOrder, availableWidth: 496)
             try render(EditorToolbarView(viewModel: model, layout: compact).padding(16),
                        size: CGSize(width: compact.size.width + 32, height: compact.size.height + 32), path: output + "/toolbar-wrapped.png")
             print("PASS: rendered native SwiftUI settings and toolbar previews")
@@ -574,7 +574,8 @@ struct ToolbarRegressionChecks {
         move.endSelectedShapeDrag()
         move.annotations = [rect, innerText]
         precondition(!move.handleSelectedShapeDrag(from: innerText.startPoint, to: innerText.startPoint, within: bounds))
-        move.beginMoveSelection(at: CGPoint(x: 500, y: 400))
+        move.beginMoveSelection(at: CGPoint(x: crop.minX, y: crop.minY + 40))
+        precondition(move.isMovingSelection)
         precondition(!move.handleSelectedShapeDrag(from: inside, to: inside, within: bounds), "Moving a crop must not turn into moving a shape")
         move.endMoveSelection()
         let corner = CGPoint(x: 150, y: 150)
@@ -673,8 +674,10 @@ struct ToolbarRegressionChecks {
         model.endDrawing()
         precondition(model.selectionRect == original && model.annotations.count == 1)
 
+        model.annotations = [] // This scenario starts text, rather than selecting the rectangle at center.
         model.selectedTool = .text
         model.startTextInput(at: center)
+        precondition(model.isEditingText)
         model.editingTextContent = "调整前的文字"
         precondition(model.handleSelectionResizeDrag(from: original.origin, to: CGPoint(x: 900, y: 900), within: bounds))
         precondition(model.selectionRect == CGRect(x: 380, y: 280, width: 20, height: 20))
