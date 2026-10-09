@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.10](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.10) · [Release notes](docs/releases/1.3.10.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.11](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.11) · [Release notes](docs/releases/1.3.11.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.10 release notes](docs/releases/1.3.10.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.11 release notes](docs/releases/1.3.11.md).
 
 ## 🚀 Usage Guide
 
@@ -112,7 +112,7 @@ Click the **OCR** icon on the toolbar. The software will automatically recognize
 Click the scissors icon in the menu bar and select "Settings...", or press `Cmd + ,` while LibreShot is active, to:
 - **Set Shortcuts**: Customize global shortcuts for "Area Screenshot" and "Full Screen Screenshot".
 - **Editor Shortcuts**: Assign keys to annotation tools. Defaults include Cmd-S to save, Shift-Cmd-S for Save As, Return to finish, and Cmd-Z to undo. Ordinary characters, Space, and Return still work while entering text; Esc cancels the capture, except while editing a number, when it cancels that edit first.
-- **Double-click to finish (1.3.11 development build)**: Enabled by default. Double-click the selected image with any annotation tool or while entering text to perform the same action as ✅, following Auto Save. Disable it in Shortcuts to restore double-click text/number editing.
+- **Double-click to finish (1.3.11)**: Enabled by default. Double-click the selected image with any annotation tool or while entering text to perform the same action as ✅, following Auto Save. Disable it in Shortcuts to restore double-click text/number editing.
 - **Double Option**: Optionally start an area capture with two Option taps. Requires Input Monitoring permission; modifier combinations, long presses, and intervening mouse actions do not trigger it.
 - **Space Action**: Choose Off (default), Finish, or Save & Copy. Finish follows Auto Save; Save & Copy always writes to the configured folder and preserves the clipboard image if saving fails.
 - **Save Path**: Customize the default save location for screenshots.
@@ -144,4 +144,4 @@ Issues and Pull Requests are welcome!
 
 This project is open source under the [MIT License](LICENSE).
 
-**New in 1.3.10:** Text entry stays active after committing text or dismissing an empty field, and the editor resizes during Chinese pinyin composition. Move the capture region from its border. Check for Updates moves to About; the revised default toolbar order preserves existing custom settings. See the [release notes](docs/releases/1.3.10.md).
+**New in 1.3.11:** Double-click the capture selection to finish with any annotation tool or while entering text, following Auto Save. Confirmation does not accidentally add a number. Disable the option in Shortcuts to restore double-click text and number editing. See the [release notes](docs/releases/1.3.11.md).

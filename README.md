@@ -4,7 +4,7 @@
 
 LibreShot 是一款轻量、现代化的 macOS 截图与标注工具，原生开发，完全免费开源。
 
-最新公开版本：[v1.3.10](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.10) · [更新说明](docs/releases/1.3.10.md) · [更新日志](CHANGELOG.md)
+最新公开版本：[v1.3.11](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.11) · [更新说明](docs/releases/1.3.11.md) · [更新日志](CHANGELOG.md)
 
 ## ✨ 特性
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *当前源码使用 macOS 26 SDK，请使用 Xcode 26 或更新版本；应用部署目标为 macOS 13.0。*
 
-GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次修复见 [1.3.10 更新说明](docs/releases/1.3.10.md)。
+GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也可显式指定 `--ad-hoc`。每次更新后可能要重新授予录屏和输入监控权限；此安装包不能提交 Apple 公证。若将来配置了 Developer ID Application 证书，可显式运行 `bash build_release.sh --developer-id`。脚本会核对签名模式，不自动公证或上传。测试说明见 [tests/README.md](tests/README.md)，本次修复见 [1.3.11 更新说明](docs/releases/1.3.11.md)。
 
 ## 🚀 使用指南
 
@@ -115,7 +115,7 @@ GitHub 分发默认使用 ad-hoc 签名：运行 `bash build_release.sh`，也�
 在菜单栏点击剪刀图标选择“设置...”，或在 LibreShot 激活时按 `Cmd + ,`，可以：
 - **设置快捷键**：自定义“区域截图”和“全屏截图”的全局快捷键。
 - **编辑快捷键**：为标注工具设置按键；默认 ⌘S 保存、⇧⌘S 另存为、回车完成、⌘Z 撤销。文字输入期间普通字符、空格和回车仍用于输入；序号编辑期间数字用于输入、回车提交、`Esc` 取消改号，其他情况下 `Esc` 取消截图。
-- **双击完成（1.3.11 开发版）**：默认开启；框选后双击选区等同于 ✅，适用于所有标注工具和文字输入，遵循自动保存设置。可在快捷键设置关闭，恢复双击文字/序号编辑。
+- **双击完成（1.3.11）**：默认开启；框选后双击选区等同于 ✅，适用于所有标注工具和文字输入，遵循自动保存设置。可在快捷键设置关闭，恢复双击文字/序号编辑。
 - **双击 Option**：可选开启区域截图手势，需在系统设置授予输入监控权限；按键组合、长按或夹杂鼠标操作不会触发。
 - **空格动作**：可选关闭（默认）、完成、保存并复制。“完成”遵循自动保存设置；“保存并复制”始终写入预设目录，保存失败仍保留剪贴板。
 - **保存路径**：自定义截图文件的默认保存位置。
@@ -146,4 +146,4 @@ v1.3.2 已在本机 Apple Silicon / macOS 26 完成发行包、安装、授权�
 
 本项目基于 [MIT License](LICENSE) 开源。
 
-**1.3.10 更新**：文字提交或空框取消后保持文字工具，中文拼音输入实时扩宽；截图框仅从边框拖动，减少内部空白误移。检查更新移到「关于」，调整出厂工具顺序并保留已有自定义设置。详见 [更新说明](docs/releases/1.3.10.md)。
+**1.3.11 更新**：框选后双击选区即可完成，适用于所有标注工具及文字输入，遵循自动保存设置；双击不会意外新增序号。可在快捷键设置关闭，恢复双击文字和序号编辑。详见 [更新说明](docs/releases/1.3.11.md)。
