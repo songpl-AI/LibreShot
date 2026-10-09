@@ -1,5 +1,10 @@
 # 工具栏与截图完成流程回归检查
 
+## 双击完成与全屏浮层（2026-10-09）
+
+- `bash tests/run-issue25-checks.sh`：所有标注工具双击完成、首击序号回退、文字提交、开关持久化，以及选区外/长截图采集中不导出。
+- `bash tests/run-fullscreen-overlay-checks.sh`：公开测试窗口在独立进程进入原生全屏，另一个进程保留桌面设置窗口并调用实际 OverlayWindowController；检查遮罩可见/key、全屏窗口仍在当前 Space、没有 Space 切换。使用注入的公开白色预览，不需要录屏权限。它验证窗口显示路径，不替代真实截图保存和 beta 系统复测。
+
 `bash tests/run-overlay-permission-checks.sh`：用真实遮罩窗口和可控预览失败复现 Issue #7 的“授权弹窗被灰色遮罩盖住”问题，检查失败后的遮罩关闭、错误回传，以及重复触发时过期预览不会重新显示遮罩。
 
 ## 原位翻译与紧凑编辑器

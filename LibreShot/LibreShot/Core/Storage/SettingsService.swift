@@ -116,6 +116,9 @@ class SettingsService: ObservableObject {
     @Published var editorSpaceAction: EditorSpaceAction {
         didSet { defaults.set(editorSpaceAction.rawValue, forKey: "editorSpaceAction") }
     }
+    @Published var doubleClickCompletesCapture: Bool {
+        didSet { defaults.set(doubleClickCompletesCapture, forKey: "doubleClickCompletesCapture") }
+    }
     @Published var doubleOptionEnabled: Bool {
         didSet {
             defaults.set(doubleOptionEnabled, forKey: "doubleOptionEnabled")
@@ -175,6 +178,7 @@ class SettingsService: ObservableObject {
             self.editorShortcuts = EditorShortcut.defaults
         }
         self.editorSpaceAction = EditorSpaceAction(rawValue: defaults.string(forKey: "editorSpaceAction") ?? "") ?? .disabled
+        self.doubleClickCompletesCapture = defaults.object(forKey: "doubleClickCompletesCapture") as? Bool ?? true
         self.doubleOptionEnabled = defaults.bool(forKey: "doubleOptionEnabled")
         self.toolbarConfiguration = ToolbarConfiguration(
             hiddenItems: Set(defaults.stringArray(forKey: "hiddenToolbarItems") ?? []),

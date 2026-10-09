@@ -216,6 +216,44 @@ class OverlayViewModel: ObservableObject {
     var onLongCaptureStart: ((CGRect) -> Void)?
     
     // MARK: - Finalize
+
+    private var confirmationClick: (point: CGPoint, annotations: [Annotation], undoCount: Int)?
+
+    func canConfirmDoubleClick(at point: CGPoint) -> Bool {
+        settings.doubleClickCompletesCapture && state == .editing
+            && !selectionRect.isEmpty && selectionRect.contains(point) && !showsStylePopover
+    }
+
+    /// Observe the first click without delaying drawing or text input. Only the
+    /// number tool creates a valid annotation on a stationary first click.
+    func beginConfirmationClick(at point: CGPoint) {
+        confirmationClick = canConfirmDoubleClick(at: point) && selectedTool == .number && !isEditingText
+            ? (point, annotations, annotationUndo.count) : nil
+    }
+
+    func endConfirmationClick(at point: CGPoint) {
+        if let click = confirmationClick, hypot(point.x - click.point.x, point.y - click.point.y) >= 5 {
+            confirmationClick = nil
+        }
+    }
+
+    @discardableResult
+    func confirmDoubleClick(at point: CGPoint) -> Bool {
+        guard canConfirmDoubleClick(at: point) else { return false }
+        if let click = confirmationClick, hypot(point.x - click.point.x, point.y - click.point.y) < 5,
+           annotations.count == click.annotations.count + 1,
+           Array(annotations.dropLast()) == click.annotations,
+           annotations.last?.type == .number, annotationUndo.count == click.undoCount + 1 {
+            undoLastAnnotation()
+        }
+        confirmationClick = nil
+        // Confirmation wins over text selection/editing and every drawing tool.
+        currentAnnotation = nil
+        pendingDrawing = nil
+        clearAnnotationPress()
+        confirmCopy()
+        return true
+    }
     
     func confirmCopy() {
         guard canExportSelection else { return }
@@ -847,6 +885,7 @@ class OverlayViewModel: ObservableObject {
     }
     
     func reset() {
+        confirmationClick = nil
         clearImageTranslation()
         showsStylePopover = false
         endSelectedShapeDrag()

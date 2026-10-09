@@ -198,6 +198,17 @@ struct OverlayView: View {
                         .position(x: statusPos.x, y: statusPos.y)
                 }
             }
+            .background(CaptureConfirmationMouseView(model: viewModel, acceptsPoint: { point in
+                guard showsToolbar else { return true }
+                let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
+                let accessoryHeight: CGFloat = viewModel.translationSource != nil && viewModel.showsTranslationControls ? 78 : 0
+                let accessoryWidth = accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0
+                let center = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,
+                                             accessorySize: CGSize(width: accessoryWidth, height: accessoryHeight))
+                let size = CGSize(width: max(layout.size.width, accessoryWidth), height: layout.size.height + accessoryHeight)
+                return !CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                               width: size.width, height: size.height).contains(point)
+            }))
             .onContinuousHover(coordinateSpace: .named("overlay")) { phase in
                 switch phase {
                 case .active(let point):
@@ -446,6 +457,73 @@ struct OverlayView: View {
         }
     }
 
+}
+
+/// Intercept the second mouse-down before SwiftUI drawing gestures or NSTextView
+/// double-click editing. The observer never consumes ordinary clicks or drags.
+private struct CaptureConfirmationMouseView: NSViewRepresentable {
+    let model: OverlayViewModel
+    let acceptsPoint: (CGPoint) -> Bool
+
+    func makeNSView(context: Context) -> CaptureConfirmationObserver { CaptureConfirmationObserver() }
+    func updateNSView(_ view: CaptureConfirmationObserver, context: Context) {
+        view.model = model
+        view.acceptsPoint = acceptsPoint
+    }
+    static func dismantleNSView(_ view: CaptureConfirmationObserver, coordinator: ()) { view.stopObserving() }
+}
+
+private final class CaptureConfirmationObserver: NSView {
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    weak var model: OverlayViewModel?
+    var acceptsPoint: ((CGPoint) -> Bool)?
+    private var monitor: Any?
+    private var consumesMouseUp = false
+    private var confirmationPoint: CGPoint?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        stopObserving()
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] event in
+            guard let self, event.window === self.window, let model = self.model else { return event }
+            if self.consumesMouseUp {
+                if event.type == .leftMouseUp { self.consumesMouseUp = false }
+                return nil
+            }
+            let point = self.convert(event.locationInWindow, from: nil)
+            if event.type == .leftMouseDown {
+                guard self.bounds.contains(point), self.acceptsPoint?(point) == true else {
+                    self.confirmationPoint = nil
+                    return event
+                }
+                if event.clickCount == 2, let first = self.confirmationPoint,
+                   hypot(point.x - first.x, point.y - first.y) < 5,
+                   model.confirmDoubleClick(at: point) {
+                    self.confirmationPoint = nil
+                    self.consumesMouseUp = true
+                    return nil
+                }
+                self.confirmationPoint = model.canConfirmDoubleClick(at: point) ? point : nil
+                model.beginConfirmationClick(at: point)
+            } else {
+                if let first = self.confirmationPoint, hypot(point.x - first.x, point.y - first.y) >= 5 {
+                    self.confirmationPoint = nil
+                }
+                model.endConfirmationClick(at: point)
+            }
+            return event
+        }
+    }
+
+    func stopObserving() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        consumesMouseUp = false
+        confirmationPoint = nil
+    }
+    deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
 }
 
 struct LongCaptureInlineStatusView: View {

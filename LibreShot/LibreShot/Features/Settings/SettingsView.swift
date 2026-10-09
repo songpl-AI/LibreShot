@@ -395,6 +395,9 @@ struct ShortcutSettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
+                    Toggle("框选后双击完成截图", isOn: $settings.doubleClickCompletesCapture)
+                    Text("双击选区即可完成，遵循自动保存设置；适用于所有标注工具。关闭后双击文字或序号可编辑。")
+                        .font(.caption).foregroundStyle(.secondary)
                     Picker("编辑时空格", selection: $settings.editorSpaceAction) {
                         ForEach(EditorSpaceAction.allCases, id: \.self) { action in
                             Text(action.title).tag(action)
