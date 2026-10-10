@@ -205,7 +205,14 @@ class SettingsService: ObservableObject {
         self.useRoundedCorners = defaults.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
         self.editLongCaptureAfterFinish = defaults.object(forKey: "editLongCaptureAfterFinish") as? Bool ?? true
         self.playSound = defaults.object(forKey: "playSound") as? Bool ?? true // Default to true
-        self.autoSaveEnabled = defaults.object(forKey: "autoSaveEnabled") as? Bool ?? false // New users finish by copying; preserve stored choices.
+        // Legacy installs may have used the old default without storing the toggle.
+        // Persist the resolved choice once so a new install remains copy-only later.
+        let legacyKeys = ["saveDirectoryBookmark", "shortcutKey", "fullScreenShortcutKey",
+                          "longScreenshotShortcutKey", "doubleOptionEnabled", "launchAtLogin",
+                          "useRoundedCorners", "toolbarItemOrder", "editorShortcuts", "defaultEditorTool"]
+        let hasLegacyPreferences = legacyKeys.contains { defaults.object(forKey: $0) != nil }
+        self.autoSaveEnabled = defaults.object(forKey: "autoSaveEnabled") as? Bool ?? hasLegacyPreferences
+        defaults.set(autoSaveEnabled, forKey: "autoSaveEnabled")
         // Existing global bindings win when loading a previously conflicting configuration.
         self.editorShortcuts = editorShortcuts.filter { _, shortcut in
             !globalShortcuts.contains { $0.shortcut.conflicts(with: shortcut) }

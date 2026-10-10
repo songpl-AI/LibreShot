@@ -30,7 +30,12 @@ import AppKit
             defaults.set(existing, forKey: "autoSaveEnabled")
             precondition(SettingsService(defaults: defaults).autoSaveEnabled == existing)
         }
-        print("PASS: new users default to copy-only; existing auto-save choices preserved")
+        defaults.removeObject(forKey: "autoSaveEnabled")
+        defaults.set(7, forKey: "shortcutKey")
+        precondition(SettingsService(defaults: defaults).autoSaveEnabled,
+                     "Legacy users without a stored toggle must retain their former enabled default")
+        precondition(defaults.object(forKey: "autoSaveEnabled") as? Bool == true)
+        print("PASS: new users default to copy-only; stored and implicit legacy choices preserved")
         let settings = SettingsService.shared
         precondition(settings.saveSaveDirectory(directory))
         settings.autoSaveEnabled = true
