@@ -28,12 +28,25 @@ import AppKit
         NSColor.white.setFill()
         NSRect(x: 0, y: 0, width: 320, height: 240).fill()
         image.unlockFocus()
-        let delegate = AppDelegate(fullScreenImageProvider: { image })
+        var targetID: CGDirectDisplayID = 42
+        var requestedID: CGDirectDisplayID?
+        var requests = 0
+        let delegate = AppDelegate(fullScreenImageProvider: { id in
+            requestedID = id
+            requests += 1
+            return image
+        }, fullScreenDisplayIDProvider: { targetID })
         func editor() -> ImageEditorWindowController? {
             NSApp.windows.filter(\.isVisible).compactMap { $0.windowController as? ImageEditorWindowController }.first
         }
         func files() -> [URL] { (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] }
         delegate.perform(NSSelectorFromString("captureFullScreen"))
+        targetID = 77
+        check(await waitFor({ requests == 1 }))
+        guard requestedID == 42 else {
+            print("FAIL: full-screen capture ignored display at trigger time; requested \(String(describing: requestedID)), expected 42")
+            exit(1)
+        }
         guard await waitFor({ editor() != nil }), let first = editor() else {
             print("FAIL: full-screen capture produced no visible annotation editor (saved files: \(files().count))")
             exit(1)
@@ -55,6 +68,7 @@ import AppKit
         precondition(savedPNG == NSPasteboard.general.data(forType: .png),
                      "Saved PNG and clipboard must contain the same final image")
         print("PASS: full-screen capture opens editor; Enter copies and saves annotated image")
+        print("PASS: display at trigger time is passed explicitly, even when target changes before capture")
         delegate.perform(NSSelectorFromString("captureFullScreen"))
         check(await waitFor({ editor() != nil }))
         let count = files().count
@@ -70,5 +84,26 @@ import AppKit
         check(await waitFor({ editor() == nil }))
         precondition(files().count == count && NSPasteboard.general.changeCount > clipboard)
         print("PASS: double-click copies without saving when auto-save is disabled")
+        let displays: [(id: CGDirectDisplayID, frame: CGRect)] = [
+            (1, CGRect(x: 0, y: 0, width: 1512, height: 982)),
+            (2, CGRect(x: -2560, y: 0, width: 2560, height: 1440)),
+            (3, CGRect(x: 0, y: 982, width: 1920, height: 1080)),
+            (4, CGRect(x: 1512, y: -1080, width: 1920, height: 1080))
+        ]
+        for (point, expected) in [(CGPoint(x: 100, y: 100), CGDirectDisplayID(1)),
+                                  (CGPoint(x: -1200, y: 600), 2),
+                                  (CGPoint(x: 600, y: 1400), 3),
+                                  (CGPoint(x: 2000, y: -500), 4),
+                                  (CGPoint(x: 9999, y: 9999), 1)] {
+            precondition(CaptureService.displayID(at: point, displays: displays, fallback: 1) == expected)
+        }
+        precondition(CaptureService.displayID(at: .zero, displays: [], fallback: nil) == nil)
+        if let screen = NSScreen.screens.last {
+            let placed = ImageEditorWindowController(image: image, screen: screen)
+            precondition(abs(placed.window!.frame.midX - screen.visibleFrame.midX) < 1)
+            precondition(abs(placed.window!.frame.midY - screen.visibleFrame.midY) < 1)
+            placed.close()
+        }
+        print("PASS: left/above/below displays, fallback, and editor placement on target screen")
     }
 }

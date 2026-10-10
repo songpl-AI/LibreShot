@@ -111,6 +111,19 @@ enum ScreenCaptureAccess {
 
 class CaptureService {
     static let shared = CaptureService()
+
+    static func displayID(at point: CGPoint, displays: [(id: CGDirectDisplayID, frame: CGRect)],
+                          fallback: CGDirectDisplayID?) -> CGDirectDisplayID? {
+        displays.first { $0.frame.contains(point) }?.id ?? fallback
+    }
+
+    static func displayIDAtPointer() -> CGDirectDisplayID? {
+        let displays = NSScreen.screens.compactMap { screen -> (id: CGDirectDisplayID, frame: CGRect)? in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
+            return (id, screen.frame)
+        }
+        return displayID(at: NSEvent.mouseLocation, displays: displays, fallback: CGMainDisplayID())
+    }
     
     let context = CIContext()
     private let exportColorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()

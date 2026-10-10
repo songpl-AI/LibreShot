@@ -10,7 +10,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
     var onAction: ((NSImage, CaptureAction) async throws -> Void)?
 
-    init(image: NSImage, settings: SettingsService = .shared) {
+    init(image: NSImage, settings: SettingsService = .shared, screen: NSScreen? = nil) {
         self.image = image
         model = OverlayViewModel(settings: settings)
         model.captureMode = .imageEditor
@@ -19,7 +19,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         model.applyInitialTool()
         let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         model.updatePreviewImage(cg, scale: CGFloat(cg?.width ?? 1) / max(image.size.width, 1))
-        let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
+        let visible = (screen ?? NSScreen.main)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
         let size = CGSize(width: min(max(560, image.size.width + 48), min(1100, visible.width * 0.9)),
                           height: min(max(480, image.size.height + 130), min(840, visible.height * 0.9)))
         let window = OverlayWindow(contentRect: CGRect(origin: .zero, size: size),
@@ -35,7 +35,12 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         window.onEscapeKey = { [weak self] in self?.close() }
         model.onCancel = { [weak self] in self?.close() }
         model.onCapture = { [weak self] _, _, action, base in self?.perform(action, base: base) }
-        window.center()
+        if screen != nil {
+            window.setFrameOrigin(CGPoint(x: visible.midX - window.frame.width / 2,
+                                          y: visible.midY - window.frame.height / 2))
+        } else {
+            window.center()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

@@ -39,15 +39,19 @@ struct LibreShotApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let fullScreenImageProvider: () async throws -> NSImage
+    private let fullScreenImageProvider: (CGDirectDisplayID?) async throws -> NSImage
+    private let fullScreenDisplayIDProvider: () -> CGDirectDisplayID?
 
     override init() {
-        fullScreenImageProvider = { try await CaptureService.shared.captureDisplayImage() }
+        fullScreenImageProvider = { try await CaptureService.shared.captureDisplayImage(displayID: $0) }
+        fullScreenDisplayIDProvider = CaptureService.displayIDAtPointer
         super.init()
     }
 
-    init(fullScreenImageProvider: @escaping () async throws -> NSImage) {
+    init(fullScreenImageProvider: @escaping (CGDirectDisplayID?) async throws -> NSImage,
+         fullScreenDisplayIDProvider: @escaping () -> CGDirectDisplayID? = CaptureService.displayIDAtPointer) {
         self.fullScreenImageProvider = fullScreenImageProvider
+        self.fullScreenDisplayIDProvider = fullScreenDisplayIDProvider
         super.init()
     }
 
@@ -239,12 +243,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func captureFullScreen() {
+        // Freeze the target before asynchronous capture or editor activation moves focus.
+        let displayID = fullScreenDisplayIDProvider()
         Task {
             do {
-                // Default to main display for full screen shortcut
-                let image = try await fullScreenImageProvider()
+                let image = try await fullScreenImageProvider(displayID)
                 SoundService.shared.playCaptureSound()
-                await showImageEditor(image)
+                let screen = NSScreen.screens.first {
+                    ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+                }
+                await showImageEditor(image, on: screen)
             } catch is CancellationError {
                 // User cancelled, do nothing
             } catch {
@@ -476,8 +484,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @MainActor
-    private func showImageEditor(_ image: NSImage) {
-        let editor = ImageEditorWindowController(image: image)
+    private func showImageEditor(_ image: NSImage, on screen: NSScreen? = nil) {
+        let editor = ImageEditorWindowController(image: image, screen: screen)
         editor.onAction = { [weak self] image, action in
             guard let self else { return }
             try await self.handleImageAction(image, action: action)

@@ -366,7 +366,7 @@ struct ShortcutSettingsView: View {
                     // Full Screen Capture
                     ShortcutRow(
                         title: "全屏截图",
-                        description: "捕捉整个屏幕并进入标注编辑，确认后复制或保存。",
+                        description: "捕捉鼠标所在屏幕的全屏内容并进入标注编辑，确认后复制或保存。",
                         keyCode: $settings.fullScreenShortcutKey,
                         modifiers: $settings.fullScreenShortcutModifiers,
                         onSave: { k, m in saveFullScreenShortcut(keyCode: k, modifiers: m) },
