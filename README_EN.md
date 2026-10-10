@@ -1,147 +1,58 @@
 # LibreShot
 
-[中文](README.md) | [English](README_EN.md)
+[中文](README.md) | [English](README_EN.md) · [MIT License](LICENSE)
 
-LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
+A free, open-source native screenshot and annotation tool for macOS.
 
-Latest public release: [v1.3.14](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.14) · [Release notes](docs/releases/1.3.14.md) · [Changelog](CHANGELOG.md)
+[Download v1.3.14](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.14) · [Release notes](docs/releases/1.3.14.md) · [Changelog](CHANGELOG.md)
 
-## ✨ Features
+## Features
 
-- **Minimalist Design**: Native macOS style, lightweight and fast, seamlessly integrated into the system.
-- **Rich Annotation Tools**:
-  - 🖊️ **Pen**: Freehand drawing.
-  - ⬜ **Rectangle/Ellipse**: Quickly highlight areas.
-  - ↖️ **Arrow**: Point out details precisely.
-  - 📝 **Text**: Inline WYSIWYG editing with multiline, font size and color.
-  - 🔢 **Numbered Annotation**: Circled auto-incrementing numbers to highlight points of interest.
-  - 💧 **Blur/Mosaic**: Easily hide sensitive information (like faces, accounts).
-- **OCR Text Recognition & Translation**: Built-in offline OCR engine to extract text from screenshots (supports Chinese & English), plus offline translation after language packs are installed (macOS 26+; the initial download requires internet access).
-- **Translate in Place**: Put editable translations at the original text positions, switch between original and translated images, then copy, save, or annotate (macOS 26+). Best suited to documents and interfaces with simple backgrounds; complex backgrounds are not reconstructed seamlessly.
-- **Long Screenshot**: Capture scrolling content into one long image and, by default, open it in a scrollable, zoomable annotation window. You can choose a preview-first workflow in Settings.
-- **Auto Save**: New users finish by copying only; enable Auto Save to also write to the configured folder. Upgrades retain existing choices. Save always writes to that folder; Save As lets you choose a name and location.
-- **Custom Toolbar**: Show, hide, and reorder tools in Settings. Enabled tools remain directly visible and wrap on narrow windows, without a More menu.
-- **Pin to Screen**: Support "pinning" screenshots to the top of the screen for easy reference or cross-app collaboration.
-- **Shortcuts**: Customize global capture and editor-tool shortcuts, optionally capture by double-tapping Option, and assign Finish or Save & Copy to Space.
-- **On-Device Processing**: Screenshots, OCR, and translation text are processed locally. Initial language downloads and update checks require internet access.
-- **Completely Free**: Open source and free, breaking down payment barriers.
+- **Area, full-screen and scrolling capture**: Capture the screen under the pointer and annotate it; scroll, zoom and edit long captures.
+- **Annotation and tool properties**: Pen, rectangle, ellipse, arrow, text, numbers, mosaic and blur. Contextual properties appear automatically with independent preferences, reset and undo.
+- **Rounded rectangles and number colors**: Rounded corners, filled/outlined numbers, and independent border, fill and digit colors.
+- **OCR and translation**: On-device text recognition, text translation and translation in place. Translation requires macOS 26+; initial language-pack downloads require internet access.
+- **Copy, save and pin**: New users finish by copying only, with optional Auto Save, manual Save, Save As and floating pinned images.
+- **Custom controls**: Configure shortcuts, toolbar order and the default tool; optionally double-tap Option to start a capture.
 
-## 📦 Installation
+## Installation
 
-### Method 1: GitHub Releases (Recommended)
+Supports **macOS 13+, Apple Silicon and Intel**. Translation requires macOS 26+.
 
-> 💻 **System Requirements**: macOS 13.0 (Ventura) or later.
+1. Download the DMG from [GitHub Releases](https://github.com/songpl-AI/LibreShot/releases).
+2. Drag `LibreShot.app` into Applications. Quit the old app before upgrading.
+3. Allow Screen Recording for captures; double-Option also requires Input Monitoring.
 
-1. Go to the [Releases](https://github.com/songpl-AI/LibreShot/releases) page to download the latest `.dmg` installer.
-2. Double-click the `.dmg` file and drag `LibreShot.app` into the `Applications` folder.
+Packages use ad-hoc signing and are not notarized, so macOS may block opening them. See the [installation guide](docs/installation_EN.md) for checksums, opening the app and renewing upgrade permissions.
 
-To upgrade, quit LibreShot and replace the old app in Applications. Your toolbar and save preferences are retained. The installer supports Apple Silicon and Intel; translation requires macOS 26 or later.
+## Quick start
 
-GitHub packages use ad-hoc signatures and are **not notarized**. macOS may block it by default. Download only from this repository's Release page, verify the `SHA256SUMS` attachment, and follow [Apple's official app-opening instructions](https://support.apple.com/102445) in System Settings → Privacy & Security. Do not disable Gatekeeper globally. If macOS reports a damaged file, redownload and verify the checksum first. This is not a friction-free Developer ID-signed, notarized installer.
+1. Choose area, full-screen or scrolling capture from the menu bar, or use a shortcut.
+2. Select a region and annotate it. Tool properties appear automatically; rounded corners are in Rectangle Properties.
+3. Double-click the selected image, press Return or click ✅ to finish. New users copy only by default. Use `⌘S` to save, `⌘⇧S` for Save As, or `Esc` to cancel.
 
-Before the first capture, allow LibreShot under Screen Recording (or Screen & System Audio Recording) in System Settings → Privacy & Security. Double-Option also requires Input Monitoring. An upgrade between temporarily signed builds may require you to grant both permissions again and quit/reopen LibreShot.
+| Action | Default shortcut |
+| --- | --- |
+| Area capture | `⌘⇧X` |
+| Full-screen capture | `⌘⇧A` |
 
-If permission is enabled but the new app still reports it missing, quit LibreShot, remove its old entry in the relevant permission panel, and add `/Applications/LibreShot.app` using “+”. Enable it and reopen the app. Check Screen Recording and Input Monitoring separately, capture and save an image, then restart the same installed app and repeat. Maintainers must follow the [installation and permission acceptance procedure (Chinese)](docs/operations/install-and-permissions.md) for every new package.
+Customize shortcuts in Settings. Upgrades retain existing preferences. See the [usage guide](docs/usage_EN.md) for details.
 
-### Method 2: Build from Source
+## Documentation and feedback
 
-If you are a developer, you can compile the source code yourself:
+- [Usage guide](docs/usage_EN.md): Annotation, tool properties, saving, scrolling capture and translation.
+- [Installation guide](docs/installation_EN.md): Installation, permissions and upgrades.
+- [Development guide](docs/development_EN.md): Building, packaging and tests.
+- [Issues](https://github.com/songpl-AI/LibreShot/issues): Report bugs or suggest improvements. Pull Requests are welcome.
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/songpl-AI/LibreShot.git
+## Support
 
-# 2. Open the project
-cd LibreShot
-open LibreShot/LibreShot.xcodeproj
+Support maintenance through [GitHub Sponsors](https://github.com/sponsors/songpl-AI), or follow the WeChat account.
 
-# 3. Build and Run using Xcode (Cmd + R)
-```
-*The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
+<img src="docs/wechat.JPG" width="200" alt="WeChat account QR code">
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.14 release notes](docs/releases/1.3.14.md).
+## License
 
-## 🚀 Usage Guide
+Licensed under the [MIT License](LICENSE).
 
-Capture editing defaults to Select/Move. You can choose another default annotation tool in toolbar settings. Version 1.3.4 also fixes irregular freehand selection bounds and reduces accidental marks or movement.
-
-### 1. Shortcuts (Recommended)
-- **Area Screenshot**: Default `Cmd + Shift + X`
-- **Full Screen Screenshot**: Default `Cmd + Shift + A`
-
-You can customize these shortcuts in **Settings**. This is the most efficient way to use the tool.
-
-### 2. Menu Bar
-Click the "Scissors" icon in the menu bar to select functions:
-- **Area Screenshot**
-- **Full Screen Screenshot**
-- **Long Screenshot**
-
-*(Note: The global shortcut currently bound will be displayed next to the menu item for easy reference)*
-
-### 3. Annotation & Editing
-
-
-**New in 1.3.3:** Mosaic annotations now have eight resize handles and directional hover cursors, without the extra selection outline. Resizing supports undo. See the [release notes](docs/releases/1.3.3.md).
-
-**New in 1.3.2:** Clicks and small pointer jitter no longer create invalid shapes. Completed shapes are immediately selected, and selecting an existing annotation keeps its tool active for drawing in empty space. Drag selected annotations to move them, or drag arrow endpoints to change direction. Delete/Backspace removes the selected annotation; Cmd-Z undoes deletion and adjustments. Text input keeps its normal delete behavior. Rounded selection previews match the output. Editor shortcuts are now beside the toolbar ordering rows; the Space action remains on the Shortcuts tab. See the [validation record](docs/qa/issue-9-20261002.md).
-
-**New in 1.2.0**: Click an existing annotation to select it while any annotation tool is active. For rectangles and ellipses, click the outline. Drag a selected annotation to move it; selected rectangles and ellipses also have eight blue resize handles and can be moved from their empty interiors. White outer handles resize the capture region. Dragging on empty space draws with the active tool; existing text and numbers can be selected and moved directly by dragging. Disable “Double-click to finish capture” to edit text by double-clicking.
-
-**New in 1.3.8:** Improved initial text dragging, short reverse-scroll revisits within captured content, filled/outlined numbers, solid arrowheads and clearer text selection borders. See the [release notes](docs/releases/1.3.8.md).
-
-After selecting a capture region, edit mode opens with resize handles at all four corners and edge midpoints. Press `Esc` once to cancel the capture, including while entering text. While editing a number, Esc first cancels the number edit. Click Select/Move or click the active tool again to return to selection mode. The floating toolbar provides the following functions:
-- **Shapes**: Rectangle, Circle, or Arrow.
-- **Numbered Annotation**: Click the number icon to place a circled auto-incrementing number. With “Double-click to finish capture” disabled, double-click a number to edit it (1–9999); Enter commits and Esc cancels the edit. Setting N makes the next number N+1. Drag the bottom-right handle to resize; subsequent numbers inherit size and color. Deleting the most recently placed or edited number rolls back the next number; middle deletions leave other numbers unchanged. Cmd-Z undoes these edits.
-- **Mosaic/Blur**: Version 1.3.6 supports Brush and Rectangle modes for both tools, with continuously refreshed previews. Brush strokes can be continued immediately after release; the default width is 20. Adjust block size, brush width and blur strength in Effect Parameters. Use Select/Move to edit existing strokes.
-- **Text**: Click the "T" icon and click on the image to type inline (WYSIWYG); press Enter for a new line, click elsewhere to commit.
-- **Color & Font Size**: Click the four-color palette (red, yellow, blue, green) to open color presets, the system color picker, and font sizes. The thin bar below the palette shows the current color; drag the bottom-right handle of selected text to scale it proportionally.
-
-### 4. Pin to Screen
-Click the **📌 (Pin)** icon on the toolbar to pin the current screenshot as a floating window on top of the screen. You can drag it around and double-click to close it. This is very useful for code comparison or reference.
-
-### 5. Long Screenshot
-Select Long Screenshot from the menu bar, or use its button in the capture toolbar. Select the content region, then scroll with overlapping content between frames. Press Return to finish or Esc to cancel. By default the result opens for scrolling, zooming, and annotation. Turn off post-capture editing in Settings for a preview-first Copy/Save workflow. Save always writes to the configured folder, independently of Auto Save. Save As opens a file dialog starting in that folder.
-
-### 6. OCR & Translation
-Click the **OCR** icon on the toolbar. The software will automatically recognize text in the screenshot and show the result in a popup window, supporting one-click copy; you can also translate the result offline by choosing a target language (macOS 26+). If languages are missing, macOS prompts you to download the free language packs. The initial download requires internet access; installed languages translate directly. You can retry after cancelling. Manage packs in System Settings → General → Language & Region → Translation Languages. Downloads you have approved may continue in the background under macOS.
-
-**Translate in Place** replaces recognized text at its position in the image. You can edit individual translations, switch between original and translated views, then copy, save, or continue annotating. Shorten or exclude an overflowing region before export. Adjacent paragraph lines use a consistent type size, but complex textures, tables, and unusual fonts may need manual review.
-
-### 7. Settings
-Click the scissors icon in the menu bar and select "Settings...", or press `Cmd + ,` while LibreShot is active, to:
-- **Set Shortcuts**: Customize global shortcuts for "Area Screenshot" and "Full Screen Screenshot".
-- **Editor Shortcuts**: Assign keys to annotation tools. Defaults include Cmd-S to save, Shift-Cmd-S for Save As, Return to finish, and Cmd-Z to undo. Ordinary characters, Space, and Return still work while entering text; Esc cancels the capture, except while editing a number, when it cancels that edit first.
-- **Double-click to finish (1.3.11)**: Enabled by default. Double-click the selected image with any annotation tool or while entering text to perform the same action as ✅, following Auto Save. Disable it in Shortcuts to restore double-click text/number editing.
-- **Double Option**: Optionally start an area capture with two Option taps. Requires Input Monitoring permission; modifier combinations, long presses, and intervening mouse actions do not trigger it.
-- **Space Action**: Choose Off (default), Finish, or Save & Copy. Finish follows Auto Save; Save & Copy always writes to the configured folder and preserves the clipboard image if saving fails.
-- **Save Path**: Customize the default save location for screenshots.
-- **Auto Save**: Off by default for new users; upgrades retain existing choices. Double-click, Enter, or ✅ copies the completed image, and also saves it when enabled. Save (⌘S) always writes to the configured folder; Save As (⌘⇧S) starts there and lets you choose a name and location. Failed automatic saving leaves the image on the clipboard.
-- **Toolbar**: Show or hide buttons and reorder them by dragging rows or clicking the up/down arrows. Hidden tools retain their positions; Complete and Cancel can move but always remain visible. Changes are saved automatically and apply to the next capture. Choose a default annotation tool for new captures; the factory default is Select/Move. Restore Defaults restores visibility, order, and the default tool. Hiding the default tool returns to selection mode; click the active tool again to return to selection mode if its button is hidden. `Esc` cancels the capture; while editing a number, it first cancels that edit.
-- **Launch Settings**: Set whether to launch at login.
-
-## ❤️ Support
-
-LibreShot is a free and open-source project. If you find it helpful, please consider buying the author a coffee to encourage maintenance and updates!
-
-| WeChat|
-| :---: |
-| <img src="docs/wechat.JPG" width="200" alt="WeChat"> 
-
-Or support via [GitHub Sponsors](https://github.com/sponsors/songpl-AI).
-
-## Follow-ups and Validation
-
-Automatic annotation selection and rectangle/ellipse resizing are available in 1.2.0. See the [release notes](docs/releases/1.2.0.md) and [annotation checks](docs/qa/1.2.0.md). Hiding buttons simplifies the toolbar; it does not uninstall features or imply substantial memory savings.
-
-v1.3.2 passed package, installation, permission renewal, capture/save, OCR, and same-signature restart checks on Apple Silicon / macOS 26. A real Finder replay of 133 frames produced pixel-identical output. Intel, macOS 13/14, multiple displays, and more scrolling scenarios still need feedback. The approximately 10 MiB memory target was withdrawn on 2026-10-05 and [Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) was closed as not planned; this does not claim the target was achieved. See the [v1.3.2 validation](docs/qa/1.3.2-20-package-20261005.md) and [capture checks](docs/qa/1.1.0.md).
-
-## 🤝 Contributing
-
-Issues and Pull Requests are welcome!
-
-## 📄 License
-
-This project is open source under the [MIT License](LICENSE).
-
-**New in 1.3.14:** Automatic tool properties with per-tool preferences, reset and undo; rounded rectangles and independent number border, fill and digit colors. See the [release notes](docs/releases/1.3.14.md).
+Copyright (c) 2026 Allen
