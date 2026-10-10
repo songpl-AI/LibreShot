@@ -2,11 +2,15 @@
 
 ## 未发布 / Unreleased
 
+- 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
+
+## [1.3.12](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.12) — 2026-10-10
+
 - 多显示器全屏截图跟随触发时鼠标所在屏幕，标注窗口也在目标屏幕显示；修复始终抓取第一块显示器的问题。
 
-- 全屏截图从静默保存改为进入标注编辑；菜单与自定义全局快捷键行为一致。Enter、双击或完成按钮复制截图，按自动保存设置保存最终标注图片；Esc 取消。
+- 全屏截图从静默保存改为进入标注编辑；自定义全局快捷键也进入标注。Enter、双击或完成按钮复制截图，按自动保存设置保存最终标注图片；Esc 取消。
 
-- 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
+构建号 35。复用原安装验收 DMG；外接屏目标捕获实测通过，外接屏完整导出待补，不声明 Issue #26 已修复。[更新说明](docs/releases/1.3.12.md) · [安装验收](docs/qa/1.3.12-35-package-20261010.md)。
 
 ## [1.3.11](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.11) — 2026-10-10
 

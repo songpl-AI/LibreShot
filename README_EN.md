@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.11](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.11) · [Release notes](docs/releases/1.3.11.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.12](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.12) · [Release notes](docs/releases/1.3.12.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.11 release notes](docs/releases/1.3.11.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.12 release notes](docs/releases/1.3.12.md).
 
 ## 🚀 Usage Guide
 
@@ -144,4 +144,4 @@ Issues and Pull Requests are welcome!
 
 This project is open source under the [MIT License](LICENSE).
 
-**New in 1.3.11:** Double-click the capture selection to finish with any annotation tool or while entering text, following Auto Save. Confirmation does not accidentally add a number. Disable the option in Shortcuts to restore double-click text and number editing. See the [release notes](docs/releases/1.3.11.md).
+**New in 1.3.12:** Full-screen capture opens the annotation editor. Confirmation copies the result and follows Auto Save. Capture selects the display under the pointer when triggered and opens the editor on that display. See the [release notes](docs/releases/1.3.12.md).
