@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.13](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.13) · [Release notes](docs/releases/1.3.13.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.14](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.14) · [Release notes](docs/releases/1.3.14.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.13 release notes](docs/releases/1.3.13.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.14 release notes](docs/releases/1.3.14.md).
 
 ## 🚀 Usage Guide
 
@@ -144,4 +144,4 @@ Issues and Pull Requests are welcome!
 
 This project is open source under the [MIT License](LICENSE).
 
-**New in 1.3.13:** Completion and manual saving are independent. New users finish by copying only; upgrades preserve Auto Save choices. Save always writes to the configured folder. Save As lets you choose a name and location. See the [release notes](docs/releases/1.3.13.md).
+**New in 1.3.14:** Automatic tool properties with per-tool preferences, reset and undo; rounded rectangles and independent number border, fill and digit colors. See the [release notes](docs/releases/1.3.14.md).
