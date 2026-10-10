@@ -2,9 +2,13 @@
 
 ## 未发布 / Unreleased
 
+- 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
+
+## [1.3.13](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.13) — 2026-10-10
+
 - 新用户默认完成截图仅复制；保留已有用户的自动保存选择。手动保存始终写入预设目录，另存为默认打开该目录；自动保存开关只控制完成截图是否同时写盘。
 
-- 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
+构建号 37。新默认、显式旧设置与旧默认迁移回归通过；最终安装副本同包重启前后截图、标注、保存和剪贴板检查通过，实体 Option 正常，另存为默认目录、取消及改名保存实测通过。复用原验收 DMG。[更新说明](docs/releases/1.3.13.md) · [安装验收](docs/qa/1.3.13-37-package-20261010.md)。
 
 ## [1.3.12](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.12) — 2026-10-10
 

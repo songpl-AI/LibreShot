@@ -4,7 +4,7 @@
 
 LibreShot is a lightweight, modern screenshot and annotation tool for macOS, built natively with Swift. It is completely free and open source.
 
-Latest public release: [v1.3.12](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.12) · [Release notes](docs/releases/1.3.12.md) · [Changelog](CHANGELOG.md)
+Latest public release: [v1.3.13](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.13) · [Release notes](docs/releases/1.3.13.md) · [Changelog](CHANGELOG.md)
 
 ## ✨ Features
 
@@ -19,7 +19,7 @@ Latest public release: [v1.3.12](https://github.com/songpl-AI/LibreShot/releases
 - **OCR Text Recognition & Translation**: Built-in offline OCR engine to extract text from screenshots (supports Chinese & English), plus offline translation after language packs are installed (macOS 26+; the initial download requires internet access).
 - **Translate in Place**: Put editable translations at the original text positions, switch between original and translated images, then copy, save, or annotate (macOS 26+). Best suited to documents and interfaces with simple backgrounds; complex backgrounds are not reconstructed seamlessly.
 - **Long Screenshot**: Capture scrolling content into one long image and, by default, open it in a scrollable, zoomable annotation window. You can choose a preview-first workflow in Settings.
-- **Auto Save**: Finishing an area capture with ✅ copies the image and also saves it to your chosen folder when Auto Save is enabled. A manual "Save As" option remains available.
+- **Auto Save**: New users finish by copying only; enable Auto Save to also write to the configured folder. Upgrades retain existing choices. Save always writes to that folder; Save As lets you choose a name and location.
 - **Custom Toolbar**: Show, hide, and reorder tools in Settings. Enabled tools remain directly visible and wrap on narrow windows, without a More menu.
 - **Pin to Screen**: Support "pinning" screenshots to the top of the screen for easy reference or cross-app collaboration.
 - **Shortcuts**: Customize global capture and editor-tool shortcuts, optionally capture by double-tapping Option, and assign Finish or Save & Copy to Space.
@@ -59,7 +59,7 @@ open LibreShot/LibreShot.xcodeproj
 ```
 *The current source uses the macOS 26 SDK: use Xcode 26 or later. The app deployment target is macOS 13.0.*
 
-GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.12 release notes](docs/releases/1.3.12.md).
+GitHub distribution defaults to ad-hoc signing: run `bash build_release.sh`, or specify `--ad-hoc` explicitly. Users may need to grant Screen Recording and Input Monitoring again after each update, and this package cannot be notarized. If you later configure a Developer ID Application certificate, use `bash build_release.sh --developer-id`. The script checks the signing mode, preserves existing outputs, and does not notarize or upload. See [regression checks](tests/README.md) and the [1.3.13 release notes](docs/releases/1.3.13.md).
 
 ## 🚀 Usage Guide
 
@@ -101,7 +101,7 @@ After selecting a capture region, edit mode opens with resize handles at all fou
 Click the **📌 (Pin)** icon on the toolbar to pin the current screenshot as a floating window on top of the screen. You can drag it around and double-click to close it. This is very useful for code comparison or reference.
 
 ### 5. Long Screenshot
-Select Long Screenshot from the menu bar, or use its button in the capture toolbar. Select the content region, then scroll with overlapping content between frames. Press Return to finish or Esc to cancel. By default the result opens for scrolling, zooming, and annotation. Turn off post-capture editing in Settings for a preview-first Copy/Save workflow. Save follows your Auto Save preference; Save As always opens a file dialog.
+Select Long Screenshot from the menu bar, or use its button in the capture toolbar. Select the content region, then scroll with overlapping content between frames. Press Return to finish or Esc to cancel. By default the result opens for scrolling, zooming, and annotation. Turn off post-capture editing in Settings for a preview-first Copy/Save workflow. Save always writes to the configured folder, independently of Auto Save. Save As opens a file dialog starting in that folder.
 
 ### 6. OCR & Translation
 Click the **OCR** icon on the toolbar. The software will automatically recognize text in the screenshot and show the result in a popup window, supporting one-click copy; you can also translate the result offline by choosing a target language (macOS 26+). If languages are missing, macOS prompts you to download the free language packs. The initial download requires internet access; installed languages translate directly. You can retry after cancelling. Manage packs in System Settings → General → Language & Region → Translation Languages. Downloads you have approved may continue in the background under macOS.
@@ -116,7 +116,7 @@ Click the scissors icon in the menu bar and select "Settings...", or press `Cmd 
 - **Double Option**: Optionally start an area capture with two Option taps. Requires Input Monitoring permission; modifier combinations, long presses, and intervening mouse actions do not trigger it.
 - **Space Action**: Choose Off (default), Finish, or Save & Copy. Finish follows Auto Save; Save & Copy always writes to the configured folder and preserves the clipboard image if saving fails.
 - **Save Path**: Customize the default save location for screenshots.
-- **Auto Save**: When enabled, ✅ copies and saves an area capture. When disabled, it only copies. If saving fails, an alert appears and the screenshot remains on the clipboard.
+- **Auto Save**: Off by default for new users; upgrades retain existing choices. Double-click, Enter, or ✅ copies the completed image, and also saves it when enabled. Save (⌘S) always writes to the configured folder; Save As (⌘⇧S) starts there and lets you choose a name and location. Failed automatic saving leaves the image on the clipboard.
 - **Toolbar**: Show or hide buttons and reorder them by dragging rows or clicking the up/down arrows. Hidden tools retain their positions; Complete and Cancel can move but always remain visible. Changes are saved automatically and apply to the next capture. Choose a default annotation tool for new captures; the factory default is Select/Move. Restore Defaults restores visibility, order, and the default tool. Hiding the default tool returns to selection mode; click the active tool again to return to selection mode if its button is hidden. `Esc` cancels the capture; while editing a number, it first cancels that edit.
 - **Launch Settings**: Set whether to launch at login.
 
@@ -144,4 +144,4 @@ Issues and Pull Requests are welcome!
 
 This project is open source under the [MIT License](LICENSE).
 
-**New in 1.3.12:** Full-screen capture opens the annotation editor. Confirmation copies the result and follows Auto Save. Capture selects the display under the pointer when triggered and opens the editor on that display. See the [release notes](docs/releases/1.3.12.md).
+**New in 1.3.13:** Completion and manual saving are independent. New users finish by copying only; upgrades preserve Auto Save choices. Save always writes to the configured folder. Save As lets you choose a name and location. See the [release notes](docs/releases/1.3.13.md).
