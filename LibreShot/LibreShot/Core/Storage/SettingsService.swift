@@ -162,6 +162,7 @@ class SettingsService: ObservableObject {
 
     func setEditorShortcut(_ shortcut: EditorShortcut?, for item: ToolbarItem) -> String? {
         guard item != .cancel else { return "Esc 始终用于取消截图" }
+        guard item != .style else { return "工具属性随工具选择自动显示" }
         if let shortcut {
             guard shortcut.isAllowed else { return "此按键保留给文字编辑、空格动作或系统操作" }
             if let conflict = globalShortcuts.first(where: { $0.shortcut.conflicts(with: shortcut) }) {
@@ -190,7 +191,7 @@ class SettingsService: ObservableObject {
         if let data = defaults.data(forKey: "editorShortcuts"),
            let saved = try? JSONDecoder().decode([String: EditorShortcut].self, from: data) {
             var validated: [String: EditorShortcut] = [:]
-            for item in ToolbarItem.allCases where item != .cancel {
+            for item in ToolbarItem.allCases where item != .cancel && item != .style {
                 if let shortcut = saved[item.rawValue], shortcut.isAllowed,
                    !validated.values.contains(where: { $0.conflicts(with: shortcut) }) {
                     validated[item.rawValue] = shortcut

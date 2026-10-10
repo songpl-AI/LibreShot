@@ -133,19 +133,16 @@ struct OverlayView: View {
                 if viewModel.state == .editing {
                     if showsToolbar {
                     let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
-                    let accessoryHeight: CGFloat = viewModel.translationSource != nil && viewModel.showsTranslationControls ? 78 : 0
-                    let accessoryWidth = min(430, geometry.size.width - 20)
+                    let accessorySize = editorAccessorySize(screenSize: geometry.size)
                     let toolbarPos = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,
-                                                     accessorySize: CGSize(width: accessoryHeight > 0 ? accessoryWidth : 0, height: accessoryHeight))
+                                                     accessorySize: accessorySize)
+                    let accessoriesAbove = toolbarPos.y < viewModel.selectionRect.midY
                     VStack(spacing: 0) {
+                        if accessoriesAbove { editorAccessories(screenSize: geometry.size) }
                         EditorToolbarView(viewModel: viewModel, layout: layout,
-                                          toolbarPosition: CGPoint(x: toolbarPos.x, y: toolbarPos.y - accessoryHeight / 2),
-                                          screenSize: geometry.size)
-                        if #available(macOS 26.0, *), let source = viewModel.translationSource {
-                            InlineImageTranslationView(viewModel: viewModel, image: source)
-                                .id(viewModel.translationSessionID)
-                                .frame(width: accessoryWidth)
-                        }
+                                          toolbarPosition: CGPoint(x: toolbarPos.x, y: toolbarPos.y + (accessoriesAbove ? accessorySize.height / 2 : -accessorySize.height / 2)),
+                                          screenSize: geometry.size, tooltipAbove: !accessoriesAbove && viewModel.propertyTool != nil)
+                        if !accessoriesAbove { editorAccessories(screenSize: geometry.size) }
                     }
                         .position(x: toolbarPos.x, y: toolbarPos.y)
                         .zIndex(1)
@@ -199,28 +196,12 @@ struct OverlayView: View {
                 }
             }
             .background(CaptureConfirmationMouseView(model: viewModel, acceptsPoint: { point in
-                guard showsToolbar else { return true }
-                let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
-                let accessoryHeight: CGFloat = viewModel.translationSource != nil && viewModel.showsTranslationControls ? 78 : 0
-                let accessoryWidth = accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0
-                let center = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,
-                                             accessorySize: CGSize(width: accessoryWidth, height: accessoryHeight))
-                let size = CGSize(width: max(layout.size.width, accessoryWidth), height: layout.size.height + accessoryHeight)
-                return !CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
-                               width: size.width, height: size.height).contains(point)
+                !editorToolbarFrame(screenSize: geometry.size).contains(point)
             }))
             .onContinuousHover(coordinateSpace: .named("overlay")) { phase in
                 switch phase {
                 case .active(let point):
-                    let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
-                    let accessoryHeight: CGFloat = viewModel.translationSource != nil && viewModel.showsTranslationControls ? 78 : 0
-                    let center = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,
-                                                 accessorySize: CGSize(width: accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0, height: accessoryHeight))
-                    let toolbar = CGRect(x: center.x - max(layout.size.width, accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0) / 2,
-                                         y: center.y - (layout.size.height + accessoryHeight) / 2,
-                                         width: max(layout.size.width, accessoryHeight > 0 ? min(430, geometry.size.width - 20) : 0),
-                                         height: layout.size.height + accessoryHeight)
-                    if viewModel.showsStylePopover || (showsToolbar && viewModel.state == .editing && toolbar.contains(point)) { NSCursor.arrow.set() }
+                    if editorToolbarFrame(screenSize: geometry.size).contains(point) { NSCursor.arrow.set() }
                     else { OverlayPointerCursor.cursor(for: viewModel.cursorStyle(at: point)).set() }
                 case .ended: NSCursor.arrow.set()
                 }
@@ -230,6 +211,7 @@ struct OverlayView: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
+                        if editorToolbarFrame(screenSize: geometry.size).contains(value.startLocation) { return }
                         if viewModel.handleTextInputPress(from: value.startLocation) { return }
                         if viewModel.handleSelectionResizeDrag(
                             from: value.startLocation, to: value.location,
@@ -324,6 +306,7 @@ struct OverlayView: View {
                         }
                     }
                     .onEnded { value in
+                        if editorToolbarFrame(screenSize: geometry.size).contains(value.startLocation) { return }
                         defer {
                             viewModel.clearAnnotationPress()
                             viewModel.endTextInputPress()
@@ -393,6 +376,33 @@ struct OverlayView: View {
         .background(Color.clear)
     }
     
+    private func editorAccessorySize(screenSize: CGSize) -> CGSize {
+        let properties = ToolPropertyBarView.size(for: viewModel, availableWidth: screenSize.width - 20)
+        let translationVisible = viewModel.translationSource != nil && viewModel.showsTranslationControls
+        return CGSize(width: max(properties.width, translationVisible ? min(430, screenSize.width - 20) : 0),
+                      height: (properties.height > 0 ? properties.height + 8 : 0) + (translationVisible ? 78 : 0))
+    }
+
+    private func editorToolbarFrame(screenSize: CGSize) -> CGRect {
+        guard showsToolbar && viewModel.state == .editing else { return .null }
+        let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: screenSize.width - 20)
+        let accessory = editorAccessorySize(screenSize: screenSize)
+        return layout.frame(selection: viewModel.selectionRect, screenSize: screenSize, accessorySize: accessory)
+    }
+
+    @ViewBuilder private func editorAccessories(screenSize: CGSize) -> some View {
+        VStack(spacing: 0) {
+            if viewModel.propertyTool != nil {
+                ToolPropertyBarView(viewModel: viewModel, availableWidth: screenSize.width - 20)
+                    .padding(.vertical, 4)
+            }
+            if #available(macOS 26.0, *), let source = viewModel.translationSource {
+                InlineImageTranslationView(viewModel: viewModel, image: source)
+                    .id(viewModel.translationSessionID).frame(width: min(430, screenSize.width - 20))
+            }
+        }
+    }
+
     func calculateLongCaptureStatusPosition(screenSize: CGSize) -> CGPoint {
         let rect = viewModel.selectionRect
         let horizontalPadding: CGFloat = 20

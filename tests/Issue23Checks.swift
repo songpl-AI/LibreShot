@@ -97,10 +97,10 @@ import SwiftUI
         check(model.canMoveSelection(from: CGPoint(x: 100, y: 240)), "long capture ready supports border movement")
 
         let expected: [ToolbarItem] = [.select, .pen, .rectangle, .ellipse, .arrow, .text, .number, .mosaic, .blur,
-                                     .style, .longCapture, .ocr, .translate, .undo, .cancel, .complete, .pin, .save, .saveAs]
-        check(ToolbarConfiguration().orderedItems == expected && Set(expected) == Set(ToolbarItem.allCases),
+                                     .longCapture, .ocr, .translate, .undo, .cancel, .complete, .pin, .save, .saveAs]
+        check(ToolbarConfiguration().orderedItems == expected && Set(expected) == Set(ToolbarItem.allCases.filter { $0 != .style }),
               "factory tool order matches Issue 24 screenshot and includes every tool")
-        let saved = ToolbarItem.allCases.reversed().map(\.rawValue)
+        let saved = ToolbarItem.allCases.filter { $0 != .style }.reversed().map(\.rawValue)
         defaults.set(saved, forKey: "toolbarItemOrder")
         check(SettingsService(defaults: defaults).toolbarConfiguration.orderedItems.map(\.rawValue) == saved &&
               !SettingsService(defaults: defaults).toolbarConfiguration.isVisible(.select),

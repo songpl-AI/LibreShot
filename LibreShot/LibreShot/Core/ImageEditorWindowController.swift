@@ -105,6 +105,10 @@ struct ImageEditorView: View {
                 VStack(spacing: 0) {
                 EditorToolbarView(viewModel: model, layout: layout)
                     .zIndex(1)
+                if model.propertyTool != nil {
+                    ToolPropertyBarView(viewModel: model, availableWidth: geometry.size.width - 24)
+                        .padding(.top, 8)
+                }
                 if #available(macOS 26.0, *), let source = model.translationSource {
                     InlineImageTranslationView(viewModel: model, image: source)
                         .id(model.translationSessionID).frame(width: min(430, geometry.size.width - 24))

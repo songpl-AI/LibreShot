@@ -43,9 +43,6 @@ import SwiftUI
         model.onCapture = { _, annotations, _, _ in output = annotations }
         precondition(model.confirmDoubleClick(at: point))
         precondition(output.count == 1 && output[0].text == "Keep this text")
-        model.showsStylePopover = true
-        precondition(!model.confirmDoubleClick(at: point))
-        model.showsStylePopover = false
         precondition(!model.confirmDoubleClick(at: .zero))
         settings.doubleClickCompletesCapture = false
         precondition(!model.confirmDoubleClick(at: point))

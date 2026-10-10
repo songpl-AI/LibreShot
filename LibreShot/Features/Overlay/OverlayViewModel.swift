@@ -106,7 +106,6 @@ class OverlayViewModel: ObservableObject {
     @Published var previewScale: CGFloat = 1.0 { didSet { scheduleEffectPreview() } }
     @Published var captureMode: CaptureMode = .normal
     @Published var longCaptureStatusText: String = "拖动选择滚动区域"
-    @Published var showsStylePopover = false
     @Published private(set) var translationSource: NSImage?
     @Published private(set) var translationSessionID = UUID()
     @Published var translatedSelection: CGImage? { didSet { scheduleEffectPreview() } }
@@ -140,7 +139,7 @@ class OverlayViewModel: ObservableObject {
 
     func isToolbarItemEnabled(_ item: ToolbarItem) -> Bool {
         if [.complete, .save, .saveAs, .pin, .ocr].contains(item), !canExportSelection { return false }
-        if item == .style { return visibleToolbarItems.contains(.style) }
+        if item == .style { return false }
         if item == .translate {
             if #available(macOS 26.0, *) { return true }
             return false
@@ -158,7 +157,7 @@ class OverlayViewModel: ObservableObject {
         }
         switch item {
         case .select: selectTool(nil)
-        case .style: showsStylePopover.toggle()
+        case .style: break // Legacy shortcut; properties now follow tool selection.
         case .undo: undoLastAnnotation()
         case .cancel: cancel()
         case .pin: confirmPin()
@@ -183,12 +182,12 @@ class OverlayViewModel: ObservableObject {
         }
         let editing = isEditingText || textResponder
         let modifiers = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
-        if [51, 117].contains(event.keyCode), modifiers == 0, !editing, !showsStylePopover {
+        if [51, 117].contains(event.keyCode), modifiers == 0, !editing {
             guard selectedAnnotationID != nil else { return false }
             if !event.isARepeat { return deleteSelectedAnnotation() }
             return true
         }
-        if event.keyCode == 49, modifiers == 0, !editing, !showsStylePopover {
+        if event.keyCode == 49, modifiers == 0, !editing {
             guard settings.editorSpaceAction != .disabled else { return false }
             if !event.isARepeat {
                 if settings.editorSpaceAction == .complete { confirmCopy() }
@@ -198,7 +197,7 @@ class OverlayViewModel: ObservableObject {
         }
         guard let item = ToolbarItem.allCases.first(where: { settings.editorShortcuts[$0.rawValue]?.matches(event) == true }) else { return false }
         // Only save commands can commit active text. Letters, Return and undo belong to the text editor.
-        if editing || showsStylePopover {
+        if editing {
             guard (item == .save || item == .saveAs), event.modifierFlags.contains(.command) else { return false }
         }
         guard isToolbarItemEnabled(item) else { return false }
@@ -221,7 +220,7 @@ class OverlayViewModel: ObservableObject {
 
     func canConfirmDoubleClick(at point: CGPoint) -> Bool {
         settings.doubleClickCompletesCapture && state == .editing
-            && !selectionRect.isEmpty && selectionRect.contains(point) && !showsStylePopover
+            && !selectionRect.isEmpty && selectionRect.contains(point)
     }
 
     /// Observe the first click without delaying drawing or text input. Only the
@@ -891,7 +890,6 @@ class OverlayViewModel: ObservableObject {
     func reset() {
         confirmationClick = nil
         clearImageTranslation()
-        showsStylePopover = false
         endSelectedShapeDrag()
         clearAnnotationPress()
         endTextInputPress()

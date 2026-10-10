@@ -6,6 +6,7 @@ struct EditorToolbarView: View {
     let layout: ToolbarLayout
     var toolbarPosition: CGPoint? = nil
     var screenSize: CGSize? = nil
+    var tooltipAbove = false
     @State private var hoveredItem: ToolbarItem?
 
     var body: some View {
@@ -13,14 +14,7 @@ struct EditorToolbarView: View {
             ForEach(layout.rows.indices, id: \.self) { row in
                 HStack(spacing: ToolbarLayout.spacing) {
                     ForEach(layout.rows[row]) { item in
-                        if item == .style {
-                            toolbarButton(item)
-                                .popover(isPresented: $viewModel.showsStylePopover, arrowEdge: .bottom) {
-                                    StylePopoverView(viewModel: viewModel).padding(12)
-                                }
-                        } else {
-                            toolbarButton(item)
-                        }
+                        toolbarButton(item)
                     }
                 }
             }
@@ -39,7 +33,7 @@ struct EditorToolbarView: View {
                 let tooltipSize = CGSize(width: ceil(textSize.width) + 16, height: ceil(textSize.height) + 10)
                 let screen = screenSize ?? CGSize(width: max(layout.size.width, tooltipSize.width) + 20, height: layout.size.height + 100)
                 let center = toolbarPosition ?? CGPoint(x: screen.width / 2, y: layout.size.height / 2 + 10)
-                let frame = layout.tooltipFrame(for: item, tooltipSize: tooltipSize, toolbarCenter: center, screenSize: screen)
+                let frame = layout.tooltipFrame(for: item, tooltipSize: tooltipSize, toolbarCenter: center, screenSize: screen, preferAbove: tooltipAbove)
                 ToolbarTooltipView(text: text)
                     .frame(width: frame.width, height: frame.height)
                     .position(x: frame.midX - (center.x - layout.size.width / 2),
@@ -112,8 +106,8 @@ struct EditorToolbarView: View {
         case .complete:
             label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
         case .save: label = "保存到预设目录"
-        case .mosaic: label = "马赛克：支持涂抹和框选，拖动时预览；在效果参数中切换"
-        case .blur: label = "模糊：支持涂抹和框选，拖动时预览；在效果参数中切换"
+        case .mosaic: label = "马赛克：支持涂抹和框选，拖动时预览；在属性栏切换"
+        case .blur: label = "模糊：支持涂抹和框选，拖动时预览；在属性栏切换"
         case .style: label = viewModel.propertyTitle
         case .undo where isDisabled(item): label = "撤销（当前没有标注）"
         case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
@@ -178,9 +172,17 @@ struct ToolbarTooltipView: View {
     }
 }
 
-// One property entry point, with controls appropriate to the selected tool.
-struct StylePopoverView: View {
+// Always visible while a tool or an existing annotation is selected.
+struct ToolPropertyBarView: View {
     @ObservedObject var viewModel: OverlayViewModel
+
+    let availableWidth: CGFloat
+
+    static func size(for model: OverlayViewModel, availableWidth: CGFloat) -> CGSize {
+        guard let tool = model.propertyTool else { return .zero }
+        let extraRow = tool == .number || ((tool == .mosaic || tool == .blur) && model.effectDrawingMode(for: tool) == .brush)
+        return CGSize(width: min(400, max(0, availableWidth)), height: extraRow ? 140 : 108)
+    }
 
     private struct ColorPreset {
         let color: Color
@@ -208,8 +210,14 @@ struct StylePopoverView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(viewModel.propertyTitle).font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(viewModel.propertyTitle).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("恢复默认") { viewModel.restoreCurrentToolDefaults() }
+                    .buttonStyle(.plain).font(.caption)
+                    .accessibilityLabel("恢复本工具默认值")
+            }.frame(height: 20)
             if let tool = viewModel.propertyTool {
                 if tool == .mosaic || tool == .blur {
                     Picker("应用方式", selection: Binding(
@@ -251,75 +259,68 @@ struct StylePopoverView: View {
                         .pickerStyle(.segmented)
                     }
                 }
-                Divider()
-                HStack {
-                    Text("自动记住此工具的设置").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("恢复默认") { viewModel.restoreCurrentToolDefaults() }
-                        .accessibilityLabel("恢复本工具默认值")
-                }
+
             } else {
                 Text("先选择一个标注工具或已有标注").foregroundStyle(.secondary)
             }
         }
-        .frame(width: 280)
+        .padding(8)
+        .frame(width: Self.size(for: viewModel, availableWidth: availableWidth).width,
+               height: Self.size(for: viewModel, availableWidth: availableWidth).height)
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+        .contentShape(Rectangle())
+        .accessibilityIdentifier("tool-property-bar")
     }
 
     private var colorControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("颜色").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 6) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Text("颜色").font(.caption).foregroundStyle(.secondary)
                 ForEach(Self.colorPresets, id: \.name) { preset in
                     Button(action: { viewModel.setColor(preset.color) }) {
-                        Circle().fill(preset.color).frame(width: 20, height: 20)
-                            .overlay(Circle().stroke(Color.black.opacity(0.15), lineWidth: 1))
-                            .overlay(Circle().stroke(Color.blue, lineWidth: 2)
-                                .opacity(NSColor(viewModel.currentToolStyle.color).usingColorSpace(.sRGB) == NSColor(preset.color).usingColorSpace(.sRGB) ? 1 : 0))
+                        RoundedRectangle(cornerRadius: 3).fill(preset.color).frame(width: 22, height: 22)
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.2), lineWidth: 1))
+                            .overlay {
+                                if NSColor(viewModel.currentToolStyle.color).usingColorSpace(.sRGB) == NSColor(preset.color).usingColorSpace(.sRGB) {
+                                    Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(preset.name == "白色" || preset.name == "黄色" ? Color.black : Color.white)
+                                }
+                            }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(preset.name)
-                    .help(preset.name)
+                    .buttonStyle(.plain).accessibilityLabel(preset.name).help(preset.name)
                 }
-            }
-            ColorPicker("更多颜色…", selection: colorBinding, supportsOpacity: false)
-        }
+                ColorPicker("更多颜色…", selection: colorBinding, supportsOpacity: false)
+                    .labelsHidden().accessibilityLabel("更多颜色")
+            }.frame(height: 28)
+        }.frame(height: 28)
     }
 
     private func valuePresets(_ title: String, values: [CGFloat], selected: CGFloat,
                               action: @escaping (CGFloat) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Text("\(Int(selected))").font(.caption).monospacedDigit()
-            }
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
+                Text("\(title) \(Int(selected))").font(.caption).foregroundStyle(.secondary)
+                    .frame(minWidth: 60, alignment: .leading)
                 ForEach(values, id: \.self) { value in
                     Button("\(Int(value))") { action(value) }
                         .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, minHeight: 28)
+                        .frame(width: 30, height: 28)
                         .background(RoundedRectangle(cornerRadius: 4)
                             .fill(selected == value ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.06)))
                         .accessibilityLabel("\(title) \(Int(value))")
                 }
             }
-        }
+        }.frame(height: 28)
     }
 
     private func effectPresets(_ title: String, parameter: String, values: [CGFloat]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundColor(.secondary)
-            HStack {
-                ForEach(values, id: \.self) { value in
-                    Button("\(Int(value))") { viewModel.setEffectValue(value, parameter: parameter) }
-                        .buttonStyle(.plain)
-                        .frame(width: 42, height: 28)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(viewModel.effectValue(parameter) == value ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.06)))
-                        .accessibilityLabel("\(title) \(Int(value))")
-                }
-            }
+        valuePresets(title, values: values, selected: viewModel.effectValue(parameter)) {
+            viewModel.setEffectValue($0, parameter: parameter)
         }
     }
+
 }
 
 // Helper for blur background

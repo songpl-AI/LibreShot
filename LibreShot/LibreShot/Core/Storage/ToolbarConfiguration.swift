@@ -13,7 +13,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
     /// New installations and reset use this order; saved orders keep their positions.
     static let defaultOrder: [ToolbarItem] = [
         .select, .pen, .rectangle, .ellipse, .arrow, .text, .number, .mosaic, .blur,
-        .style, .longCapture, .ocr, .translate, .undo, .cancel, .complete, .pin, .save, .saveAs
+        .longCapture, .ocr, .translate, .undo, .cancel, .complete, .pin, .save, .saveAs
     ]
 
     var title: String {
@@ -77,11 +77,11 @@ struct ToolbarConfiguration {
         // Normalize once on load: discard unknown/duplicate IDs and append new tools.
         var seen = Set<ToolbarItem>()
         let savedItems = itemOrder.compactMap(ToolbarItem.init(rawValue:))
-        orderedItems = (savedItems + ToolbarItem.defaultOrder).filter { seen.insert($0).inserted }
+        orderedItems = (savedItems + ToolbarItem.defaultOrder).filter { $0 != .style && seen.insert($0).inserted }
     }
 
     func isVisible(_ item: ToolbarItem) -> Bool {
-        item.isRequired || !hiddenItems.contains(item.rawValue)
+        item != .style && (item.isRequired || !hiddenItems.contains(item.rawValue))
     }
 
     var visibleItems: [ToolbarItem] { orderedItems.filter(isVisible) }
@@ -141,7 +141,14 @@ struct ToolbarLayout {
         )
     }
 
-    func tooltipFrame(for item: ToolbarItem, tooltipSize: CGSize, toolbarCenter: CGPoint, screenSize: CGSize) -> CGRect {
+    func frame(selection: CGRect, screenSize: CGSize, accessorySize: CGSize = .zero) -> CGRect {
+        let center = position(selection: selection, screenSize: screenSize, accessorySize: accessorySize)
+        let combined = CGSize(width: max(size.width, accessorySize.width), height: size.height + accessorySize.height)
+        return CGRect(x: center.x - combined.width / 2, y: center.y - combined.height / 2,
+                      width: combined.width, height: combined.height)
+    }
+
+    func tooltipFrame(for item: ToolbarItem, tooltipSize: CGSize, toolbarCenter: CGPoint, screenSize: CGSize, preferAbove: Bool = false) -> CGRect {
         let margin: CGFloat = 10
         let width = min(tooltipSize.width, max(0, screenSize.width - margin * 2))
         var anchorX = toolbarCenter.x
@@ -151,7 +158,7 @@ struct ToolbarLayout {
         }
         let below = toolbarCenter.y + size.height / 2 + 6
         let above = toolbarCenter.y - size.height / 2 - 6 - tooltipSize.height
-        let preferredY = below + tooltipSize.height <= screenSize.height - margin ? below : above
+        let preferredY = preferAbove && above >= margin ? above : (below + tooltipSize.height <= screenSize.height - margin ? below : above)
         return CGRect(
             x: max(margin, min(anchorX - width / 2, screenSize.width - margin - width)),
             y: max(margin, min(preferredY, screenSize.height - margin - tooltipSize.height)),

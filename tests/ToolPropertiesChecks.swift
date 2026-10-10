@@ -13,10 +13,17 @@ struct ToolPropertiesChecks {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("outline", forKey: "numberAnnotationStyle")
+        defaults.set(["cancel", "style", "arrow", "complete"], forKey: "toolbarItemOrder")
+        defaults.set(["style"], forKey: "hiddenToolbarItems")
+        defaults.set(try JSONEncoder().encode(["style": EditorShortcut(keyCode: 3, modifiers: 0)]), forKey: "editorShortcuts")
         let settings = SettingsService(defaults: defaults)
         let vm = OverlayViewModel(settings: settings)
         vm.state = .editing
         vm.selectionRect = CGRect(x: 0, y: 0, width: 500, height: 400)
+        require(settings.editorShortcuts["style"] == nil, "Retired gear shortcut does not reserve a key")
+        require(!vm.visibleToolbarItems.contains(.style), "Legacy gear entry is retired")
+        require(Array(vm.visibleToolbarItems.prefix(4)) == [.cancel, .arrow, .complete, .select], "Upgrade retains remaining custom order")
+        require(vm.propertyTool == nil, "No properties without a tool or selected object")
         vm.selectTool(.rectangle)
         vm.setColor(.blue)
         vm.setLineWidth(8)
@@ -85,6 +92,24 @@ struct ToolPropertiesChecks {
         second.selectTool(.arrow)
         second.setLineWidth(1000)
         require(second.currentToolStyle.lineWidth == 20, "Invalid values are bounded")
+        for width: CGFloat in [220, 400, 900] {
+            let screen = CGSize(width: width, height: 700)
+            for tool in [AnnotationType.arrow, .text, .number, .mosaic, .blur] {
+                second.selectTool(tool)
+                let propertySize = ToolPropertyBarView.size(for: second, availableWidth: width - 20)
+                require(propertySize.width <= width - 20 && propertySize.height > 0, "Automatic property bar fits narrow widths")
+                let layout = ToolbarLayout(items: second.visibleToolbarItems, availableWidth: width - 20)
+                for y: CGFloat in [20, 300, 560] {
+                    let crop = CGRect(x: 20, y: y, width: width - 40, height: 100)
+                    let frame = layout.frame(selection: crop, screenSize: screen, accessorySize: CGSize(width: propertySize.width, height: propertySize.height + 8))
+                    require(frame.minX >= 10 && frame.maxX <= width - 10 && frame.minY >= 10 && frame.maxY <= 690, "Toolbar and properties stay inside screen edges")
+                    require(frame.contains(CGPoint(x: frame.midX, y: frame.maxY - 1)), "Property row belongs to toolbar hit exclusion")
+                }
+            }
+        }
+        second.selectTool(nil)
+        require(ToolPropertyBarView.size(for: second, availableWidth: 400) == .zero, "Property bar hides when selection is cleared")
+        print("PASS: automatic properties, legacy gear migration, narrow widths and edge placement")
         print("PASS: independent tool defaults, legacy migration, drawing, selected editing, undo/reset and relaunch persistence")
     }
 }
