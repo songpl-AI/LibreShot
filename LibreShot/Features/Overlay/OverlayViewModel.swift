@@ -82,7 +82,9 @@ class OverlayViewModel: ObservableObject {
     }
 
     // Editor State
-    @Published var selectedTool: AnnotationType?
+    @Published var selectedTool: AnnotationType? {
+        didSet { if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) } }
+    }
     @Published var annotations: [Annotation] = [] { didSet { scheduleEffectPreview() } }
     @Published var currentAnnotation: Annotation? { didSet { scheduleEffectPreview() } }
     private var pendingDrawing: Annotation?
@@ -95,9 +97,7 @@ class OverlayViewModel: ObservableObject {
     }
     private var annotationUndo: [AnnotationUndo] = []
     @Published var selectedColor: Color = .red
-    @Published var selectedNumberStyle: NumberAnnotationStyle = .filled {
-        didSet { settings.numberAnnotationStyle = selectedNumberStyle }
-    }
+    @Published var selectedNumberStyle: NumberAnnotationStyle = .filled
     @Published var selectedNumberFontSize: CGFloat = Annotation.numberFontSize
     @Published var selectedFontSize: CGFloat = Annotation.textInputFontSize
     @Published var activeSelectionHandle: SelectionHandle?
@@ -386,44 +386,38 @@ class OverlayViewModel: ObservableObject {
     }
 
     func effectDrawingMode(for tool: AnnotationType) -> EffectDrawingMode {
-        tool == .mosaic ? selectedMosaicMode : selectedBlurMode
+        if let annotation = annotations.first(where: { $0.id == selectedAnnotationID }), annotation.type == tool {
+            return annotation.isEffectBrush ? .brush : .rectangle
+        }
+        return tool == .mosaic ? selectedMosaicMode : selectedBlurMode
     }
 
     func setEffectDrawingMode(_ mode: EffectDrawingMode, for tool: AnnotationType) {
         guard tool == .mosaic || tool == .blur else { return }
-        if tool == .mosaic { selectedMosaicMode = mode } else { selectedBlurMode = mode }
         selectedAnnotationID = nil
         selectedTool = tool
+        var style = settings.annotationStyle(for: tool)
+        style.effectMode = mode
+        settings.setAnnotationStyle(style, for: tool)
+        loadToolDefaults(for: tool)
     }
 
     func setEffectValue(_ value: CGFloat, parameter: String) {
-        let tool = activeEffectTool
-        let previous = (selectedMosaicBlockSize, selectedEffectBrushWidth, selectedBlurRadius)
-        let bounded: CGFloat
-        switch parameter {
-        case "block": bounded = min(max(value, 4), 64); selectedMosaicBlockSize = bounded
-        case "width": bounded = min(max(value, 12), 120); selectedEffectBrushWidth = bounded
-        default: bounded = min(max(value, 2), 32); selectedBlurRadius = bounded
+        changeToolStyle { style in
+            switch parameter {
+            case "block": style.blockSize = value
+            case "width": style.brushWidth = value
+            default: style.blurRadius = value
+            }
         }
-        guard let i = annotations.firstIndex(where: { $0.id == selectedAnnotationID }), annotations[i].type == tool else { return }
-        let old = annotations[i]
-        var updated = old
-        switch parameter {
-        case "block": updated.mosaicBlockSize = bounded
-        case "width": updated.lineWidth = bounded
-        default: updated.blurRadius = bounded
-        }
-        guard updated != old else { return }
-        annotationUndo.append(.effect(.restore(old, i), previous.0, previous.1, previous.2))
-        annotations[i] = updated
     }
 
     func effectValue(_ parameter: String) -> CGFloat {
-        let a = annotations.first(where: { $0.id == selectedAnnotationID })
+        let style = currentToolStyle
         switch parameter {
-        case "block": return a?.type == .mosaic ? a!.mosaicBlockSize : selectedMosaicBlockSize
-        case "width": return a?.isEffectBrush == true ? a!.lineWidth : selectedEffectBrushWidth
-        default: return a?.type == .blur ? a!.blurRadius : selectedBlurRadius
+        case "block": return style.blockSize
+        case "width": return style.brushWidth
+        default: return style.blurRadius
         }
     }
 
@@ -759,6 +753,7 @@ class OverlayViewModel: ObservableObject {
         
         // Start new annotation
         var annotation = Annotation(type: tool, color: selectedColor)
+        annotation.lineWidth = settings.annotationStyle(for: tool).lineWidth
         let startPoint = (tool == .mosaic || tool == .blur) ? clampPoint(point, to: selectionRect) : point
         annotation.startPoint = startPoint
         annotation.endPoint = startPoint
@@ -881,7 +876,16 @@ class OverlayViewModel: ObservableObject {
         } else if !annotations.isEmpty {
             annotations.removeLast()
         }
-        if !annotations.contains(where: { $0.id == selectedAnnotationID }) { selectedAnnotationID = nil }
+        if let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) {
+            selectedColor = annotation.color
+            if annotation.type == .text { selectedFontSize = annotation.fontSize }
+            if annotation.type == .number { selectedNumberFontSize = annotation.fontSize; selectedNumberStyle = annotation.numberStyle }
+            if annotation.type == .mosaic || annotation.type == .blur {
+                selectedMosaicBlockSize = annotation.mosaicBlockSize
+                selectedBlurRadius = annotation.blurRadius
+                if annotation.isEffectBrush { selectedEffectBrushWidth = annotation.lineWidth }
+            }
+        } else { selectedAnnotationID = nil }
     }
     
     func reset() {
@@ -1090,6 +1094,7 @@ class OverlayViewModel: ObservableObject {
         selectedAnnotationID = nil
         currentAnnotation = nil
         pendingDrawing = nil
+        if let tool { loadToolDefaults(for: tool) }
         if tool != .text {
             cancelTextInput()
         }
@@ -1192,35 +1197,82 @@ class OverlayViewModel: ObservableObject {
         return true
     }
 
-    // MARK: - Style Updates
-    func updateSelectedStyle(color: Color? = nil, fontSize: CGFloat? = nil) {
-        guard let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
+    // MARK: - Tool Properties
+    var propertyTool: AnnotationType? {
+        annotations.first(where: { $0.id == selectedAnnotationID })?.type ?? selectedTool
+    }
 
-        if color != nil, annotations[index].type == .number {
-            recordNumberUndo(.restore(annotations[index], index))
+    var propertyTitle: String {
+        propertyTool.flatMap { ToolbarItem(rawValue: $0.rawValue) }.map { "\($0.title)属性" } ?? "工具属性"
+    }
+
+    var currentToolStyle: AnnotationToolStyle {
+        guard let tool = propertyTool else { return .factory(for: .text) }
+        var style = settings.annotationStyle(for: tool)
+        if let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) {
+            style.color = annotation.color
+            style.lineWidth = annotation.lineWidth
+            style.fontSize = annotation.fontSize
+            style.numberStyle = annotation.numberStyle
+            style.blockSize = annotation.mosaicBlockSize
+            style.blurRadius = annotation.blurRadius
+            if tool == .mosaic || tool == .blur { style.effectMode = annotation.isEffectBrush ? .brush : .rectangle }
+            if annotation.isEffectBrush { style.brushWidth = annotation.lineWidth }
         }
-        if let color = color {
-            annotations[index].color = color
+        return style
+    }
+
+    private func loadToolDefaults(for tool: AnnotationType) {
+        let style = settings.annotationStyle(for: tool)
+        selectedColor = style.color
+        if tool == .text { selectedFontSize = style.fontSize }
+        if tool == .number { selectedNumberFontSize = style.fontSize; selectedNumberStyle = style.numberStyle }
+        if tool == .mosaic { selectedMosaicMode = style.effectMode }
+        if tool == .blur { selectedBlurMode = style.effectMode }
+        selectedMosaicBlockSize = style.blockSize
+        selectedBlurRadius = style.blurRadius
+        selectedEffectBrushWidth = style.brushWidth
+    }
+
+    /// Changing an object is undoable; reading/selecting it never changes saved defaults.
+    private func changeToolStyle(_ change: (inout AnnotationToolStyle) -> Void) {
+        guard let tool = propertyTool else { return }
+        var style = currentToolStyle
+        change(&style)
+        applyToolStyle(style.validated, for: tool)
+    }
+
+    private func applyToolStyle(_ style: AnnotationToolStyle, for tool: AnnotationType) {
+        settings.setAnnotationStyle(style, for: tool)
+        loadToolDefaults(for: tool)
+        guard let index = annotations.firstIndex(where: { $0.id == selectedAnnotationID }), annotations[index].type == tool else { return }
+        let original = annotations[index]
+        var updated = original
+        if tool == .mosaic || tool == .blur {
+            updated.mosaicBlockSize = style.blockSize
+            updated.blurRadius = style.blurRadius
+            if updated.isEffectBrush { updated.lineWidth = style.brushWidth }
+        } else {
+            updated.color = style.color
+            if [.pen, .rectangle, .ellipse, .arrow].contains(tool) { updated.lineWidth = style.lineWidth }
+            if tool == .text || tool == .number { updated.fontSize = style.fontSize }
+            if tool == .number { updated.numberStyle = style.numberStyle }
         }
-        if let fontSize = fontSize, annotations[index].type == .text {
-            annotations[index].fontSize = fontSize
+        if updated != original {
+            annotationUndo.append(.restore(original, index))
+            annotations[index] = updated
         }
     }
 
-    /// 设置当前颜色：更新 selectedColor，并立即重染选中的标注（若有）
-    func setColor(_ color: Color) {
-        updateSelectedStyle(color: color)
-        selectedColor = color
+    func restoreCurrentToolDefaults() {
+        guard let tool = propertyTool else { return }
+        applyToolStyle(.factory(for: tool), for: tool)
     }
 
-    func setNumberStyle(_ style: NumberAnnotationStyle) {
-        if let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }),
-           annotations[index].type == .number, annotations[index].numberStyle != style {
-            recordNumberUndo(.restore(annotations[index], index))
-            annotations[index].numberStyle = style
-        }
-        selectedNumberStyle = style
-    }
+    func setColor(_ color: Color) { changeToolStyle { $0.color = color } }
+    func setLineWidth(_ width: CGFloat) { changeToolStyle { $0.lineWidth = width } }
+    func setNumberStyle(_ style: NumberAnnotationStyle) { changeToolStyle { $0.numberStyle = style } }
+    func setFontSize(_ size: CGFloat) { changeToolStyle { $0.fontSize = size } }
 
     var editingNumberAnnotation: Annotation? {
         annotations.first { $0.id == editingTextAnnotationID && $0.type == .number }
@@ -1228,12 +1280,6 @@ class OverlayViewModel: ObservableObject {
 
     var editingTextColor: NSColor {
         editingNumberAnnotation?.textColor ?? NSColor(selectedColor)
-    }
-
-    /// 设置字号：更新 selectedFontSize，并立即应用到选中的文字标注（若有）
-    func setFontSize(_ size: CGFloat) {
-        selectedFontSize = size
-        updateSelectedStyle(fontSize: size)
     }
 
     // MARK: - Text Resize（拖拽角标缩放字号）
@@ -1283,6 +1329,10 @@ class OverlayViewModel: ObservableObject {
             if original.type == .number, let old = numberResizeState {
                 annotationUndo.append(.numbered(.restore(original, index), old.0, old.1, old.2, old.3, old.4))
             } else { annotationUndo.append(.restore(original, index)) }
+            var style = settings.annotationStyle(for: original.type)
+            style.fontSize = annotations[index].fontSize
+            style.color = annotations[index].color
+            settings.setAnnotationStyle(style, for: original.type)
         }
         numberResizeState = nil
         textResizeOriginal = nil

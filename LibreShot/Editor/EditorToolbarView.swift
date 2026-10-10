@@ -55,9 +55,7 @@ struct EditorToolbarView: View {
             Button(action: { perform(item) }) {
                 Group {
                     if item == .style {
-                        if viewModel.activeEffectTool != nil {
-                            Image(systemName: "slider.horizontal.3").font(.system(size: 16))
-                        } else { ToolbarColorIcon(selectedColor: viewModel.selectedColor) }
+                        Image(systemName: "gearshape").font(.system(size: 16))
                     } else if item == .mosaic || item == .blur {
                         EffectToolIcon(tool: item)
                     } else {
@@ -73,7 +71,7 @@ struct EditorToolbarView: View {
             .buttonStyle(.plain)
             .disabled(isDisabled(item))
             .opacity(isDisabled(item) ? 0.5 : 1)
-            .accessibilityLabel(item == .style && viewModel.activeEffectTool != nil ? "效果参数" : item.title)
+            .accessibilityLabel(item == .style ? "工具属性" : item.title)
             .accessibilityHint(help(for: item))
             .accessibilityValue(isSelected(item) ? "已选中" : "")
         }
@@ -116,7 +114,7 @@ struct EditorToolbarView: View {
         case .save: label = "保存到预设目录"
         case .mosaic: label = "马赛克：支持涂抹和框选，拖动时预览；在效果参数中切换"
         case .blur: label = "模糊：支持涂抹和框选，拖动时预览；在效果参数中切换"
-        case .style where viewModel.activeEffectTool != nil: label = "效果参数"
+        case .style: label = viewModel.propertyTitle
         case .undo where isDisabled(item): label = "撤销（当前没有标注）"
         case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
         case .translate where isDisabled(item): label = "原图翻译需要 macOS 26 或更新版本"
@@ -180,7 +178,7 @@ struct ToolbarTooltipView: View {
     }
 }
 
-// 样式面板：颜色 + 字号
+// One property entry point, with controls appropriate to the selected tool.
 struct StylePopoverView: View {
     @ObservedObject var viewModel: OverlayViewModel
 
@@ -204,92 +202,108 @@ struct StylePopoverView: View {
 
     private var colorBinding: Binding<Color> {
         Binding(
-            get: { viewModel.selectedColor },
+            get: { viewModel.currentToolStyle.color },
             set: { viewModel.setColor($0) }
         )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let tool = viewModel.activeEffectTool {
-                Text(tool == .mosaic ? "马赛克效果" : "模糊效果").font(.headline)
-                Picker("应用方式", selection: Binding(
-                    get: { viewModel.effectDrawingMode(for: tool) },
-                    set: { viewModel.setEffectDrawingMode($0, for: tool) }
-                )) {
-                    ForEach(EffectDrawingMode.allCases) { mode in
-                        Label(mode.title, systemImage: mode == .brush ? "paintbrush.pointed" : "rectangle.dashed").tag(mode)
+            Text(viewModel.propertyTitle).font(.headline)
+            if let tool = viewModel.propertyTool {
+                if tool == .mosaic || tool == .blur {
+                    Picker("应用方式", selection: Binding(
+                        get: { viewModel.effectDrawingMode(for: tool) },
+                        set: { viewModel.setEffectDrawingMode($0, for: tool) }
+                    )) {
+                        ForEach(EffectDrawingMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    if viewModel.effectDrawingMode(for: tool) == .brush {
+                        effectPresets("笔刷大小", parameter: "width", values: [20, 36, 60, 90, 120])
+                    }
+                    if tool == .mosaic {
+                        effectPresets("颗粒大小", parameter: "block", values: [8, 12, 16, 24, 32])
+                    } else {
+                        effectPresets("模糊强度", parameter: "radius", values: [4, 8, 12, 20, 32])
+                    }
+                } else {
+                    colorControls
+                    if [.pen, .rectangle, .ellipse, .arrow].contains(tool) {
+                        valuePresets("粗细", values: [1, 2, 3, 5, 8, 12],
+                                     selected: viewModel.currentToolStyle.lineWidth, action: viewModel.setLineWidth)
+                    }
+                    if tool == .text || tool == .number {
+                        valuePresets("字号", values: Self.fontSizeOptions,
+                                     selected: viewModel.currentToolStyle.fontSize, action: viewModel.setFontSize)
+                    }
+                    if tool == .number {
+                        Picker("序号样式", selection: Binding(
+                            get: { viewModel.currentToolStyle.numberStyle },
+                            set: { viewModel.setNumberStyle($0) }
+                        )) {
+                            ForEach(NumberAnnotationStyle.allCases) { style in
+                                Text(style.title).tag(style)
+                            }
+                        }
+                        .pickerStyle(.segmented)
                     }
                 }
-                .pickerStyle(.segmented)
-                if viewModel.effectDrawingMode(for: tool) == .brush {
-                    effectPresets("笔刷大小", parameter: "width", values: [20, 36, 60, 90, 120])
-                }
-                if tool == .mosaic {
-                    effectPresets("颗粒大小", parameter: "block", values: [8, 12, 16, 24, 32])
-                } else {
-                    effectPresets("模糊强度", parameter: "radius", values: [4, 8, 12, 20, 32])
+                Divider()
+                HStack {
+                    Text("自动记住此工具的设置").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("恢复默认") { viewModel.restoreCurrentToolDefaults() }
+                        .accessibilityLabel("恢复本工具默认值")
                 }
             } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("颜色").font(.caption).foregroundColor(.secondary)
-                HStack(spacing: 6) {
-                    ForEach(Self.colorPresets, id: \.name) { preset in
-                        Button(action: { viewModel.setColor(preset.color) }) {
-                            Circle()
-                                .fill(preset.color)
-                                .frame(width: 20, height: 20)
-                                .overlay(Circle().stroke(Color.black.opacity(0.15), lineWidth: 1))
-                                .overlay(
-                                    Circle().stroke(Color.blue, lineWidth: 2)
-                                        .opacity(viewModel.selectedColor == preset.color ? 1 : 0)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .help(preset.name)
-                    }
-                }
-                ColorPicker("更多颜色…", selection: colorBinding, supportsOpacity: false)
-            }
-
-            if viewModel.selectedTool == .number {
-                Picker("序号样式", selection: Binding(
-                    get: { viewModel.selectedNumberStyle },
-                    set: { viewModel.setNumberStyle($0) }
-                )) {
-                    ForEach(NumberAnnotationStyle.allCases) { style in
-                        Text(style.title).tag(style)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("字号").font(.caption).foregroundColor(.secondary)
-                HStack(spacing: 4) {
-                    ForEach(Self.fontSizeOptions, id: \.self) { size in
-                        Button(action: { viewModel.setFontSize(size) }) {
-                            Text("\(Int(size))")
-                                .font(.system(size: 12))
-                                .frame(width: 28, height: 24)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(viewModel.selectedFontSize == size ? Color.blue.opacity(0.18) : Color.clear)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(viewModel.selectedFontSize == size ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+                Text("先选择一个标注工具或已有标注").foregroundStyle(.secondary)
             }
         }
-        .frame(width: 264)
+        .frame(width: 280)
+    }
+
+    private var colorControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("颜色").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                ForEach(Self.colorPresets, id: \.name) { preset in
+                    Button(action: { viewModel.setColor(preset.color) }) {
+                        Circle().fill(preset.color).frame(width: 20, height: 20)
+                            .overlay(Circle().stroke(Color.black.opacity(0.15), lineWidth: 1))
+                            .overlay(Circle().stroke(Color.blue, lineWidth: 2)
+                                .opacity(NSColor(viewModel.currentToolStyle.color).usingColorSpace(.sRGB) == NSColor(preset.color).usingColorSpace(.sRGB) ? 1 : 0))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(preset.name)
+                    .help(preset.name)
+                }
+            }
+            ColorPicker("更多颜色…", selection: colorBinding, supportsOpacity: false)
+        }
+    }
+
+    private func valuePresets(_ title: String, values: [CGFloat], selected: CGFloat,
+                              action: @escaping (CGFloat) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(Int(selected))").font(.caption).monospacedDigit()
+            }
+            HStack(spacing: 4) {
+                ForEach(values, id: \.self) { value in
+                    Button("\(Int(value))") { action(value) }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                        .background(RoundedRectangle(cornerRadius: 4)
+                            .fill(selected == value ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.06)))
+                        .accessibilityLabel("\(title) \(Int(value))")
+                }
+            }
+        }
     }
 
     private func effectPresets(_ title: String, parameter: String, values: [CGFloat]) -> some View {

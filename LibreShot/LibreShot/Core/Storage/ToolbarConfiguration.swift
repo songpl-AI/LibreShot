@@ -27,7 +27,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .number: return "序号"
         case .mosaic: return "马赛克"
         case .blur: return "模糊"
-        case .style: return "颜色与字号"
+        case .style: return "工具属性"
         case .undo: return "撤销"
         case .cancel: return "取消截图"
         case .pin: return "贴图到屏幕"
@@ -51,7 +51,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .number: return AnnotationType.number.iconName
         case .mosaic: return AnnotationType.mosaic.iconName
         case .blur: return AnnotationType.blur.iconName
-        case .style: return "paintpalette"
+        case .style: return "gearshape"
         case .undo: return "arrow.uturn.backward"
         case .cancel: return "xmark"
         case .pin: return "pin"

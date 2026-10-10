@@ -27,17 +27,71 @@ enum AnnotationType: String, CaseIterable, Identifiable {
     }
 }
 
-enum EffectDrawingMode: String, CaseIterable, Identifiable {
+enum EffectDrawingMode: String, Codable, CaseIterable, Identifiable {
     case brush
     case rectangle
     var id: String { rawValue }
     var title: String { self == .brush ? "涂抹" : "框选" }
 }
 
-enum NumberAnnotationStyle: String, CaseIterable, Identifiable {
+enum NumberAnnotationStyle: String, Codable, CaseIterable, Identifiable {
     case outline, filled
     var id: String { rawValue }
     var title: String { self == .filled ? "实心" : "描边" }
+}
+
+/// Persisted defaults for one tool; each annotation keeps its own snapshot.
+struct AnnotationToolStyle: Codable, Equatable {
+    var red: Double = 1
+    var green: Double = 0
+    var blue: Double = 0
+    var lineWidth: CGFloat = 3
+    var fontSize: CGFloat = 24
+    var numberStyle: NumberAnnotationStyle = .filled
+    var blockSize: CGFloat = 16
+    var blurRadius: CGFloat = 12
+    var brushWidth: CGFloat = 20
+    var effectMode: EffectDrawingMode = .rectangle
+
+    var color: Color {
+        get {
+            for preset: Color in [.red, .orange, .yellow, .green, .blue, .purple, .black, .white] {
+                if let rgb = NSColor(preset).usingColorSpace(.sRGB),
+                   abs(rgb.redComponent - red) < 0.000001,
+                   abs(rgb.greenComponent - green) < 0.000001,
+                   abs(rgb.blueComponent - blue) < 0.000001 { return preset }
+            }
+            return Color(nsColor: NSColor(srgbRed: red, green: green, blue: blue, alpha: 1))
+        }
+        set {
+            guard let rgb = NSColor(newValue).usingColorSpace(.sRGB) else { return }
+            red = rgb.redComponent; green = rgb.greenComponent; blue = rgb.blueComponent
+        }
+    }
+
+    static func factory(for tool: AnnotationType) -> Self {
+        var style = Self()
+        style.color = .red
+        if tool == .number { style.fontSize = Annotation.numberFontSize }
+        if tool == .blur { style.effectMode = .brush }
+        return style
+    }
+
+    var validated: Self {
+        var style = self
+        func bounded(_ value: CGFloat, _ lower: CGFloat, _ upper: CGFloat, _ fallback: CGFloat) -> CGFloat {
+            value.isFinite ? min(max(value, lower), upper) : fallback
+        }
+        style.red = Double(bounded(CGFloat(red), 0, 1, 1))
+        style.green = Double(bounded(CGFloat(green), 0, 1, 0))
+        style.blue = Double(bounded(CGFloat(blue), 0, 1, 0))
+        style.lineWidth = bounded(lineWidth, 1, 20, 3)
+        style.fontSize = bounded(fontSize, 8, 128, 24)
+        style.blockSize = bounded(blockSize, 4, 64, 16)
+        style.blurRadius = bounded(blurRadius, 2, 32, 12)
+        style.brushWidth = bounded(brushWidth, 12, 120, 20)
+        return style
+    }
 }
 
 /// Shared arrow geometry for display, export and pointer hit testing.

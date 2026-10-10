@@ -94,6 +94,27 @@ class SettingsService: ObservableObject {
         didSet { defaults.set(numberAnnotationStyle.rawValue, forKey: "numberAnnotationStyle") }
     }
 
+    @Published private(set) var annotationToolStyles: [String: AnnotationToolStyle] {
+        didSet {
+            if let data = try? JSONEncoder().encode(annotationToolStyles) {
+                defaults.set(data, forKey: "annotationToolStyles")
+            }
+        }
+    }
+
+    func annotationStyle(for tool: AnnotationType) -> AnnotationToolStyle {
+        if let saved = annotationToolStyles[tool.rawValue] { return saved.validated }
+        var style = AnnotationToolStyle.factory(for: tool)
+        // Preserve the existing sequence-number preference until this tool is configured.
+        if tool == .number { style.numberStyle = numberAnnotationStyle }
+        return style
+    }
+
+    func setAnnotationStyle(_ style: AnnotationToolStyle, for tool: AnnotationType) {
+        annotationToolStyles[tool.rawValue] = style.validated
+        if tool == .number { numberAnnotationStyle = style.numberStyle }
+    }
+
     var initialAnnotationTool: AnnotationType? {
         guard toolbarConfiguration.isVisible(defaultEditorTool) else { return nil }
         return defaultEditorTool.annotationType
@@ -163,6 +184,8 @@ class SettingsService: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.annotationToolStyles = defaults.data(forKey: "annotationToolStyles")
+            .flatMap { try? JSONDecoder().decode([String: AnnotationToolStyle].self, from: $0) } ?? [:]
         self.numberAnnotationStyle = NumberAnnotationStyle(rawValue: defaults.string(forKey: "numberAnnotationStyle") ?? "") ?? .filled
         if let data = defaults.data(forKey: "editorShortcuts"),
            let saved = try? JSONDecoder().decode([String: EditorShortcut].self, from: data) {
