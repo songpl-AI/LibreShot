@@ -40,6 +40,30 @@ enum NumberAnnotationStyle: String, Codable, CaseIterable, Identifiable {
     var title: String { self == .filled ? "实心" : "描边" }
 }
 
+enum NumberColorRole: String, CaseIterable, Identifiable {
+    case border, fill, digit
+    var id: String { rawValue }
+    var title: String { switch self { case .border: return "边框"; case .fill: return "填充"; case .digit: return "数字" } }
+}
+
+/// Optional inks preserve the automatic colors of annotations and older preferences.
+struct AnnotationInk: Codable, Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    init(_ color: Color) {
+        let rgb = NSColor(color).usingColorSpace(.sRGB) ?? .black
+        red = Double(rgb.redComponent); green = Double(rgb.greenComponent); blue = Double(rgb.blueComponent)
+    }
+    var color: Color { Color(red: red, green: green, blue: blue) }
+    var validated: Self {
+        var result = self
+        func clamp(_ v: Double) -> Double { v.isFinite ? min(1, max(0, v)) : 0 }
+        result.red = clamp(red); result.green = clamp(green); result.blue = clamp(blue)
+        return result
+    }
+}
+
 /// Persisted defaults for one tool; each annotation keeps its own snapshot.
 struct AnnotationToolStyle: Codable, Equatable {
     var red: Double = 1
@@ -47,6 +71,10 @@ struct AnnotationToolStyle: Codable, Equatable {
     var blue: Double = 0
     var lineWidth: CGFloat = 3
     var fontSize: CGFloat = 24
+    var rectangleCornerRadius: CGFloat?
+    var numberBorderInk: AnnotationInk?
+    var numberFillInk: AnnotationInk?
+    var numberDigitInk: AnnotationInk?
     var numberStyle: NumberAnnotationStyle = .filled
     var blockSize: CGFloat = 16
     var blurRadius: CGFloat = 12
@@ -85,6 +113,10 @@ struct AnnotationToolStyle: Codable, Equatable {
         style.red = Double(bounded(CGFloat(red), 0, 1, 1))
         style.green = Double(bounded(CGFloat(green), 0, 1, 0))
         style.blue = Double(bounded(CGFloat(blue), 0, 1, 0))
+        if let radius = rectangleCornerRadius { style.rectangleCornerRadius = bounded(radius, 0, 128, 0) }
+        style.numberBorderInk = numberBorderInk?.validated
+        style.numberFillInk = numberFillInk?.validated
+        style.numberDigitInk = numberDigitInk?.validated
         style.lineWidth = bounded(lineWidth, 1, 20, 3)
         style.fontSize = bounded(fontSize, 8, 128, 24)
         style.blockSize = bounded(blockSize, 4, 64, 16)
@@ -162,9 +194,20 @@ extension Annotation {
         AnnotationArrowGeometry(start: startPoint, end: endPoint, lineWidth: lineWidth)
     }
 
+    var rectanglePath: CGPath {
+        let rect = CGRect(from: startPoint, to: endPoint)
+        let radius = min(max(0, rectangleCornerRadius ?? 0), min(rect.width, rect.height) / 2)
+        return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    var numberFillColor: Color { numberFillInk?.color ?? color }
+    var numberBorderColor: Color { numberBorderInk?.color ?? color }
+    var numberBorderWidth: CGFloat { numberStyle == .filled && numberBorderInk == nil ? 0 : lineWidth }
+
     var textColor: NSColor {
+        if type == .number, let ink = numberDigitInk { return NSColor(ink.color) }
         guard type == .number, numberStyle == .filled,
-              let rgb = NSColor(color).usingColorSpace(.sRGB) else { return NSColor(color) }
+              let rgb = NSColor(numberFillColor).usingColorSpace(.sRGB) else { return NSColor(numberBorderColor) }
         func linear(_ component: CGFloat) -> CGFloat {
             component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
         }
@@ -184,7 +227,7 @@ extension Annotation {
         case .number:
             return hypot(point.x - startPoint.x, point.y - startPoint.y) <= numberRadius + tolerance
         case .rectangle:
-            path.addRect(rect)
+            path.addPath(rectanglePath)
         case .ellipse:
             path.addEllipse(in: rect)
         case .arrow:
@@ -222,6 +265,10 @@ struct Annotation: Identifiable, Equatable {
     var lineWidth: CGFloat = 3.0
     var text: String = ""  // For text annotations
     var fontSize: CGFloat = 16.0
+    var rectangleCornerRadius: CGFloat?
+    var numberBorderInk: AnnotationInk?
+    var numberFillInk: AnnotationInk?
+    var numberDigitInk: AnnotationInk?
     var numberStyle: NumberAnnotationStyle = .outline
 }
 

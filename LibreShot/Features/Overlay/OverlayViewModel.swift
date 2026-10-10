@@ -753,6 +753,7 @@ class OverlayViewModel: ObservableObject {
         // Start new annotation
         var annotation = Annotation(type: tool, color: selectedColor)
         annotation.lineWidth = settings.annotationStyle(for: tool).lineWidth
+        annotation.rectangleCornerRadius = settings.annotationStyle(for: tool).rectangleCornerRadius
         let startPoint = (tool == .mosaic || tool == .blur) ? clampPoint(point, to: selectionRect) : point
         annotation.startPoint = startPoint
         annotation.endPoint = startPoint
@@ -1115,6 +1116,10 @@ class OverlayViewModel: ObservableObject {
         annotation.text = String(nextNumber)
         annotation.fontSize = selectedNumberFontSize
         annotation.numberStyle = selectedNumberStyle
+        let style = settings.annotationStyle(for: .number)
+        annotation.numberBorderInk = style.numberBorderInk
+        annotation.numberFillInk = style.numberFillInk
+        annotation.numberDigitInk = style.numberDigitInk
         recordNumberUndo(.remove(annotation.id))
         annotations.append(annotation)
         lastNumberID = annotation.id
@@ -1212,6 +1217,10 @@ class OverlayViewModel: ObservableObject {
             style.lineWidth = annotation.lineWidth
             style.fontSize = annotation.fontSize
             style.numberStyle = annotation.numberStyle
+            style.rectangleCornerRadius = annotation.rectangleCornerRadius
+            style.numberBorderInk = annotation.numberBorderInk
+            style.numberFillInk = annotation.numberFillInk
+            style.numberDigitInk = annotation.numberDigitInk
             style.blockSize = annotation.mosaicBlockSize
             style.blurRadius = annotation.blurRadius
             if tool == .mosaic || tool == .blur { style.effectMode = annotation.isEffectBrush ? .brush : .rectangle }
@@ -1254,7 +1263,13 @@ class OverlayViewModel: ObservableObject {
             updated.color = style.color
             if [.pen, .rectangle, .ellipse, .arrow].contains(tool) { updated.lineWidth = style.lineWidth }
             if tool == .text || tool == .number { updated.fontSize = style.fontSize }
-            if tool == .number { updated.numberStyle = style.numberStyle }
+            if tool == .rectangle { updated.rectangleCornerRadius = style.rectangleCornerRadius }
+            if tool == .number {
+                updated.numberStyle = style.numberStyle
+                updated.numberBorderInk = style.numberBorderInk
+                updated.numberFillInk = style.numberFillInk
+                updated.numberDigitInk = style.numberDigitInk
+            }
         }
         if updated != original {
             annotationUndo.append(.restore(original, index))
@@ -1268,6 +1283,24 @@ class OverlayViewModel: ObservableObject {
     }
 
     func setColor(_ color: Color) { changeToolStyle { $0.color = color } }
+    func setRectangleCornerRadius(_ radius: CGFloat) { changeToolStyle { $0.rectangleCornerRadius = radius } }
+    func setNumberColor(_ color: Color?, role: NumberColorRole) {
+        changeToolStyle { style in
+            let ink = color.map { AnnotationInk($0) }
+            switch role { case .border: style.numberBorderInk = ink; case .fill: style.numberFillInk = ink; case .digit: style.numberDigitInk = ink }
+        }
+    }
+    func numberColor(for role: NumberColorRole) -> Color {
+        let style = currentToolStyle
+        switch role {
+        case .border: return style.numberBorderInk?.color ?? style.color
+        case .fill: return style.numberFillInk?.color ?? style.color
+        case .digit:
+            var sample = Annotation(type: .number, color: style.color)
+            sample.numberStyle = style.numberStyle; sample.numberFillInk = style.numberFillInk; sample.numberBorderInk = style.numberBorderInk; sample.numberDigitInk = style.numberDigitInk
+            return Color(nsColor: sample.textColor)
+        }
+    }
     func setLineWidth(_ width: CGFloat) { changeToolStyle { $0.lineWidth = width } }
     func setNumberStyle(_ style: NumberAnnotationStyle) { changeToolStyle { $0.numberStyle = style } }
     func setFontSize(_ size: CGFloat) { changeToolStyle { $0.fontSize = size } }

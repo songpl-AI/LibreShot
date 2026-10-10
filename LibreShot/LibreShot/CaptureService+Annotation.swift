@@ -118,11 +118,7 @@ extension CaptureService {
                     }
                 }
             case .rectangle:
-                let x = min(annotation.startPoint.x, annotation.endPoint.x)
-                let y = min(annotation.startPoint.y, annotation.endPoint.y)
-                let width = abs(annotation.endPoint.x - annotation.startPoint.x)
-                let height = abs(annotation.endPoint.y - annotation.startPoint.y)
-                path.addRect(CGRect(x: x, y: y, width: width, height: height))
+                path.addPath(annotation.rectanglePath)
             case .arrow:
                 let arrow = annotation.arrowGeometry
                 context.addPath(arrow.shaft); context.strokePath()
@@ -143,9 +139,18 @@ extension CaptureService {
             }
             
             context.addPath(path)
-            if annotation.type == .number && annotation.numberStyle == .filled {
-                context.setFillColor(NSColor(annotation.color).cgColor)
-                context.fillPath()
+            if annotation.type == .number {
+                if annotation.numberStyle == .filled {
+                    context.setFillColor(NSColor(annotation.numberFillColor).cgColor)
+                    context.fillPath()
+                }
+                if annotation.numberBorderWidth > 0 {
+                    context.beginPath()
+                    context.addPath(path)
+                    context.setStrokeColor(NSColor(annotation.numberBorderColor).cgColor)
+                    context.setLineWidth(annotation.numberBorderWidth)
+                    context.strokePath()
+                }
             } else { context.strokePath() }
         }
     }

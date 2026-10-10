@@ -152,8 +152,8 @@ struct OverlayView: View {
                     if viewModel.isEditingText {
                         if let circle = viewModel.editingNumberCircleRect {
                             Circle()
-                                .fill(viewModel.editingNumberAnnotation?.numberStyle == .filled ? viewModel.selectedColor : .clear)
-                                .overlay(Circle().stroke(viewModel.selectedColor, lineWidth: viewModel.editingNumberAnnotation?.numberStyle == .filled ? 0 : (viewModel.editingNumberAnnotation?.lineWidth ?? 3)))
+                                .fill(viewModel.editingNumberAnnotation?.numberStyle == .filled ? (viewModel.editingNumberAnnotation?.numberFillColor ?? viewModel.selectedColor) : .clear)
+                                .overlay(Circle().stroke(viewModel.editingNumberAnnotation?.numberBorderColor ?? viewModel.selectedColor, lineWidth: viewModel.editingNumberAnnotation?.numberBorderWidth ?? 3))
                                 .frame(width: circle.width, height: circle.height)
                                 .position(x: circle.midX, y: circle.midY)
                                 .allowsHitTesting(false)
@@ -428,8 +428,7 @@ struct OverlayView: View {
                 }
             }
         case .rectangle:
-            let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
-            path.addRect(rect)
+            path.addPath(Path(annotation.rectanglePath))
         case .arrow:
             let arrow = annotation.arrowGeometry
             context.stroke(Path(arrow.shaft), with: .color(annotation.color),
@@ -450,8 +449,9 @@ struct OverlayView: View {
             break
         }
 
-        if annotation.type == .number && annotation.numberStyle == .filled {
-            context.fill(path, with: .color(annotation.color))
+        if annotation.type == .number {
+            if annotation.numberStyle == .filled { context.fill(path, with: .color(annotation.numberFillColor)) }
+            if annotation.numberBorderWidth > 0 { context.stroke(path, with: .color(annotation.numberBorderColor), lineWidth: annotation.numberBorderWidth) }
         } else if annotation.type != .text {
             context.stroke(path, with: .color(annotation.color), lineWidth: annotation.lineWidth)
         }

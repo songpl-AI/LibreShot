@@ -177,11 +177,12 @@ struct ToolPropertyBarView: View {
     @ObservedObject var viewModel: OverlayViewModel
 
     let availableWidth: CGFloat
+    @State private var numberColorRole: NumberColorRole = .fill
 
     static func size(for model: OverlayViewModel, availableWidth: CGFloat) -> CGSize {
         guard let tool = model.propertyTool else { return .zero }
-        let extraRow = tool == .number || ((tool == .mosaic || tool == .blur) && model.effectDrawingMode(for: tool) == .brush)
-        return CGSize(width: min(400, max(0, availableWidth)), height: extraRow ? 140 : 108)
+        let extraRow = tool == .rectangle || ((tool == .mosaic || tool == .blur) && model.effectDrawingMode(for: tool) == .brush)
+        return CGSize(width: min(400, max(0, availableWidth)), height: tool == .number ? 180 : (tool == .rectangle ? 144 : (extraRow ? 140 : 108)))
     }
 
     private struct ColorPreset {
@@ -204,8 +205,8 @@ struct ToolPropertyBarView: View {
 
     private var colorBinding: Binding<Color> {
         Binding(
-            get: { viewModel.currentToolStyle.color },
-            set: { viewModel.setColor($0) }
+            get: { activeColor },
+            set: { setActiveColor($0) }
         )
     }
 
@@ -238,10 +239,22 @@ struct ToolPropertyBarView: View {
                         effectPresets("模糊强度", parameter: "radius", values: [4, 8, 12, 20, 32])
                     }
                 } else {
+                    if tool == .number {
+                        Picker("颜色对象", selection: Binding(get: { activeNumberColorRole }, set: { numberColorRole = $0 })) {
+                            ForEach(NumberColorRole.allCases.filter { $0 != .fill || viewModel.currentToolStyle.numberStyle == .filled }) { role in
+                                Text(role.title).tag(role)
+                            }
+                        }.pickerStyle(.segmented).frame(height: 28)
+                    }
                     colorControls
                     if [.pen, .rectangle, .ellipse, .arrow].contains(tool) {
                         valuePresets("粗细", values: [1, 2, 3, 5, 8, 12],
                                      selected: viewModel.currentToolStyle.lineWidth, action: viewModel.setLineWidth)
+                    }
+                    if tool == .rectangle {
+                        valuePresets("圆角", values: [0, 4, 8, 16, 24, 32],
+                                     selected: viewModel.currentToolStyle.rectangleCornerRadius ?? 0,
+                                     action: viewModel.setRectangleCornerRadius)
                     }
                     if tool == .text || tool == .number {
                         valuePresets("字号", values: Self.fontSizeOptions,
@@ -264,6 +277,9 @@ struct ToolPropertyBarView: View {
                 Text("先选择一个标注工具或已有标注").foregroundStyle(.secondary)
             }
         }
+        .onChange(of: viewModel.currentToolStyle.numberStyle) { style in
+            if style == .outline && numberColorRole == .fill { numberColorRole = .border }
+        }
         .padding(8)
         .frame(width: Self.size(for: viewModel, availableWidth: availableWidth).width,
                height: Self.size(for: viewModel, availableWidth: availableWidth).height)
@@ -274,22 +290,50 @@ struct ToolPropertyBarView: View {
         .accessibilityIdentifier("tool-property-bar")
     }
 
+    private var activeNumberColorRole: NumberColorRole {
+        numberColorRole == .fill && viewModel.currentToolStyle.numberStyle == .outline ? .border : numberColorRole
+    }
+    private var activeColor: Color {
+        viewModel.propertyTool == .number ? viewModel.numberColor(for: activeNumberColorRole) : viewModel.currentToolStyle.color
+    }
+    private func setActiveColor(_ color: Color) {
+        if viewModel.propertyTool == .number { viewModel.setNumberColor(color, role: activeNumberColorRole) }
+        else { viewModel.setColor(color) }
+    }
+    private func isSelectedColor(_ color: Color) -> Bool {
+        if viewModel.propertyTool == .number && activeNumberColorRole == .border &&
+            viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil { return false }
+        let a = AnnotationInk(activeColor), b = AnnotationInk(color)
+        return abs(a.red - b.red) < 0.00001 && abs(a.green - b.green) < 0.00001 && abs(a.blue - b.blue) < 0.00001
+    }
     private var colorControls: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Text("颜色").font(.caption).foregroundStyle(.secondary)
+                if viewModel.propertyTool == .number && activeNumberColorRole == .digit {
+                    Button("自动") { viewModel.setNumberColor(nil, role: .digit) }
+                        .buttonStyle(.plain).font(.caption).accessibilityLabel("数字自动配色")
+                        .foregroundStyle(viewModel.currentToolStyle.numberDigitInk == nil ? Color.accentColor : Color.secondary)
+                        .help("根据填充或边框自动选择数字颜色")
+                } else if viewModel.propertyTool == .number && activeNumberColorRole == .border && viewModel.currentToolStyle.numberStyle == .filled {
+                    Button("无") { viewModel.setNumberColor(nil, role: .border) }
+                        .buttonStyle(.plain).font(.caption).accessibilityLabel("无序号边框")
+                        .foregroundStyle(viewModel.currentToolStyle.numberBorderInk == nil ? Color.accentColor : Color.secondary)
+                        .help("移除实心序号的边框")
+                } else {
+                    Text(viewModel.propertyTool == .number ? activeNumberColorRole.title : "颜色").font(.caption).foregroundStyle(.secondary)
+                }
                 ForEach(Self.colorPresets, id: \.name) { preset in
-                    Button(action: { viewModel.setColor(preset.color) }) {
+                    Button(action: { setActiveColor(preset.color) }) {
                         RoundedRectangle(cornerRadius: 3).fill(preset.color).frame(width: 22, height: 22)
                             .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.2), lineWidth: 1))
                             .overlay {
-                                if NSColor(viewModel.currentToolStyle.color).usingColorSpace(.sRGB) == NSColor(preset.color).usingColorSpace(.sRGB) {
+                                if isSelectedColor(preset.color) {
                                     Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
                                         .foregroundStyle(preset.name == "白色" || preset.name == "黄色" ? Color.black : Color.white)
                                 }
                             }
                     }
-                    .buttonStyle(.plain).accessibilityLabel(preset.name).help(preset.name)
+                    .buttonStyle(.plain).accessibilityLabel(viewModel.propertyTool == .number ? "\(activeNumberColorRole.title)\(preset.name)" : preset.name).help(preset.name)
                 }
                 ColorPicker("更多颜色…", selection: colorBinding, supportsOpacity: false)
                     .labelsHidden().accessibilityLabel("更多颜色")
