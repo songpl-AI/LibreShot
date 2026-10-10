@@ -39,6 +39,18 @@ struct LibreShotApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let fullScreenImageProvider: () async throws -> NSImage
+
+    override init() {
+        fullScreenImageProvider = { try await CaptureService.shared.captureDisplayImage() }
+        super.init()
+    }
+
+    init(fullScreenImageProvider: @escaping () async throws -> NSImage) {
+        self.fullScreenImageProvider = fullScreenImageProvider
+        super.init()
+    }
+
     private var statusItem: NSStatusItem?
     private var captureSelectionMenuItem: NSMenuItem?
     private var captureFullScreenMenuItem: NSMenuItem?
@@ -230,9 +242,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             do {
                 // Default to main display for full screen shortcut
-                let image = try await CaptureService.shared.captureDisplayImage()
+                let image = try await fullScreenImageProvider()
                 SoundService.shared.playCaptureSound()
-                _ = try await saveImage(image)
+                await showImageEditor(image)
             } catch is CancellationError {
                 // User cancelled, do nothing
             } catch {

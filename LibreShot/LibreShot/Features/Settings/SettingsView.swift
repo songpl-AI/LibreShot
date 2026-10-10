@@ -260,7 +260,7 @@ struct GeneralSettingsView: View {
 
                     SettingsRow("自动保存:") {
                         Toggle("截图后自动保存", isOn: $settings.autoSaveEnabled)
-                            .help("区域截图点击完成时，复制并保存到指定目录；关闭后完成仅复制。全屏截图及长截图的保存按钮也遵循此设置。")
+                            .help("区域、全屏及长截图在标注界面点击完成时，复制并保存到指定目录；关闭后完成仅复制。保存按钮也遵循此设置。")
                     }
                     .padding(8)
                 }
@@ -366,7 +366,7 @@ struct ShortcutSettingsView: View {
                     // Full Screen Capture
                     ShortcutRow(
                         title: "全屏截图",
-                        description: "立即捕捉当前整个屏幕的内容。",
+                        description: "捕捉整个屏幕并进入标注编辑，确认后复制或保存。",
                         keyCode: $settings.fullScreenShortcutKey,
                         modifiers: $settings.fullScreenShortcutModifiers,
                         onSave: { k, m in saveFullScreenShortcut(keyCode: k, modifiers: m) },
