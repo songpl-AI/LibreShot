@@ -46,7 +46,7 @@ trap 'rm -rf "$dmg_source"' EXIT
 ditto "$app_path" "$dmg_source/LibreShot.app"
 ln -s /Applications "$dmg_source/Applications"
 hdiutil create -volname "LibreShot $version" -srcfolder "$dmg_source" \
-  -format UDZO "$release_output/$dmg_name" -quiet
+  -fs HFS+ -format UDZO "$release_output/$dmg_name" -quiet
 hdiutil verify "$release_output/$dmg_name" -quiet
 (cd "$release_output" && shasum -a 256 "$dmg_name" > SHA256SUMS)
 # Ship the operating procedure alongside each package; packaging is not installation acceptance.
