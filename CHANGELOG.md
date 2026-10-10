@@ -2,6 +2,8 @@
 
 ## 未发布 / Unreleased
 
+- 新用户默认完成截图仅复制；保留已有用户的自动保存选择。手动保存始终写入预设目录，另存为默认打开该目录；自动保存开关只控制完成截图是否同时写盘。
+
 - 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
 
 ## [1.3.12](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.12) — 2026-10-10

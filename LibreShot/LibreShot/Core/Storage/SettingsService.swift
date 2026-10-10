@@ -205,7 +205,7 @@ class SettingsService: ObservableObject {
         self.useRoundedCorners = defaults.object(forKey: "useRoundedCorners") as? Bool ?? true // Default to true (Rounded)
         self.editLongCaptureAfterFinish = defaults.object(forKey: "editLongCaptureAfterFinish") as? Bool ?? true
         self.playSound = defaults.object(forKey: "playSound") as? Bool ?? true // Default to true
-        self.autoSaveEnabled = defaults.object(forKey: "autoSaveEnabled") as? Bool ?? true // Default to true
+        self.autoSaveEnabled = defaults.object(forKey: "autoSaveEnabled") as? Bool ?? false // New users finish by copying; preserve stored choices.
         // Existing global bindings win when loading a previously conflicting configuration.
         self.editorShortcuts = editorShortcuts.filter { _, shortcut in
             !globalShortcuts.contains { $0.shortcut.conflicts(with: shortcut) }

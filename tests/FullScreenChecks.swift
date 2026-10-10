@@ -19,6 +19,18 @@ import AppKit
         defer { try? FileManager.default.removeItem(at: directory) }
         // This standalone executable has its own defaults domain, separate from the installed app.
         precondition(Bundle.main.bundleIdentifier != "com.allensong.LibreShot")
+        let suite = "LibreShot.SaveDefaults.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        guard !SettingsService(defaults: defaults).autoSaveEnabled else {
+            print("FAIL: new users must default to copy-only completion")
+            exit(1)
+        }
+        for existing in [true, false] {
+            defaults.set(existing, forKey: "autoSaveEnabled")
+            precondition(SettingsService(defaults: defaults).autoSaveEnabled == existing)
+        }
+        print("PASS: new users default to copy-only; existing auto-save choices preserved")
         let settings = SettingsService.shared
         precondition(settings.saveSaveDirectory(directory))
         settings.autoSaveEnabled = true
@@ -84,6 +96,16 @@ import AppKit
         check(await waitFor({ editor() == nil }))
         precondition(files().count == count && NSPasteboard.general.changeCount > clipboard)
         print("PASS: double-click copies without saving when auto-save is disabled")
+        delegate.perform(NSSelectorFromString("captureFullScreen"))
+        check(await waitFor({ editor() != nil }))
+        let manual = editor()!
+        let beforeManualCopy = NSPasteboard.general.changeCount
+        try await manual.onAction!(manual.renderedImage(), .save)
+        precondition(files().count == count + 1, "Manual Save must write even with Auto Save off")
+        precondition(NSPasteboard.general.changeCount == beforeManualCopy, "Manual Save must not replace the clipboard")
+        precondition(manual.window!.isVisible, "Manual Save keeps the editor open")
+        manual.close()
+        print("PASS: explicit Save writes to configured directory with Auto Save off and keeps clipboard/editor")
         let displays: [(id: CGDirectDisplayID, frame: CGRect)] = [
             (1, CGRect(x: 0, y: 0, width: 1512, height: 982)),
             (2, CGRect(x: -2560, y: 0, width: 2560, height: 1440)),

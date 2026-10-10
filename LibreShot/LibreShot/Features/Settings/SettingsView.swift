@@ -259,8 +259,8 @@ struct GeneralSettingsView: View {
                     Divider()
 
                     SettingsRow("自动保存:") {
-                        Toggle("截图后自动保存", isOn: $settings.autoSaveEnabled)
-                            .help("区域、全屏及长截图在标注界面点击完成时，复制并保存到指定目录；关闭后完成仅复制。保存按钮也遵循此设置。")
+                        Toggle("完成截图时自动保存", isOn: $settings.autoSaveEnabled)
+                            .help("开启后，双击、Enter 或完成按钮复制并保存到指定目录；关闭后仅复制。手动保存始终写入指定目录，另存为可选择位置。")
                     }
                     .padding(8)
                 }

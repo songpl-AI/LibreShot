@@ -569,13 +569,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 统一保存入口：自动保存开关开启时直接写盘，否则弹保存面板。
+    /// Explicit Save always writes to the configured directory, independently of Auto Save.
     private func saveImage(_ image: NSImage) async throws -> URL {
-        if SettingsService.shared.autoSaveEnabled {
-            return try await CaptureService.shared.saveImageDirectly(image)
-        } else {
-            return try await CaptureService.shared.saveImageWithFallback(image)
-        }
+        try await CaptureService.shared.saveImageDirectly(image)
     }
 
     @MainActor

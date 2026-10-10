@@ -202,6 +202,8 @@ class CaptureService {
             let savePanel = NSSavePanel()
             savePanel.allowedContentTypes = [.png]
             savePanel.canCreateDirectories = true
+            savePanel.directoryURL = settings.saveDirectory
+                ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
             savePanel.isExtensionHidden = false
             savePanel.title = "保存截图"
             savePanel.message = "选择保存截图的位置"

@@ -113,7 +113,7 @@ struct EditorToolbarView: View {
         switch item {
         case .complete:
             label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
-        case .save: label = settings.autoSaveEnabled ? "保存到预设目录" : "保存…"
+        case .save: label = "保存到预设目录"
         case .mosaic: label = "马赛克：支持涂抹和框选，拖动时预览；在效果参数中切换"
         case .blur: label = "模糊：支持涂抹和框选，拖动时预览；在效果参数中切换"
         case .style where viewModel.activeEffectTool != nil: label = "效果参数"
