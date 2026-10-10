@@ -2,6 +2,8 @@
 
 ## 未发布 / Unreleased
 
+- Issue #22 第一期：统一齿轮工具属性入口，按工具显示颜色、粗细、字号、序号样式及现有效果参数；独立记住各工具设置，支持恢复本工具默认值，已有标注的属性修改可撤销。新圆角、阴影、箭头风格和字体等留待后续。
+
 - 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
 
 ## [1.3.13](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.13) — 2026-10-10
