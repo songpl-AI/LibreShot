@@ -43,6 +43,7 @@ struct ToolPropertiesChecks {
         defaults.set(["style"], forKey: "hiddenToolbarItems")
         defaults.set(try JSONEncoder().encode(["style": EditorShortcut(keyCode: 3, modifiers: 0)]), forKey: "editorShortcuts")
         let settings = SettingsService(defaults: defaults)
+        checkInitialDefaults()
         checkCompactProperties(settings: settings)
         checkNativePropertyInput()
         let vm = OverlayViewModel(settings: settings)
@@ -223,12 +224,42 @@ struct ToolPropertiesChecks {
             }
             second.selectTool(.number); second.toolPropertyDetailsExpanded = true
             try render(640, name: "number-details-dark", scheme: .dark)
-            second.toolPropertiesCollapsed = true
-            try render(200, name: "collapsed")
+            second.selectTool(.rectangle); second.restoreCurrentToolDefaults()
+            try render(640, name: "rectangle-defaults-640")
+            second.selectTool(.text); second.restoreCurrentToolDefaults()
+            try render(640, name: "text-defaults-640")
         }
         print("PASS: radius migration, resizing, hit testing, independent number inks, undo/reset and persistence")
         print("PASS: automatic properties, legacy gear migration, narrow widths and edge placement")
         print("PASS: independent tool defaults, legacy migration, drawing, selected editing, undo/reset and relaunch persistence")
+    }
+
+    @MainActor
+    static func checkInitialDefaults() {
+        let suite = "LibreShot.InitialProperties.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsService(defaults: defaults)
+        let model = OverlayViewModel(settings: settings)
+        model.state = .editing
+        model.selectionRect = CGRect(x: 0, y: 0, width: 500, height: 400)
+        model.selectTool(.rectangle)
+        model.startDrawing(at: CGPoint(x: 40, y: 40))
+        model.updateDrawing(to: CGPoint(x: 180, y: 160)); model.endDrawing()
+        require(model.annotations[0].lineWidth == 3 && model.annotations[0].rectangleCornerRadius == 8, "First rectangle uses a moderate stroke and subtle corner radius")
+        model.setRectangleCornerRadius(32)
+        require(SettingsService(defaults: defaults).annotationStyle(for: .rectangle).rectangleCornerRadius == 32, "Existing custom radius remains preferred after reload")
+        model.restoreCurrentToolDefaults()
+        require(settings.annotationStyle(for: .rectangle).rectangleCornerRadius == 8, "Reset restores the same initial corner radius")
+        model.selectTool(.text)
+        require(model.inputFontSize == 24, "First text uses a readable 24-point font")
+        model.selectTool(.number); model.placeNumber(at: CGPoint(x: 220, y: 140))
+        require(model.annotations.last!.fontSize == 16, "First number keeps its compact 16-point font")
+        model.selectTool(.mosaic)
+        require(model.effectValue("width") == 20 && model.effectValue("block") == 16, "First mosaic uses moderate brush and grain values")
+        model.selectTool(.blur)
+        require(model.effectValue("width") == 20 && model.effectValue("radius") == 12, "First blur uses moderate brush and intensity values")
+        print("PASS: first-use drawing defaults, custom preference preservation and reset consistency")
     }
 
     @MainActor
@@ -308,21 +339,20 @@ struct ToolPropertiesChecks {
         model.selectTool(.arrow)
         require(settings.annotationStyle(for: .text).fontSize == 39 && model.currentToolStyle.lineWidth == 3, "Tool switch commits the outgoing gesture without changing the next tool")
         model.selectTool(.rectangle)
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == 44, "Rectangle common controls fit in one compact row")
-        model.toolPropertiesCollapsed = true
-        require(ToolPropertyBarView.size(for: model, availableWidth: 200) == CGSize(width: 180, height: 44), "Collapsed entry remains small and accessible")
-        model.toolPropertiesCollapsed = false; model.selectTool(.number)
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 456, height: 40), "Rectangle controls reserve the tightened single-row bounds")
+        model.selectTool(.number)
         let compact = ToolPropertyBarView.size(for: model, availableWidth: 640)
         model.toolPropertyDetailsExpanded = true
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 72, "Detailed number colors reserve their own hit area")
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 70, "Detailed number colors reserve their own hit area")
         for tool in [AnnotationType.rectangle, .ellipse, .arrow, .pen, .text, .number, .mosaic, .blur] {
             model.selectTool(tool)
             for width: CGFloat in [200, 400, 640] {
                 let rows = ToolPropertyBarView.rows(for: model, availableWidth: width)
-                require(rows.flatMap { $0 }.filter { $0 == .actions }.count == 1, "Each layout keeps exactly one reset/collapse entry")
+                require(rows.flatMap { $0 }.filter { $0 == .actions }.count == 1, "Each layout keeps exactly one reset entry")
                 for row in rows {
-                    let occupied = row.reduce(CGFloat(0)) { $0 + min($1.width, width - 16) } + CGFloat(max(0, row.count - 1)) * 8
-                    require(occupied <= width - 16, "All property controls fit their reserved row")
+                    let usable = width - ToolPropertyBarView.inset * 2
+                    let occupied = row.reduce(CGFloat(0)) { $0 + min($1.width, usable) } + CGFloat(max(0, row.count - 1)) * ToolPropertyBarView.spacing
+                    require(occupied <= usable, "All property controls fit their reserved row")
                 }
             }
         }
@@ -334,7 +364,7 @@ struct ToolPropertiesChecks {
         let cancellation = model.toolPropertyInputCancellation
         require(model.performEditorShortcut(escape, textResponder: true) && model.toolPropertyInputCancellation != cancellation && model.state == .editing, "Escape cancels a property draft without cancelling the capture")
         model.reset()
-        require(!model.toolPropertiesCollapsed && !model.toolPropertyDetailsExpanded, "New sessions start with compact common controls")
+        require(!model.toolPropertyDetailsExpanded, "New sessions start with compact common controls")
         for tool in [AnnotationType.rectangle, .text, .arrow] {
             settings.setAnnotationStyle(.factory(for: tool), for: tool)
         }

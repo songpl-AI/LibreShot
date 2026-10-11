@@ -100,7 +100,10 @@ struct AnnotationToolStyle: Codable, Equatable {
     static func factory(for tool: AnnotationType) -> Self {
         var style = Self()
         style.color = .red
+        // Defaults suit everyday screenshot annotation; saved per-tool choices take precedence.
+        if tool == .text { style.fontSize = Annotation.textInputFontSize }
         if tool == .number { style.fontSize = Annotation.numberFontSize }
+        if tool == .rectangle { style.rectangleCornerRadius = 8 }
         if tool == .blur { style.effectMode = .brush }
         return style
     }

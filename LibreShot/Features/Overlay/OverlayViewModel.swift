@@ -86,7 +86,6 @@ class OverlayViewModel: ObservableObject {
         willSet { if newValue != selectedTool { endToolPropertyAdjustment() } }
         didSet { if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) } }
     }
-    @Published var toolPropertiesCollapsed = false
     @Published var toolPropertyDetailsExpanded = false
     @Published private(set) var toolPropertyInputCancellation = UUID()
     private var toolPropertyInputID: UUID?
@@ -962,7 +961,6 @@ class OverlayViewModel: ObservableObject {
     func reset() {
         endToolPropertyAdjustment()
         toolPropertyInputID = nil
-        toolPropertiesCollapsed = false
         toolPropertyDetailsExpanded = false
         confirmationClick = nil
         clearImageTranslation()

@@ -10,7 +10,9 @@ Full-screen captures the display under the pointer and opens annotation editing.
 
 ## Annotation and properties
 
-Selecting a tool or existing annotation shows a compact property bar. Short sliders preview numeric changes live; release to finish one adjustment, which can be undone in one step. Edit the current value for precision: Return commits, Esc discards the draft, and invalid input leaves the property unchanged. Use the chevrons to collapse or expand the bar; narrow screens wrap controls into rows. Each tool remembers its own color, width, font size and effect settings. Reset affects only that tool. `⌘Z` undoes object changes; explicitly chosen preferences for future annotations remain saved.
+Selecting a tool or existing annotation directly shows a compact property bar; narrow screens wrap controls into rows. Short sliders preview numeric changes live; release to finish one adjustment, which can be undone in one step. Edit the current value for precision: Return commits, Esc discards the draft, and invalid input leaves the property unchanged. Quick colors are red, green and blue; the adjacent color well supports custom colors. Each tool remembers its own color, width, font size and effect settings. Reset affects only that tool. `⌘Z` undoes object changes; explicitly chosen preferences for future annotations remain saved.
+
+First-use and reset defaults are: stroke width 3, text size 24, number size 16, rectangle corner radius 8, mosaic grain 16, blur intensity 12 and effect brush width 20. Saved custom choices still take precedence. Older rectangles without a corner setting retain square corners until reset applies radius 8.
 
 - **Rectangle, ellipse, arrow and pen**: Drag on empty space to draw. Set rectangle corner radius with a slider or exact input (0–128); 0 means square corners. The effective radius never exceeds half the shorter side.
 - **Select and adjust**: Click an annotation to select it; click rectangle/ellipse outlines. Drag to move, use handles to resize, or adjust arrow endpoints. Delete/Backspace removes the selection; `⌘Z` undoes. Select/Move or clicking the active tool again returns to selection mode.
