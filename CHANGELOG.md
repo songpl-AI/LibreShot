@@ -4,6 +4,13 @@
 
 - 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
 
+## [1.3.15](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.15) — 2026-10-11
+
+- 修复双击完成误触：仅选区空白处双击完成，已有标注、控制点及编辑框内双击不再结束截图；保留双击文字和序号编辑。
+- 设置「通用」新增「完成截图时播放音效」开关，并记住选择。
+
+构建号 41。发布维护者测试确认正常的原验收 DMG。[更新说明](docs/releases/1.3.15.md) · [安装验收](docs/qa/1.3.15-41-issues30-31-20261011.md)。
+
 ## [1.3.14](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.14) — 2026-10-10
 
 - 新增自动工具属性栏，独立记忆各工具设置，支持恢复默认与属性修改撤销。
