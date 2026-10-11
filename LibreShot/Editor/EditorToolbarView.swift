@@ -172,199 +172,318 @@ struct ToolbarTooltipView: View {
     }
 }
 
-// Always visible while a tool or an existing annotation is selected.
+/// Compact rows share their measured layout with overlay positioning and hit exclusion.
 struct ToolPropertyBarView: View {
     @ObservedObject var viewModel: OverlayViewModel
-
     let availableWidth: CGFloat
     @State private var numberColorRole: NumberColorRole = .fill
 
+    enum Control: Hashable {
+        case color, width, corner, font, numberStyle, effectMode, brush, block, blur, actions
+        var width: CGFloat {
+            switch self {
+            case .color: return 144
+            case .numberStyle: return 88
+            case .effectMode: return 110
+            case .actions: return 84
+            default: return 178
+            }
+        }
+    }
+
+    static func rows(for model: OverlayViewModel, availableWidth: CGFloat) -> [[Control]] {
+        guard let tool = model.propertyTool else { return [] }
+        if model.toolPropertiesCollapsed { return [[.actions]] }
+        var controls: [Control]
+        switch tool {
+        case .rectangle: controls = [.color, .width, .corner]
+        case .pen, .ellipse, .arrow: controls = [.color, .width]
+        case .text: controls = [.color, .font]
+        case .number: controls = [.numberStyle, .color, .font]
+        case .mosaic, .blur:
+            controls = [.effectMode]
+            if model.effectDrawingMode(for: tool) == .brush { controls.append(.brush) }
+            controls.append(tool == .mosaic ? .block : .blur)
+        }
+        controls.append(.actions)
+        let usable = max(0, availableWidth - 16)
+        var rows: [[Control]] = [[]]
+        var used: CGFloat = 0
+        for control in controls {
+            let width = min(control.width, usable)
+            if !rows[rows.count - 1].isEmpty && used + 8 + width > usable {
+                rows.append([]); used = 0
+            }
+            if !rows[rows.count - 1].isEmpty { used += 8 }
+            rows[rows.count - 1].append(control); used += width
+        }
+        return rows
+    }
+
     static func size(for model: OverlayViewModel, availableWidth: CGFloat) -> CGSize {
-        guard let tool = model.propertyTool else { return .zero }
-        let extraRow = tool == .rectangle || ((tool == .mosaic || tool == .blur) && model.effectDrawingMode(for: tool) == .brush)
-        return CGSize(width: min(400, max(0, availableWidth)), height: tool == .number ? 180 : (tool == .rectangle ? 144 : (extraRow ? 140 : 108)))
+        guard model.propertyTool != nil else { return .zero }
+        if model.toolPropertiesCollapsed { return CGSize(width: min(180, availableWidth), height: 44) }
+        let rows = rows(for: model, availableWidth: availableWidth)
+        let rowWidth = rows.map { row in row.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, row.count - 1)) * 8 }.max() ?? 0
+        let detailRows: CGFloat = model.propertyTool == .number && model.toolPropertyDetailsExpanded ? 2 : 0
+        return CGSize(width: min(availableWidth, rowWidth + 16), height: 16 + CGFloat(rows.count) * 28 + CGFloat(max(0, rows.count - 1)) * 8 + detailRows * 36)
     }
 
     private struct ColorPreset {
         let color: Color
         let name: String
     }
-
-    private static let colorPresets: [ColorPreset] = [
-        ColorPreset(color: .red, name: "红色"),
-        ColorPreset(color: .orange, name: "橙色"),
-        ColorPreset(color: .yellow, name: "黄色"),
-        ColorPreset(color: .green, name: "绿色"),
-        ColorPreset(color: .blue, name: "蓝色"),
-        ColorPreset(color: .purple, name: "紫色"),
-        ColorPreset(color: .black, name: "黑色"),
-        ColorPreset(color: .white, name: "白色"),
+    private static let colorPresets = [
+        ColorPreset(color: .red, name: "红色"), ColorPreset(color: .blue, name: "蓝色"),
+        ColorPreset(color: .green, name: "绿色"), ColorPreset(color: .yellow, name: "黄色")
     ]
 
-    private static let fontSizeOptions: [CGFloat] = [14, 16, 20, 24, 32, 40, 48, 64]
-
-    private var colorBinding: Binding<Color> {
-        Binding(
-            get: { activeColor },
-            set: { setActiveColor($0) }
-        )
-    }
-
     var body: some View {
+        let size = Self.size(for: viewModel, availableWidth: availableWidth)
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(viewModel.propertyTitle).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("恢复默认") { viewModel.restoreCurrentToolDefaults() }
-                    .buttonStyle(.plain).font(.caption)
-                    .accessibilityLabel("恢复本工具默认值")
-            }.frame(height: 20)
-            if let tool = viewModel.propertyTool {
-                if tool == .mosaic || tool == .blur {
-                    Picker("应用方式", selection: Binding(
-                        get: { viewModel.effectDrawingMode(for: tool) },
-                        set: { viewModel.setEffectDrawingMode($0, for: tool) }
-                    )) {
-                        ForEach(EffectDrawingMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
+            if viewModel.toolPropertiesCollapsed {
+                HStack {
+                    Text(viewModel.propertyTitle).font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    Button { viewModel.toolPropertiesCollapsed = false } label: {
+                        Image(systemName: "chevron.down").frame(width: 28, height: 28).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help("展开工具属性").accessibilityLabel("展开工具属性")
+                }.frame(height: 28)
+            } else {
+                let rows = Self.rows(for: viewModel, availableWidth: availableWidth)
+                ForEach(rows.indices, id: \.self) { index in
+                    HStack(spacing: 8) {
+                        ForEach(rows[index], id: \.self) { item in
+                            control(item).frame(width: min(item.width, max(0, size.width - 16)), height: 28)
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    if viewModel.effectDrawingMode(for: tool) == .brush {
-                        effectPresets("笔刷大小", parameter: "width", values: [20, 36, 60, 90, 120])
-                    }
-                    if tool == .mosaic {
-                        effectPresets("颗粒大小", parameter: "block", values: [8, 12, 16, 24, 32])
-                    } else {
-                        effectPresets("模糊强度", parameter: "radius", values: [4, 8, 12, 20, 32])
-                    }
-                } else {
-                    if tool == .number {
-                        Picker("颜色对象", selection: Binding(get: { activeNumberColorRole }, set: { numberColorRole = $0 })) {
-                            ForEach(NumberColorRole.allCases.filter { $0 != .fill || viewModel.currentToolStyle.numberStyle == .filled }) { role in
-                                Text(role.title).tag(role)
-                            }
-                        }.pickerStyle(.segmented).frame(height: 28)
-                    }
-                    colorControls
-                    if [.pen, .rectangle, .ellipse, .arrow].contains(tool) {
-                        valuePresets("粗细", values: [1, 2, 3, 5, 8, 12],
-                                     selected: viewModel.currentToolStyle.lineWidth, action: viewModel.setLineWidth)
-                    }
-                    if tool == .rectangle {
-                        valuePresets("圆角", values: [0, 4, 8, 16, 24, 32],
-                                     selected: viewModel.currentToolStyle.rectangleCornerRadius ?? 0,
-                                     action: viewModel.setRectangleCornerRadius)
-                    }
-                    if tool == .text || tool == .number {
-                        valuePresets("字号", values: Self.fontSizeOptions,
-                                     selected: viewModel.currentToolStyle.fontSize, action: viewModel.setFontSize)
-                    }
-                    if tool == .number {
-                        Picker("序号样式", selection: Binding(
-                            get: { viewModel.currentToolStyle.numberStyle },
-                            set: { viewModel.setNumberStyle($0) }
-                        )) {
-                            ForEach(NumberAnnotationStyle.allCases) { style in
-                                Text(style.title).tag(style)
-                            }
-                        }
-                        .pickerStyle(.segmented)
                     }
                 }
-
-            } else {
-                Text("先选择一个标注工具或已有标注").foregroundStyle(.secondary)
+                if viewModel.propertyTool == .number && viewModel.toolPropertyDetailsExpanded {
+                    numberDetails
+                }
             }
         }
-        .onChange(of: viewModel.currentToolStyle.numberStyle) { style in
-            if style == .outline && numberColorRole == .fill { numberColorRole = .border }
-        }
         .padding(8)
-        .frame(width: Self.size(for: viewModel, availableWidth: availableWidth).width,
-               height: Self.size(for: viewModel, availableWidth: availableWidth).height)
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
         .contentShape(Rectangle())
         .accessibilityIdentifier("tool-property-bar")
+        .onDisappear { viewModel.endToolPropertyAdjustment() }
     }
 
-    private var activeNumberColorRole: NumberColorRole {
-        numberColorRole == .fill && viewModel.currentToolStyle.numberStyle == .outline ? .border : numberColorRole
-    }
-    private var activeColor: Color {
-        viewModel.propertyTool == .number ? viewModel.numberColor(for: activeNumberColorRole) : viewModel.currentToolStyle.color
-    }
-    private func setActiveColor(_ color: Color) {
-        if viewModel.propertyTool == .number { viewModel.setNumberColor(color, role: activeNumberColorRole) }
-        else { viewModel.setColor(color) }
-    }
-    private func isSelectedColor(_ color: Color) -> Bool {
-        if viewModel.propertyTool == .number && activeNumberColorRole == .border &&
-            viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil { return false }
-        let a = AnnotationInk(activeColor), b = AnnotationInk(color)
-        return abs(a.red - b.red) < 0.00001 && abs(a.green - b.green) < 0.00001 && abs(a.blue - b.blue) < 0.00001
-    }
-    private var colorControls: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if viewModel.propertyTool == .number && activeNumberColorRole == .digit {
-                    Button("自动") { viewModel.setNumberColor(nil, role: .digit) }
-                        .buttonStyle(.plain).font(.caption).accessibilityLabel("数字自动配色")
-                        .foregroundStyle(viewModel.currentToolStyle.numberDigitInk == nil ? Color.accentColor : Color.secondary)
-                        .help("根据填充或边框自动选择数字颜色")
-                } else if viewModel.propertyTool == .number && activeNumberColorRole == .border && viewModel.currentToolStyle.numberStyle == .filled {
-                    Button("无") { viewModel.setNumberColor(nil, role: .border) }
-                        .buttonStyle(.plain).font(.caption).accessibilityLabel("无序号边框")
-                        .foregroundStyle(viewModel.currentToolStyle.numberBorderInk == nil ? Color.accentColor : Color.secondary)
-                        .help("移除实心序号的边框")
-                } else {
-                    Text(viewModel.propertyTool == .number ? activeNumberColorRole.title : "颜色").font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(Self.colorPresets, id: \.name) { preset in
-                    Button(action: { setActiveColor(preset.color) }) {
-                        RoundedRectangle(cornerRadius: 3).fill(preset.color).frame(width: 22, height: 22)
-                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.2), lineWidth: 1))
-                            .overlay {
-                                if isSelectedColor(preset.color) {
-                                    Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
-                                        .foregroundStyle(preset.name == "白色" || preset.name == "黄色" ? Color.black : Color.white)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain).accessibilityLabel(viewModel.propertyTool == .number ? "\(activeNumberColorRole.title)\(preset.name)" : preset.name).help(preset.name)
-                }
-                ColorPicker("更多颜色…", selection: colorBinding, supportsOpacity: false)
-                    .labelsHidden().accessibilityLabel("更多颜色")
-            }.frame(height: 28)
-        }.frame(height: 28)
-    }
-
-    private func valuePresets(_ title: String, values: [CGFloat], selected: CGFloat,
-                              action: @escaping (CGFloat) -> Void) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                Text("\(title) \(Int(selected))").font(.caption).foregroundStyle(.secondary)
-                    .frame(minWidth: 60, alignment: .leading)
-                ForEach(values, id: \.self) { value in
-                    Button("\(Int(value))") { action(value) }
-                        .buttonStyle(.plain)
-                        .frame(width: 30, height: 28)
-                        .background(RoundedRectangle(cornerRadius: 4)
-                            .fill(selected == value ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.06)))
-                        .accessibilityLabel("\(title) \(Int(value))")
-                }
+    @ViewBuilder private func control(_ item: Control) -> some View {
+        switch item {
+        case .color: colorControls(role: quickColorRole)
+        case .width: numericControl("粗细", range: 1...20, value: viewModel.currentToolStyle.lineWidth, ticks: [1, 3, 5, 8, 12, 20], action: viewModel.setLineWidth)
+        case .corner: numericControl("圆角", range: 0...128, value: viewModel.currentToolStyle.rectangleCornerRadius ?? 0, ticks: [0, 4, 8, 16, 32, 64, 128], action: viewModel.setRectangleCornerRadius)
+        case .font: numericControl("字号", range: 8...128, value: viewModel.currentToolStyle.fontSize, ticks: [8, 16, 24, 32, 48, 64, 128], action: viewModel.setFontSize)
+        case .brush: numericControl("笔刷", range: 12...120, value: viewModel.effectValue("width"), ticks: [12, 20, 36, 60, 90, 120]) { viewModel.setEffectValue($0, parameter: "width") }
+        case .block: numericControl("颗粒", range: 4...64, value: viewModel.effectValue("block"), ticks: [4, 8, 16, 24, 32, 64]) { viewModel.setEffectValue($0, parameter: "block") }
+        case .blur: numericControl("强度", range: 2...32, value: viewModel.effectValue("radius"), ticks: [2, 4, 8, 12, 20, 32]) { viewModel.setEffectValue($0, parameter: "radius") }
+        case .numberStyle:
+            Picker("序号样式", selection: Binding(get: { viewModel.currentToolStyle.numberStyle }, set: { viewModel.setNumberStyle($0) })) {
+                ForEach(NumberAnnotationStyle.allCases) { Text($0.title).tag($0) }
+            }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("序号样式")
+        case .effectMode:
+            if let tool = viewModel.propertyTool {
+                Picker("应用方式", selection: Binding(get: { viewModel.effectDrawingMode(for: tool) }, set: { viewModel.setEffectDrawingMode($0, for: tool) })) {
+                    ForEach(EffectDrawingMode.allCases) { Text($0.title).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("应用方式")
             }
-        }.frame(height: 28)
-    }
-
-    private func effectPresets(_ title: String, parameter: String, values: [CGFloat]) -> some View {
-        valuePresets(title, values: values, selected: viewModel.effectValue(parameter)) {
-            viewModel.setEffectValue($0, parameter: parameter)
+        case .actions:
+            HStack(spacing: 0) {
+                if viewModel.propertyTool == .number {
+                    iconButton("slider.horizontal.3", label: viewModel.toolPropertyDetailsExpanded ? "收起详细颜色" : "更多颜色设置") {
+                        viewModel.toolPropertyDetailsExpanded.toggle()
+                    }
+                } else { Spacer(minLength: 0) }
+                iconButton("arrow.counterclockwise", label: "恢复本工具默认值") { viewModel.restoreCurrentToolDefaults() }
+                iconButton("chevron.up", label: "收起工具属性") { viewModel.toolPropertiesCollapsed = true }
+            }
         }
     }
 
+    private func iconButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).frame(width: 28, height: 28).contentShape(Rectangle())
+        }.buttonStyle(.plain).help(label).accessibilityLabel(label)
+    }
+
+    private func numericControl(_ title: String, range: ClosedRange<CGFloat>, value: CGFloat, ticks: [CGFloat], action: @escaping (CGFloat) -> Void) -> some View {
+        // Losing focus or switching an object must never apply a stale draft to another object.
+        let tool = viewModel.propertyTool
+        let annotationID = viewModel.selectedAnnotationID
+        return CompactPropertySlider(title: title, range: range, value: value, ticks: ticks, viewModel: viewModel) { value in
+            guard viewModel.propertyTool == tool, viewModel.selectedAnnotationID == annotationID else { return }
+            action(value)
+        }.id("\(String(describing: tool))-\(String(describing: annotationID))-\(title)")
+    }
+
+    private var quickColorRole: NumberColorRole {
+        viewModel.currentToolStyle.numberStyle == .filled ? .fill : .border
+    }
+    private var activeNumberColorRole: NumberColorRole {
+        numberColorRole == .fill && viewModel.currentToolStyle.numberStyle == .outline ? .border : numberColorRole
+    }
+    private func color(for role: NumberColorRole) -> Color {
+        viewModel.propertyTool == .number ? viewModel.numberColor(for: role) : viewModel.currentToolStyle.color
+    }
+    private func setColor(_ color: Color, role: NumberColorRole) {
+        if viewModel.propertyTool == .number { viewModel.setNumberColor(color, role: role) }
+        else { viewModel.setColor(color) }
+    }
+    private func colorControls(role: NumberColorRole) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Self.colorPresets, id: \.name) { preset in
+                Button { setColor(preset.color, role: role) } label: {
+                    RoundedRectangle(cornerRadius: 3).fill(preset.color).frame(width: 20, height: 20)
+                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
+                        .overlay {
+                            if AnnotationInk(color(for: role)) == AnnotationInk(preset.color) && !(viewModel.propertyTool == .number && role == .border && viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil) {
+                                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(preset.name == "黄色" ? Color.black : Color.white)
+                            }
+                        }
+                        .frame(width: 24, height: 28).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("\(viewModel.propertyTool == .number ? role.title : "颜色")\(preset.name)")
+            }
+            CompactPropertyColorWell(selection: Binding(get: { color(for: role) }, set: { setColor($0, role: role) }),
+                label: "\(viewModel.propertyTool == .number ? role.title : "")自定义颜色")
+                .frame(width: 24, height: 24)
+        }
+    }
+
+    private var numberDetails: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("颜色对象", selection: Binding(get: { activeNumberColorRole }, set: { numberColorRole = $0 })) {
+                ForEach(NumberColorRole.allCases.filter { $0 != .fill || viewModel.currentToolStyle.numberStyle == .filled }) { Text($0.title).tag($0) }
+            }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("颜色对象").frame(height: 28)
+            HStack(spacing: 8) {
+                colorControls(role: activeNumberColorRole).frame(width: 144)
+                if activeNumberColorRole == .digit {
+                    Button("自动") { viewModel.setNumberColor(nil, role: .digit) }.buttonStyle(.plain).frame(width: 28).font(.caption)
+                        .foregroundStyle(viewModel.currentToolStyle.numberDigitInk == nil ? Color.accentColor : Color.secondary)
+                        .help("根据填充或边框自动选择数字颜色")
+                } else if activeNumberColorRole == .border && viewModel.currentToolStyle.numberStyle == .filled {
+                    Button("无") { viewModel.setNumberColor(nil, role: .border) }.buttonStyle(.plain).frame(width: 28).font(.caption)
+                        .foregroundStyle(viewModel.currentToolStyle.numberBorderInk == nil ? Color.accentColor : Color.secondary)
+                        .help("无序号边框").accessibilityLabel("无序号边框")
+                }
+            }.frame(height: 28)
+        }
+    }
+}
+
+/// A short slider for visual adjustment and a draft field for exact values.
+struct CompactPropertySlider: View {
+    let title: String
+    let range: ClosedRange<CGFloat>
+    let value: CGFloat
+    let ticks: [CGFloat]
+    @ObservedObject var viewModel: OverlayViewModel
+    let action: (CGFloat) -> Void
+    @State private var draft = ""
+    @State private var originalDraft = ""
+    @State private var inputID = UUID()
+    @FocusState private var focused: Bool
+
+    static func formatted(_ value: CGFloat) -> String {
+        String(format: value.rounded() == value ? "%.0f" : "%.1f", Double(value))
+    }
+
+    static func parsed(_ text: String, range: ClosedRange<CGFloat>) -> CGFloat? {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)), value.isFinite else { return nil }
+        return min(max(CGFloat(value), range.lowerBound), range.upperBound)
+    }
+
+    private func commit() {
+        // Merely focusing a rounded display value must not change a fractional saved value.
+        if draft != originalDraft, let number = Self.parsed(draft, range: range) {
+            draft = Self.formatted(number)
+            originalDraft = draft
+            if number != value { action(number) }
+        } else {
+            draft = Self.formatted(value)
+            originalDraft = draft
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title).font(.caption).foregroundStyle(.secondary).fixedSize()
+            Slider(value: Binding(get: { value }, set: { action($0.rounded()) }), in: range) { editing in
+                if editing { viewModel.beginToolPropertyAdjustment() }
+                else { viewModel.endToolPropertyAdjustment() }
+            }
+            .accessibilityLabel(title).accessibilityValue("\(Self.formatted(value))")
+            .overlay(alignment: .bottom) {
+                GeometryReader { geometry in
+                    Path { path in
+                        for tick in ticks {
+                            let x = 7 + (geometry.size.width - 14) * (tick - range.lowerBound) / (range.upperBound - range.lowerBound)
+                            path.move(to: CGPoint(x: x, y: geometry.size.height - 3))
+                            path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                        }
+                    }.stroke(Color.secondary.opacity(0.4), lineWidth: 1)
+                }.allowsHitTesting(false).accessibilityHidden(true)
+            }
+            TextField(title, text: $draft)
+                .textFieldStyle(.roundedBorder).font(.system(size: 11).monospacedDigit())
+                .multilineTextAlignment(.trailing).frame(width: 40)
+                .focused($focused).accessibilityLabel("\(title)精确数值")
+                .onSubmit { commit(); focused = false }
+                .help("输入 \(Self.formatted(range.lowerBound))–\(Self.formatted(range.upperBound))；回车确认，Esc 取消")
+        }
+        .onAppear { draft = Self.formatted(value); originalDraft = draft }
+        .onChange(of: value) { if !focused { draft = Self.formatted($0); originalDraft = draft } }
+        .onChange(of: focused) { editing in
+            if editing { originalDraft = draft; viewModel.beginToolPropertyValueEditing(inputID) }
+            else { commit(); viewModel.endToolPropertyValueEditing(inputID) }
+        }
+        .onChange(of: viewModel.toolPropertyInputCancellation) { _ in
+            if focused { draft = Self.formatted(value); originalDraft = draft; focused = false }
+        }
+        .onDisappear { viewModel.endToolPropertyValueEditing(inputID) }
+    }
+}
+
+/// SwiftUI's color picker has a large intrinsic width on newer macOS versions.
+/// The minimal native well keeps the same system color selection in a fixed square.
+struct CompactPropertyColorWell: NSViewRepresentable {
+    @Binding var selection: Color
+    let label: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
+
+    func makeNSView(context: Context) -> NSColorWell {
+        let well = NSColorWell(frame: .zero)
+        well.colorWellStyle = .minimal
+        if #available(macOS 14.0, *) { well.supportsAlpha = false }
+        well.target = context.coordinator
+        well.action = #selector(Coordinator.changeColor(_:))
+        well.setContentHuggingPriority(.required, for: .horizontal)
+        well.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        updateNSView(well, context: context)
+        return well
+    }
+
+    func updateNSView(_ well: NSColorWell, context: Context) {
+        context.coordinator.selection = $selection
+        well.color = NSColor(selection)
+        well.setAccessibilityLabel(label)
+        well.toolTip = label
+    }
+
+    static func dismantleNSView(_ well: NSColorWell, coordinator: Coordinator) { well.deactivate() }
+
+    class Coordinator: NSObject {
+        var selection: Binding<Color>
+        init(selection: Binding<Color>) { self.selection = selection }
+        @objc func changeColor(_ well: NSColorWell) {
+            selection.wrappedValue = Color(nsColor: well.color.withAlphaComponent(1))
+        }
+    }
 }
 
 // Helper for blur background

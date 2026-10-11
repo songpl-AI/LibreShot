@@ -83,8 +83,21 @@ class OverlayViewModel: ObservableObject {
 
     // Editor State
     @Published var selectedTool: AnnotationType? {
+        willSet { if newValue != selectedTool { endToolPropertyAdjustment() } }
         didSet { if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) } }
     }
+    @Published var toolPropertiesCollapsed = false
+    @Published var toolPropertyDetailsExpanded = false
+    @Published private(set) var toolPropertyInputCancellation = UUID()
+    private var toolPropertyInputID: UUID?
+    private struct ToolPropertyAdjustment {
+        let tool: AnnotationType
+        let annotationID: UUID?
+        let original: Annotation?
+        let initialStyle: AnnotationToolStyle
+        var style: AnnotationToolStyle
+    }
+    @Published private var toolPropertyAdjustment: ToolPropertyAdjustment?
     @Published var annotations: [Annotation] = [] { didSet { scheduleEffectPreview() } }
     @Published var currentAnnotation: Annotation? { didSet { scheduleEffectPreview() } }
     private var pendingDrawing: Annotation?
@@ -173,6 +186,14 @@ class OverlayViewModel: ObservableObject {
 
     func performEditorShortcut(_ event: NSEvent, textResponder: Bool = false) -> Bool {
         guard state == .editing, !selectionRect.isEmpty, event.type == .keyDown else { return false }
+        if toolPropertyInputID != nil {
+            if event.keyCode == 53 {
+                toolPropertyInputCancellation = UUID()
+                toolPropertyInputID = nil
+                return true
+            }
+            return false
+        }
         if isEditingNumber, event.keyCode == 53 {
             cancelTextInput(); return true
         }
@@ -572,7 +593,9 @@ class OverlayViewModel: ObservableObject {
 
     // MARK: - Annotation Logic
     
-    @Published var selectedAnnotationID: UUID?
+    @Published var selectedAnnotationID: UUID? {
+        willSet { if newValue != selectedAnnotationID { endToolPropertyAdjustment() } }
+    }
     
     func annotationID(at point: CGPoint) -> UUID? {
         hitTest(at: point)
@@ -902,6 +925,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     func undoLastAnnotation() {
+        endToolPropertyAdjustment()
         if let edit = annotationUndo.popLast() {
             var action = edit
             if case .numbered(let wrapped, let next, let last, let size, let color, let style) = edit {
@@ -936,6 +960,10 @@ class OverlayViewModel: ObservableObject {
     }
     
     func reset() {
+        endToolPropertyAdjustment()
+        toolPropertyInputID = nil
+        toolPropertiesCollapsed = false
+        toolPropertyDetailsExpanded = false
         confirmationClick = nil
         clearImageTranslation()
         endSelectedShapeDrag()
@@ -1258,6 +1286,8 @@ class OverlayViewModel: ObservableObject {
 
     var currentToolStyle: AnnotationToolStyle {
         guard let tool = propertyTool else { return .factory(for: .text) }
+        if let adjustment = toolPropertyAdjustment, adjustment.tool == tool,
+           adjustment.annotationID == selectedAnnotationID { return adjustment.style }
         var style = settings.annotationStyle(for: tool)
         if let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) {
             style.color = annotation.color
@@ -1277,7 +1307,8 @@ class OverlayViewModel: ObservableObject {
     }
 
     private func loadToolDefaults(for tool: AnnotationType) {
-        let style = settings.annotationStyle(for: tool)
+        let style = toolPropertyAdjustment.flatMap { $0.tool == tool ? $0.style : nil }
+            ?? settings.annotationStyle(for: tool)
         selectedColor = style.color
         if tool == .text { selectedFontSize = style.fontSize }
         if tool == .number { selectedNumberFontSize = style.fontSize; selectedNumberStyle = style.numberStyle }
@@ -1297,7 +1328,10 @@ class OverlayViewModel: ObservableObject {
     }
 
     private func applyToolStyle(_ style: AnnotationToolStyle, for tool: AnnotationType) {
-        settings.setAnnotationStyle(style, for: tool)
+        let adjusting = toolPropertyAdjustment?.tool == tool
+            && toolPropertyAdjustment?.annotationID == selectedAnnotationID
+        if adjusting { toolPropertyAdjustment?.style = style }
+        else { settings.setAnnotationStyle(style, for: tool) }
         loadToolDefaults(for: tool)
         guard let index = annotations.firstIndex(where: { $0.id == selectedAnnotationID }), annotations[index].type == tool else { return }
         let original = annotations[index]
@@ -1319,9 +1353,35 @@ class OverlayViewModel: ObservableObject {
             }
         }
         if updated != original {
-            annotationUndo.append(.restore(original, index))
+            if !adjusting { annotationUndo.append(.restore(original, index)) }
             annotations[index] = updated
         }
+    }
+
+    /// Preview every drag update; persist and register one undo at the gesture boundary.
+    func beginToolPropertyAdjustment() {
+        endToolPropertyAdjustment()
+        guard let tool = propertyTool else { return }
+        let style = currentToolStyle
+        toolPropertyAdjustment = ToolPropertyAdjustment(tool: tool, annotationID: selectedAnnotationID,
+            original: annotations.first { $0.id == selectedAnnotationID }, initialStyle: style, style: style)
+    }
+
+    func endToolPropertyAdjustment() {
+        guard let adjustment = toolPropertyAdjustment else { return }
+        if adjustment.style != adjustment.initialStyle {
+            settings.setAnnotationStyle(adjustment.style, for: adjustment.tool)
+        }
+        toolPropertyAdjustment = nil
+        if let original = adjustment.original,
+           let index = annotations.firstIndex(where: { $0.id == original.id }), annotations[index] != original {
+            annotationUndo.append(.restore(original, index))
+        }
+    }
+
+    func beginToolPropertyValueEditing(_ id: UUID) { toolPropertyInputID = id }
+    func endToolPropertyValueEditing(_ id: UUID) {
+        if toolPropertyInputID == id { toolPropertyInputID = nil }
     }
 
     func restoreCurrentToolDefaults() {

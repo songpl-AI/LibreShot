@@ -2,6 +2,9 @@
 
 ## 未发布 / Unreleased
 
+- 工具属性栏改为紧凑滑块与精确数值输入，支持收起和窄屏分行；序号详细颜色按需展开。
+- 滑块拖动实时预览，松手保存最终值，一次撤销恢复整次拖动；数值输入的回车和 Esc 与截图操作隔离。
+
 - 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
 
 ## [1.3.15](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.15) — 2026-10-11

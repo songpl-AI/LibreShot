@@ -167,4 +167,8 @@ Issue #4 补充覆盖多种截图宽高、小幅位移以及 20/32/64 px 固定�
 
 ## Issue #22 属性栏扩展
 
-`bash tests/run-tool-properties-checks.sh` 验证旧设置迁移、矩形圆角绘制／命中／缩小后半径约束，序号边框／填充／数字独立颜色、自动配色、恢复默认和撤销、偏好重新加载；使用生产合成路径解码并检查导出像素。窄屏与屏幕边缘检查包含新增属性行。设置 `LIBRESHOT_PROPERTY_QA_OUTPUT=/tmp/libreshot-properties-qa` 可输出 240／400 宽的生产属性栏渲染图，用于人工检查布局。此检查不替代新安装包的录屏、保存目录和实体 Option 验收。
+`bash tests/run-tool-properties-checks.sh` 验证旧设置迁移、矩形圆角绘制／命中／缩小后半径约束，序号边框／填充／数字独立颜色、自动配色、恢复默认和撤销、偏好重新加载；使用生产合成路径解码并检查导出像素。窄屏与屏幕边缘检查包含新增属性行。设置 `LIBRESHOT_PROPERTY_QA_OUTPUT=/tmp/libreshot-properties-qa` 可输出 200／400／640 宽的生产属性栏渲染图，用于人工检查布局。此检查不替代新安装包的录屏、保存目录和实体 Option 验收。
+
+## Issue #29 紧凑属性栏
+
+`bash tests/run-tool-properties-checks.sh` 追加连续拖动的实时预览、最终值持久化、单步撤销、往返无变化、工具切换收尾、精确输入和原生输入框回车／Esc 检查。布局检查涵盖所有工具、200／400／640 宽度、收起入口及序号详细颜色的占位；`LIBRESHOT_PROPERTY_QA_OUTPUT` 输出生产 SwiftUI 渲染图用于视觉核对。本轮源码验证不代替新包安装与授权验收。

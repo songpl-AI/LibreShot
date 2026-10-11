@@ -43,6 +43,8 @@ struct ToolPropertiesChecks {
         defaults.set(["style"], forKey: "hiddenToolbarItems")
         defaults.set(try JSONEncoder().encode(["style": EditorShortcut(keyCode: 3, modifiers: 0)]), forKey: "editorShortcuts")
         let settings = SettingsService(defaults: defaults)
+        checkCompactProperties(settings: settings)
+        checkNativePropertyInput()
         let vm = OverlayViewModel(settings: settings)
         vm.state = .editing
         vm.selectionRect = CGRect(x: 0, y: 0, width: 500, height: 400)
@@ -191,25 +193,151 @@ struct ToolPropertiesChecks {
         if let output = ProcessInfo.processInfo.environment["LIBRESHOT_PROPERTY_QA_OUTPUT"] {
             try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             second.annotations = [rounded, colorfulNumber]
-            for width: CGFloat in [240, 400] {
+            func render(_ width: CGFloat, name: String, scheme: ColorScheme = .light) throws {
+                let size = ToolPropertyBarView.size(for: second, availableWidth: width)
+                let hosting = NSHostingView(rootView: ToolPropertyBarView(viewModel: second, availableWidth: width).padding(12).environment(\.colorScheme, scheme))
+                let bounds = CGRect(x: 0, y: 0, width: size.width + 24, height: size.height + 24)
+                let window = NSWindow(contentRect: bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+                window.contentView = hosting; window.orderFrontRegardless()
+                hosting.frame = bounds; window.layoutIfNeeded(); hosting.layoutSubtreeIfNeeded()
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
+                let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds)!
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent(name + ".png"))
+                window.orderOut(nil)
+            }
+            for width: CGFloat in [200, 400, 640] {
                 for annotation in [rounded, colorfulNumber] {
                     second.selectTool(nil); second.selectedAnnotationID = annotation.id
-                    let size = ToolPropertyBarView.size(for: second, availableWidth: width)
-                    let hosting = NSHostingView(rootView: ToolPropertyBarView(viewModel: second, availableWidth: width).padding(12).environment(\.colorScheme, .light))
-                    let bounds = CGRect(x: 0, y: 0, width: size.width + 24, height: size.height + 24)
-                    let window = NSWindow(contentRect: bounds, styleMask: [.borderless], backing: .buffered, defer: false)
-                    window.contentView = hosting; window.orderFrontRegardless()
-                    hosting.frame = bounds; window.layoutIfNeeded(); hosting.layoutSubtreeIfNeeded()
-                    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
-                    let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds)!
-                    hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-                    try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("\(annotation.type.rawValue)-\(Int(width)).png"))
-                    window.orderOut(nil)
+                    try render(width, name: "\(annotation.type.rawValue)-\(Int(width))")
+                    if annotation.type == .number {
+                        second.toolPropertyDetailsExpanded = true
+                        try render(width, name: "number-details-\(Int(width))")
+                        second.toolPropertyDetailsExpanded = false
+                    }
+                }
+                for tool in [AnnotationType.pen, .ellipse, .arrow, .text, .mosaic, .blur] {
+                    second.selectTool(tool)
+                    try render(width, name: "\(tool.rawValue)-\(Int(width))")
                 }
             }
+            second.selectTool(.number); second.toolPropertyDetailsExpanded = true
+            try render(640, name: "number-details-dark", scheme: .dark)
+            second.toolPropertiesCollapsed = true
+            try render(200, name: "collapsed")
         }
         print("PASS: radius migration, resizing, hit testing, independent number inks, undo/reset and persistence")
         print("PASS: automatic properties, legacy gear migration, narrow widths and edge placement")
         print("PASS: independent tool defaults, legacy migration, drawing, selected editing, undo/reset and relaunch persistence")
+    }
+
+    @MainActor
+    static func checkNativePropertyInput() {
+        _ = NSApplication.shared
+        let suite = "LibreShot.CompactInput.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = OverlayViewModel(settings: SettingsService(defaults: defaults))
+        model.state = .editing; model.selectionRect = CGRect(x: 0, y: 0, width: 500, height: 400)
+        model.selectTool(.rectangle)
+        var cancelled = false, captured = false
+        model.onCapture = { _, _, _, _ in captured = true }
+        let size = ToolPropertyBarView.size(for: model, availableWidth: 640)
+        let window = OverlayWindow(contentRect: CGRect(x: 80, y: 80, width: size.width + 24, height: size.height + 24), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.bindEditingActions(to: model)
+        window.onEscapeKey = { cancelled = true }
+        let hosting = NSHostingView(rootView: ToolPropertyBarView(viewModel: model, availableWidth: 640).padding(12))
+        window.contentView = hosting; window.makeKeyAndOrderFront(nil)
+        func settle() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
+        settle()
+        func fields(_ view: NSView) -> [NSTextField] {
+            (view as? NSTextField).map { $0.isEditable ? [$0] : [] } ?? view.subviews.flatMap(fields)
+        }
+        let inputs = fields(hosting)
+        require(inputs.count == 2, "Native compact rectangle exposes two exact value inputs")
+        let input = inputs.first { $0.stringValue == "3" }!
+        func enterDraft(_ text: String) {
+            require(window.makeFirstResponder(input), "Exact value field accepts focus")
+            settle()
+            let editor = window.firstResponder as! NSTextView
+            editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            settle()
+        }
+        func key(_ code: UInt16, _ characters: String) {
+            window.sendEvent(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!)
+            settle()
+        }
+        enterDraft("7.5"); key(36, "\r")
+        require(model.currentToolStyle.lineWidth == 7.5 && !captured, "Return commits an exact fractional value without exporting")
+        enterDraft("18"); key(53, "\u{1b}")
+        require(model.currentToolStyle.lineWidth == 7.5 && !cancelled && !captured, "Native Escape discards the draft and preserves the capture")
+        enterDraft("invalid"); key(36, "\r")
+        require(model.currentToolStyle.lineWidth == 7.5 && !captured, "Invalid native input restores the current value")
+        window.orderOut(nil); window.clearEditingActions()
+        print("PASS: native exact input, Return commit, Escape cancellation, shortcut isolation")
+    }
+
+    @MainActor
+    static func checkCompactProperties(settings: SettingsService) {
+        let model = OverlayViewModel(settings: settings)
+        model.state = .editing
+        model.selectionRect = CGRect(x: 0, y: 0, width: 500, height: 400)
+        model.selectTool(.rectangle)
+        var rectangle = Annotation(type: .rectangle, color: .red)
+        rectangle.startPoint = CGPoint(x: 40, y: 40); rectangle.endPoint = CGPoint(x: 180, y: 160)
+        model.annotations = [rectangle]; model.selectedAnnotationID = rectangle.id
+        let stored = settings.annotationStyle(for: .rectangle)
+        model.beginToolPropertyAdjustment()
+        for width: CGFloat in [4, 7, 11] { model.setLineWidth(width) }
+        require(model.annotations[0].lineWidth == 11, "Slider previews intermediate changes on the object")
+        require(settings.annotationStyle(for: .rectangle) == stored, "Drag does not persist every intermediate value")
+        model.endToolPropertyAdjustment()
+        require(settings.annotationStyle(for: .rectangle).lineWidth == 11, "Gesture completion persists the final value")
+        model.undoLastAnnotation()
+        require(model.annotations == [rectangle], "One undo restores the complete drag")
+        model.beginToolPropertyAdjustment(); model.setLineWidth(6); model.setLineWidth(rectangle.lineWidth)
+        model.endToolPropertyAdjustment();
+        require(settings.annotationStyle(for: .rectangle).lineWidth == 11, "A no-op drag does not overwrite the saved next-object style")
+        model.undoLastAnnotation()
+        require(model.annotations.isEmpty, "A drag returning to its starting value creates no extra undo")
+        model.selectTool(.text)
+        let oldFont = settings.annotationStyle(for: .text).fontSize
+        model.beginToolPropertyAdjustment(); model.setFontSize(39)
+        require(model.currentToolStyle.fontSize == 39 && settings.annotationStyle(for: .text).fontSize == oldFont, "Defaults-only drag previews without writing preferences")
+        model.selectTool(.arrow)
+        require(settings.annotationStyle(for: .text).fontSize == 39 && model.currentToolStyle.lineWidth == 3, "Tool switch commits the outgoing gesture without changing the next tool")
+        model.selectTool(.rectangle)
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == 44, "Rectangle common controls fit in one compact row")
+        model.toolPropertiesCollapsed = true
+        require(ToolPropertyBarView.size(for: model, availableWidth: 200) == CGSize(width: 180, height: 44), "Collapsed entry remains small and accessible")
+        model.toolPropertiesCollapsed = false; model.selectTool(.number)
+        let compact = ToolPropertyBarView.size(for: model, availableWidth: 640)
+        model.toolPropertyDetailsExpanded = true
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 72, "Detailed number colors reserve their own hit area")
+        for tool in [AnnotationType.rectangle, .ellipse, .arrow, .pen, .text, .number, .mosaic, .blur] {
+            model.selectTool(tool)
+            for width: CGFloat in [200, 400, 640] {
+                let rows = ToolPropertyBarView.rows(for: model, availableWidth: width)
+                require(rows.flatMap { $0 }.filter { $0 == .actions }.count == 1, "Each layout keeps exactly one reset/collapse entry")
+                for row in rows {
+                    let occupied = row.reduce(CGFloat(0)) { $0 + min($1.width, width - 16) } + CGFloat(max(0, row.count - 1)) * 8
+                    require(occupied <= width - 16, "All property controls fit their reserved row")
+                }
+            }
+        }
+        require(CompactPropertySlider.parsed(" 7.5 ", range: 1...20) == 7.5, "Exact input supports intermediate values")
+        require(CompactPropertySlider.parsed("999", range: 1...20) == 20, "Exact input is bounded by the supported range")
+        require(CompactPropertySlider.parsed("nan", range: 1...20) == nil && CompactPropertySlider.parsed("", range: 1...20) == nil, "Invalid drafts cannot reach annotations")
+        let inputID = UUID(); model.beginToolPropertyValueEditing(inputID)
+        let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 53)!
+        let cancellation = model.toolPropertyInputCancellation
+        require(model.performEditorShortcut(escape, textResponder: true) && model.toolPropertyInputCancellation != cancellation && model.state == .editing, "Escape cancels a property draft without cancelling the capture")
+        model.reset()
+        require(!model.toolPropertiesCollapsed && !model.toolPropertyDetailsExpanded, "New sessions start with compact common controls")
+        for tool in [AnnotationType.rectangle, .text, .arrow] {
+            settings.setAnnotationStyle(.factory(for: tool), for: tool)
+        }
+        print("PASS: compact layout, precise drafts, slider live preview, grouped undo and final-value persistence")
     }
 }
