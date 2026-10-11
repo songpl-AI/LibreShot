@@ -417,7 +417,7 @@ struct CompactPropertySlider: View {
             }
             TextField(title, text: $draft)
                 .textFieldStyle(.roundedBorder).font(.system(size: 11).monospacedDigit())
-                .multilineTextAlignment(.trailing).frame(width: 40)
+                .multilineTextAlignment(.center).frame(width: 40)
                 .focused($focused).accessibilityLabel("\(title)精确数值")
                 .onSubmit { commit(); focused = false }
                 .help("输入 \(Self.formatted(range.lowerBound))–\(Self.formatted(range.upperBound))；回车确认，Esc 取消")
