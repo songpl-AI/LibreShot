@@ -63,6 +63,9 @@ class OverlayViewModel: ObservableObject {
     
     // Freeze visibility for the current capture session.
     @Published private(set) var toolbarConfiguration: ToolbarConfiguration
+    @Published private(set) var toolbarAlignment: ToolbarAlignment
+    var allowsCaptureCompletion = true
+    var isToolPropertyInputActive: Bool { toolPropertyInputID != nil }
     private let settings: SettingsService
     @Published private(set) var useRoundedCorners: Bool
 
@@ -70,10 +73,11 @@ class OverlayViewModel: ObservableObject {
         useRoundedCorners && captureMode != .longScreenshot ? min(16, selectionRect.width / 2, selectionRect.height / 2) : 0
     }
 
-    init(settings: SettingsService = .shared) {
+    init(settings: SettingsService = .shared, useRoundedCorners: Bool? = nil) {
         self.settings = settings
         self.toolbarConfiguration = settings.toolbarConfiguration
-        self.useRoundedCorners = settings.useRoundedCorners
+        self.toolbarAlignment = settings.toolbarAlignment
+        self.useRoundedCorners = useRoundedCorners ?? settings.useRoundedCorners
         self.selectedNumberStyle = settings.numberAnnotationStyle
     }
 
@@ -88,7 +92,7 @@ class OverlayViewModel: ObservableObject {
     }
     @Published var toolPropertyDetailsExpanded = false
     @Published private(set) var toolPropertyInputCancellation = UUID()
-    private var toolPropertyInputID: UUID?
+    @Published private var toolPropertyInputID: UUID?
     private struct ToolPropertyAdjustment {
         let tool: AnnotationType
         let annotationID: UUID?
@@ -97,6 +101,7 @@ class OverlayViewModel: ObservableObject {
         var style: AnnotationToolStyle
     }
     @Published private var toolPropertyAdjustment: ToolPropertyAdjustment?
+    private var toolPropertyAdjustmentOwner: UUID?
     @Published var annotations: [Annotation] = [] { didSet { scheduleEffectPreview() } }
     @Published var currentAnnotation: Annotation? { didSet { scheduleEffectPreview() } }
     private var pendingDrawing: Annotation?
@@ -150,6 +155,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     func isToolbarItemEnabled(_ item: ToolbarItem) -> Bool {
+        if !allowsCaptureCompletion, item.annotationType == nil, item != .select, item != .undo, item != .save, item != .saveAs { return false }
         if [.complete, .save, .saveAs, .pin, .ocr].contains(item), !canExportSelection { return false }
         if item == .style { return false }
         if item == .translate {
@@ -208,7 +214,7 @@ class OverlayViewModel: ObservableObject {
             return true
         }
         if event.keyCode == 49, modifiers == 0, !editing {
-            guard settings.editorSpaceAction != .disabled else { return false }
+            guard allowsCaptureCompletion, settings.editorSpaceAction != .disabled else { return false }
             if !event.isARepeat {
                 if settings.editorSpaceAction == .complete { confirmCopy() }
                 else { confirmSaveAndCopy() }
@@ -246,7 +252,7 @@ class OverlayViewModel: ObservableObject {
     private var confirmationClick: ConfirmationClick?
 
     func canConfirmDoubleClick(at point: CGPoint) -> Bool {
-        settings.doubleClickCompletesCapture && state == .editing
+        allowsCaptureCompletion && settings.doubleClickCompletesCapture && state == .editing
             && !selectionRect.isEmpty && selectionRect.contains(point)
             && !isEditingText && !isResizingText && !isMovingSelection
             && activeSelectionHandle == nil && !isTransformingShape
@@ -506,24 +512,33 @@ class OverlayViewModel: ObservableObject {
         let rect = selectionRect, scale = previewScale
         let union = effects.reduce(CGRect.null) { $0.union($1.selectionBounds) }.intersection(rect)
         guard !union.isEmpty else { pendingEffectRender = nil; effectGeneration = UUID(); effectPreview = nil; effectPreviewRect = .zero; return }
-        let localPixels = CGRect(x: (union.minX - rect.minX) * scale,
-                                 y: (rect.maxY - union.maxY) * scale,
-                                 width: union.width * scale, height: union.height * scale).integral
-        let displayRect = CGRect(x: rect.minX + localPixels.minX / scale,
-                                 y: rect.maxY - localPixels.maxY / scale,
-                                 width: localPixels.width / scale, height: localPixels.height / scale)
+        // Crop, render and place the tile on the same source-pixel grid. Integral
+        // crops may expand fractional selections; keeping the old logical size
+        // would stretch those extra pixels and shift even untouched background.
+        let sourceBounds = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+        let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale,
+                            width: rect.width * scale, height: rect.height * scale).integral.intersection(sourceBounds)
+        let tilePixels = CGRect(x: union.minX * scale, y: union.minY * scale,
+                                width: union.width * scale, height: union.height * scale).integral.intersection(pixels)
+        guard !tilePixels.isEmpty else { pendingEffectRender = nil; effectGeneration = UUID(); effectPreview = nil; effectPreviewRect = .zero; return }
+        let cropRect = CGRect(x: pixels.minX / scale, y: pixels.minY / scale,
+                              width: pixels.width / scale, height: pixels.height / scale)
+        // Core Image uses a bottom-left origin within the actual crop.
+        let localPixels = CGRect(x: tilePixels.minX - pixels.minX, y: pixels.maxY - tilePixels.maxY,
+                                 width: tilePixels.width, height: tilePixels.height)
+        let displayRect = CGRect(x: tilePixels.minX / scale, y: tilePixels.minY / scale,
+                                 width: tilePixels.width / scale, height: tilePixels.height / scale)
         pendingEffectRender = (generation, {
             let result: CGImage? = autoreleasepool {
-                let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale).integral
                 guard let crop = source.cropping(to: pixels) else { return nil }
                 let local = effects.map { original -> Annotation in
                     var a = original
-                    a.startPoint.x -= rect.minX; a.startPoint.y -= rect.minY
-                    a.endPoint.x -= rect.minX; a.endPoint.y -= rect.minY
-                    a.points = a.points.map { CGPoint(x: $0.x - rect.minX, y: $0.y - rect.minY) }
+                    a.startPoint.x -= cropRect.minX; a.startPoint.y -= cropRect.minY
+                    a.endPoint.x -= cropRect.minX; a.endPoint.y -= cropRect.minY
+                    a.points = a.points.map { CGPoint(x: $0.x - cropRect.minX, y: $0.y - cropRect.minY) }
                     return a
                 }
-                return AnnotationEffectRenderer.render(source: crop, logicalSize: rect.size, annotations: local, outputRect: localPixels)
+                return AnnotationEffectRenderer.render(source: crop, logicalSize: cropRect.size, annotations: local, outputRect: localPixels)
             }
             return (result, displayRect)
         })
@@ -969,6 +984,7 @@ class OverlayViewModel: ObservableObject {
         clearAnnotationPress()
         endTextInputPress()
         toolbarConfiguration = settings.toolbarConfiguration
+        toolbarAlignment = settings.toolbarAlignment
         useRoundedCorners = settings.useRoundedCorners
         startPoint = nil
         currentPoint = nil
@@ -1177,6 +1193,13 @@ class OverlayViewModel: ObservableObject {
     private(set) var nextNumber = 1
     private var lastNumberID: UUID?
 
+    func loadAnnotationsForEditing(_ loaded: [Annotation]) {
+        annotations = loaded
+        let numbers = loaded.filter { $0.type == .number }
+        nextNumber = (numbers.compactMap { Int($0.text) }.max() ?? 0) + 1
+        lastNumberID = numbers.last(where: { Int($0.text) == nextNumber - 1 })?.id
+    }
+
     private func recordNumberUndo(_ edit: AnnotationUndo) {
         annotationUndo.append(.numbered(edit, nextNumber, lastNumberID, selectedNumberFontSize, selectedColor, selectedNumberStyle))
     }
@@ -1359,15 +1382,18 @@ class OverlayViewModel: ObservableObject {
     }
 
     /// Preview every drag update; persist and register one undo at the gesture boundary.
-    func beginToolPropertyAdjustment() {
+    func beginToolPropertyAdjustment(owner: UUID? = nil) {
         endToolPropertyAdjustment()
         guard let tool = propertyTool else { return }
         let style = currentToolStyle
         toolPropertyAdjustment = ToolPropertyAdjustment(tool: tool, annotationID: selectedAnnotationID,
             original: annotations.first { $0.id == selectedAnnotationID }, initialStyle: style, style: style)
+        toolPropertyAdjustmentOwner = owner
     }
 
-    func endToolPropertyAdjustment() {
+    func endToolPropertyAdjustment(owner: UUID? = nil) {
+        if let owner, owner != toolPropertyAdjustmentOwner { return }
+        toolPropertyAdjustmentOwner = nil
         guard let adjustment = toolPropertyAdjustment else { return }
         if adjustment.style != adjustment.initialStyle {
             settings.setAnnotationStyle(adjustment.style, for: adjustment.tool)
@@ -1379,7 +1405,10 @@ class OverlayViewModel: ObservableObject {
         }
     }
 
-    func beginToolPropertyValueEditing(_ id: UUID) { toolPropertyInputID = id }
+    func beginToolPropertyValueEditing(_ id: UUID) {
+        endToolPropertyAdjustment()
+        toolPropertyInputID = id
+    }
     func endToolPropertyValueEditing(_ id: UUID) {
         if toolPropertyInputID == id { toolPropertyInputID = nil }
     }

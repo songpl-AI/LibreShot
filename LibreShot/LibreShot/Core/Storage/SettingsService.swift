@@ -86,6 +86,10 @@ class SettingsService: ObservableObject {
         }
     }
 
+    @Published var toolbarAlignment: ToolbarAlignment {
+        didSet { defaults.set(toolbarAlignment.rawValue, forKey: "toolbarAlignment") }
+    }
+
     @Published private(set) var defaultEditorTool: ToolbarItem {
         didSet { defaults.set(defaultEditorTool.rawValue, forKey: "defaultEditorTool") }
     }
@@ -185,6 +189,7 @@ class SettingsService: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.toolbarAlignment = ToolbarAlignment(rawValue: defaults.string(forKey: "toolbarAlignment") ?? "") ?? .center
         self.annotationToolStyles = defaults.data(forKey: "annotationToolStyles")
             .flatMap { try? JSONDecoder().decode([String: AnnotationToolStyle].self, from: $0) } ?? [:]
         self.numberAnnotationStyle = NumberAnnotationStyle(rawValue: defaults.string(forKey: "numberAnnotationStyle") ?? "") ?? .filled
@@ -250,6 +255,7 @@ class SettingsService: ObservableObject {
 
     func restoreDefaultToolbar() {
         toolbarConfiguration = ToolbarConfiguration()
+        toolbarAlignment = .center
         defaultEditorTool = .select
     }
 

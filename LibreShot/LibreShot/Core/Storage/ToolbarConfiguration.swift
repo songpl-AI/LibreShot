@@ -103,6 +103,13 @@ struct ToolbarConfiguration {
 }
 
 /// Show every enabled action directly, wrapping balanced rows only when space is limited.
+enum ToolbarAlignment: String, CaseIterable {
+    case left, center, right
+    var title: String {
+        switch self { case .left: return "左对齐"; case .center: return "居中"; case .right: return "右对齐" }
+    }
+}
+
 struct ToolbarLayout {
     static let buttonSize: CGFloat = 30
     static let spacing: CGFloat = 3
@@ -128,7 +135,14 @@ struct ToolbarLayout {
         )
     }
 
-    func position(selection: CGRect, screenSize: CGSize, accessorySize: CGSize = .zero) -> CGPoint {
+    func position(selection: CGRect, screenSize: CGSize, accessorySize: CGSize = .zero, alignment: ToolbarAlignment = .center) -> CGPoint {
+        let toolbarWidth = size.width
+        let preferredX: CGFloat
+        switch alignment {
+        case .left: preferredX = selection.minX + toolbarWidth / 2
+        case .center: preferredX = selection.midX
+        case .right: preferredX = selection.maxX - toolbarWidth / 2
+        }
         let size = CGSize(width: max(size.width, accessorySize.width),
                           height: size.height + accessorySize.height)
         let margin: CGFloat = 10
@@ -136,13 +150,13 @@ struct ToolbarLayout {
         let above = selection.minY - margin - size.height / 2
         let preferredY = below + size.height / 2 <= screenSize.height - margin ? below : above
         return CGPoint(
-            x: max(margin + size.width / 2, min(selection.midX, screenSize.width - margin - size.width / 2)),
+            x: max(margin + size.width / 2, min(preferredX, screenSize.width - margin - size.width / 2)),
             y: max(margin + size.height / 2, min(preferredY, screenSize.height - margin - size.height / 2))
         )
     }
 
-    func frame(selection: CGRect, screenSize: CGSize, accessorySize: CGSize = .zero) -> CGRect {
-        let center = position(selection: selection, screenSize: screenSize, accessorySize: accessorySize)
+    func frame(selection: CGRect, screenSize: CGSize, accessorySize: CGSize = .zero, alignment: ToolbarAlignment = .center) -> CGRect {
+        let center = position(selection: selection, screenSize: screenSize, accessorySize: accessorySize, alignment: alignment)
         let combined = CGSize(width: max(size.width, accessorySize.width), height: size.height + accessorySize.height)
         return CGRect(x: center.x - combined.width / 2, y: center.y - combined.height / 2,
                       width: combined.width, height: combined.height)

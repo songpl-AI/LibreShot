@@ -106,6 +106,7 @@ struct EditorToolbarView: View {
         case .complete:
             label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
         case .save: label = "保存到预设目录"
+        case .pin: label = "贴图到屏幕：在截图位置显示，可滚轮缩放"
         case .mosaic: label = "马赛克：支持涂抹和框选，拖动时预览；在属性栏切换"
         case .blur: label = "模糊：支持涂抹和框选，拖动时预览；在属性栏切换"
         case .style: label = viewModel.propertyTitle
@@ -374,6 +375,7 @@ struct CompactPropertySlider: View {
     @State private var originalDraft = ""
     @State private var inputID = UUID()
     @FocusState private var focused: Bool
+    @State private var hovered = false
 
     static func formatted(_ value: CGFloat) -> String {
         String(format: value.rounded() == value ? "%.0f" : "%.1f", Double(value))
@@ -404,6 +406,15 @@ struct CompactPropertySlider: View {
                 else { viewModel.endToolPropertyAdjustment() }
             }
             .accessibilityLabel(title).accessibilityValue("\(Self.formatted(value))")
+            .overlay(PropertyWheelOverlay(value: value, range: range,
+                enabled: !viewModel.isToolPropertyInputActive,
+                target: "\(viewModel.propertyTool?.rawValue ?? ""):\(viewModel.selectedAnnotationID?.uuidString ?? "")",
+                begin: { viewModel.beginToolPropertyAdjustment(owner: inputID) },
+                end: { viewModel.endToolPropertyAdjustment(owner: inputID) },
+                change: action))
+            .onHover { hovered = $0 }
+            .help("\(title)：\(Self.formatted(value))；滚轮调整")
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.accentColor.opacity(hovered ? 0.5 : 0), lineWidth: 1).allowsHitTesting(false))
             .overlay(alignment: .bottom) {
                 GeometryReader { geometry in
                     Path { path in
@@ -432,6 +443,64 @@ struct CompactPropertySlider: View {
             if focused { draft = Self.formatted(value); originalDraft = draft; focused = false }
         }
         .onDisappear { viewModel.endToolPropertyValueEditing(inputID) }
+    }
+}
+
+/// The overlay is hit only by wheel events, leaving native slider clicking/dragging intact.
+struct PropertyWheelOverlay: NSViewRepresentable {
+    let value: CGFloat
+    let range: ClosedRange<CGFloat>
+    let enabled: Bool
+    let target: String
+    let begin: () -> Void
+    let end: () -> Void
+    let change: (CGFloat) -> Void
+    func makeNSView(context: Context) -> PropertyWheelView { PropertyWheelView() }
+    func updateNSView(_ view: PropertyWheelView, context: Context) {
+        if view.target != target || (!enabled && view.enabled) { view.finish() }
+        view.target = target
+        view.value = value; view.range = range; view.enabled = enabled
+        view.begin = begin; view.end = end; view.change = change
+    }
+    static func dismantleNSView(_ view: PropertyWheelView, coordinator: ()) { view.finish() }
+}
+
+final class PropertyWheelView: NSView {
+    var value: CGFloat = 0
+    var range: ClosedRange<CGFloat> = 0...1
+    var enabled = true
+    var target = ""
+    var begin: () -> Void = {}
+    var end: () -> Void = {}
+    var change: (CGFloat) -> Void = { _ in }
+    private var remainder: CGFloat = 0
+    private var adjusting = false
+    private var finishTask: DispatchWorkItem?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard NSApp.currentEvent?.type == .scrollWheel else { return nil }
+        return super.hitTest(point)
+    }
+    override func scrollWheel(with event: NSEvent) {
+        // Consume the wheel here even when blocked, so it cannot scale the image.
+        guard enabled, !(NSApp.keyWindow is NSColorPanel), event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+              event.momentumPhase.isEmpty else { return }
+        remainder += event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 8 : event.scrollingDeltaY
+        let steps = remainder.rounded(.towardZero)
+        remainder -= steps
+        guard steps != 0 else { return }
+        let next = min(range.upperBound, max(range.lowerBound, value + steps))
+        guard next != value else { return }
+        if !adjusting { begin(); adjusting = true }
+        value = next; change(next)
+        finishTask?.cancel()
+        let task = DispatchWorkItem { [weak self] in self?.finish() }
+        finishTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
+    }
+    func finish() {
+        finishTask?.cancel(); finishTask = nil; remainder = 0
+        if adjusting { adjusting = false; end() }
     }
 }
 

@@ -213,6 +213,8 @@ struct EffectRenderingChecks {
         precondition(m.effectPreview == nil)
         print("PASS: mosaic/blur brush and rectangle live frames, hit testing, move, undo and export")
 
+        checkFirstEffectPreviewAlignment()
+
         let output = URL(fileURLWithPath: "/tmp/libreshot-effects-qa")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         for (name, image) in [("source", source), ("mosaic", result), ("blur", blurred)] {
@@ -220,5 +222,65 @@ struct EffectRenderingChecks {
             try rep.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent(name + ".png"))
         }
         print("PASS: visual samples exported to /tmp/libreshot-effects-qa")
+    }
+
+    @MainActor static func checkFirstEffectPreviewAlignment() {
+        let context = CGContext(data: nil, width: 480, height: 320, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        // Encode position in both axes: uniform colours and vertical stripes hide shifts.
+        for y in 0..<320 { for x in 0..<480 {
+            context.setFillColor(CGColor(red: CGFloat(x % 64) / 63, green: CGFloat(y % 64) / 63,
+                                        blue: 0.4, alpha: 1))
+            context.fill(CGRect(x: x, y: y, width: 1, height: 1))
+        } }
+        let source = context.makeImage()!, original = pixels(source)
+        let suite = "LibreShot.EffectAlignment.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for scale: CGFloat in [1, 2, 1.5] {
+            for selection in [CGRect(x: 25, y: 20, width: 170, height: 120),
+                              CGRect(x: 25.3, y: 19.7, width: 170.4, height: 120.6),
+                              CGRect(x: 25, y: 20, width: 170.4, height: 120.6)] {
+                for tool in [AnnotationType.mosaic, .blur] {
+                    let model = OverlayViewModel(settings: SettingsService(defaults: defaults))
+                    model.selectionRect = selection; model.state = .editing
+                    model.updatePreviewImage(source, scale: scale)
+                    model.setEffectDrawingMode(.brush, for: tool)
+                    model.handleDrawingDrag(from: CGPoint(x: 60, y: 50), to: CGPoint(x: 145, y: 100))
+                    let deadline = Date().addingTimeInterval(4)
+                    while model.effectPreview == nil && Date() < deadline {
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+                    }
+                    guard let preview = model.effectPreview, let stroke = model.currentAnnotation else {
+                        preconditionFailure("first effect preview must finish before pointer-up")
+                    }
+                    let display = model.effectPreviewRect
+                    let originX = display.minX * scale, originY = display.minY * scale
+                    precondition(abs(originX - originX.rounded()) < 0.000001
+                                 && abs(originY - originY.rounded()) < 0.000001,
+                                 "effect preview must align with the source pixel grid: \(tool), \(scale), \(selection)")
+                    precondition(abs(display.width * scale - CGFloat(preview.width)) < 0.000001
+                                 && abs(display.height * scale - CGFloat(preview.height)) < 0.000001,
+                                 "effect preview must retain the source pixel scale")
+                    let actual = pixels(preview)
+                    var checked = 0
+                    for y in 0..<preview.height { for x in 0..<preview.width {
+                        let gx = Int(originX.rounded()) + x, gy = Int(originY.rounded()) + y
+                        let point = CGPoint(x: (CGFloat(gx) + 0.5) / scale,
+                                            y: (CGFloat(gy) + 0.5) / scale)
+                        // Far from the diagonal stroke, inside the redrawn bounding box.
+                        guard point.x < 85, point.y > 82, !stroke.containsSelectionPoint(point) else { continue }
+                        let i = (y * preview.width + x) * 4, j = (gy * source.width + gx) * 4
+                        precondition(actual[i..<(i + 4)].elementsEqual(original[j..<(j + 4)]),
+                                     "first preview must not shift untouched source pixels: \(tool), \(scale), \(selection)")
+                        checked += 1
+                    } }
+                    precondition(checked > 0, "alignment check must sample untouched pixels")
+                    model.reset()
+                }
+            }
+        }
+        print("PASS: first mosaic/blur preview preserves untouched pixels at fractional origins, sizes and scales")
     }
 }

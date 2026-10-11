@@ -548,8 +548,8 @@ class CaptureService {
     }
     
     /// Apply the final outline after annotation compositing, in physical pixels.
-    func styledImage(_ image: NSImage) -> NSImage {
-        guard settings.useRoundedCorners,
+    func styledImage(_ image: NSImage, useRoundedCorners: Bool? = nil) -> NSImage {
+        guard (useRoundedCorners ?? settings.useRoundedCorners),
               let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               image.size.width > 0, image.size.height > 0,
               let context = CGContext(data: nil, width: source.width, height: source.height,

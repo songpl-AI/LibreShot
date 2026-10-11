@@ -52,6 +52,12 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         return CaptureService.shared.composite(image: background, annotations: model.annotations)
     }
 
+    func editableImageSource() -> (image: NSImage, annotations: [Annotation])? {
+        guard let image else { return nil }
+        let source = model.imageForExport().map { NSImage(cgImage: $0, size: image.size) } ?? image
+        return (source, model.annotations)
+    }
+
     private func perform(_ action: CaptureAction, base: CGImage?) {
         guard !actionInFlight, model.canExportSelection, let onAction else { return }
         actionInFlight = true

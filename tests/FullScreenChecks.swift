@@ -97,6 +97,7 @@ import AppKit
         settings.autoSaveEnabled = false
         delegate.perform(NSSelectorFromString("captureFullScreen"))
         check(await waitFor({ editor() != nil }))
+        precondition(editor()!.model.beginConfirmationClick(at: CGPoint(x: 150, y: 150)))
         precondition(editor()!.model.confirmDoubleClick(at: CGPoint(x: 150, y: 150)))
         check(await waitFor({ editor() == nil }))
         precondition(files().count == count && NSPasteboard.general.changeCount > clipboard)
@@ -132,5 +133,30 @@ import AppKit
             placed.close()
         }
         print("PASS: left/above/below displays, fallback, and editor placement on target screen")
+        delegate.perform(NSSelectorFromString("captureFullScreen"))
+        check(await waitFor({ editor() != nil }))
+        let pinEditor = editor()!
+        pinEditor.model.selectTool(.rectangle)
+        pinEditor.model.startDrawing(at: CGPoint(x: 20, y: 20))
+        pinEditor.model.updateDrawing(to: CGPoint(x: 100, y: 80))
+        pinEditor.model.endDrawing()
+        let pinnedAnnotation = pinEditor.model.annotations[0]
+        let targetVisible = (pinEditor.window!.screen ?? NSScreen.main)!.visibleFrame
+        let beforePinFiles = files().count, beforePinCopy = NSPasteboard.general.changeCount
+        pinEditor.model.confirmPin()
+        check(await waitFor({ NSApp.windows.contains { $0.isVisible && $0.windowController is PinnedImageWindowController } }))
+        let pinned = NSApp.windows.first { $0.isVisible && $0.windowController is PinnedImageWindowController }!
+        precondition(pinned.frame.size == image.size)
+        let pinController = pinned.windowController as! PinnedImageWindowController
+        precondition(pinController.pinDocument.annotations == [pinnedAnnotation], "production pin action must retain editable annotations")
+        pinController.beginEditing()
+        precondition(pinController.presentation.editor!.annotations == [pinnedAnnotation])
+        pinController.cancelEditing()
+        precondition(abs(pinned.frame.midX - targetVisible.midX) < 1
+                     && abs(pinned.frame.midY - targetVisible.midY) < 1)
+        precondition(files().count == beforePinFiles && NSPasteboard.general.changeCount == beforePinCopy)
+        (pinned.windowController as! PinnedImageWindowController).close()
+        pinEditor.close()
+        print("PASS: production editor-to-pin action uses the editor screen without saving or replacing the clipboard")
     }
 }

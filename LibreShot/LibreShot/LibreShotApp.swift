@@ -475,7 +475,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 SoundService.shared.playCaptureSound()
 
-                try await handleImageAction(outputImage, action: action)
+                try await handleImageAction(outputImage, action: action, sourceRect: globalRect,
+                    pinDocument: action == .pin ? PinnedImageDocument(baseImage: cropped, annotations: annotations, origin: rect.origin) : nil)
             } catch is CancellationError {
             } catch {
                 await handleCaptureError(error)
@@ -486,9 +487,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func showImageEditor(_ image: NSImage, on screen: NSScreen? = nil) {
         let editor = ImageEditorWindowController(image: image, screen: screen)
-        editor.onAction = { [weak self] image, action in
+        editor.onAction = { [weak self, weak editor] image, action in
             guard let self else { return }
-            try await self.handleImageAction(image, action: action)
+            let source = action == .pin ? editor?.editableImageSource() : nil
+            let document = source.map { PinnedImageDocument(baseImage: $0.image, annotations: $0.annotations) }
+            try await self.handleImageAction(image, action: action, preferredScreen: editor?.window?.screen,
+                                            pinDocument: action == .pin ? document : nil)
         }
         editor.onClose = { [weak self, weak editor] in
             self?.imageEditors.removeAll { $0 === editor }
@@ -503,7 +507,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func handleImageAction(_ outputImage: NSImage, action: CaptureAction) async throws {
+    private func handleImageAction(_ outputImage: NSImage, action: CaptureAction,
+                                   sourceRect: CGRect? = nil, preferredScreen: NSScreen? = nil,
+                                   pinDocument: PinnedImageDocument? = nil) async throws {
         switch action {
         case .save:
             _ = try await saveImage(outputImage)
@@ -527,7 +533,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showAlert(title: "已复制，但自动保存失败", message: "截图仍在剪贴板中，可粘贴使用。\n\(error.localizedDescription)")
             }
         case .pin:
-            let pinnedWindow = PinnedImageWindowController(image: CaptureService.shared.styledImage(outputImage))
+            let pinnedWindow = PinnedImageWindowController(image: CaptureService.shared.styledImage(outputImage),
+                                                          sourceRect: sourceRect, document: pinDocument, screen: preferredScreen)
             pinnedWindow.onClose = { [weak self, weak pinnedWindow] in
                 self?.pinnedWindows.removeAll { $0 === pinnedWindow }
             }

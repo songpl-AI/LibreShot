@@ -48,7 +48,14 @@ struct ToolbarSettingsView: View {
             Text("勾选、拖动排序，并在同一行设置快捷键。窄窗口会自动换行。")
                 .font(.callout)
                 .foregroundColor(.secondary)
+            Text("新用户默认按 ⌘P 贴图；已有快捷键配置保留，可在“贴图到屏幕”一行设置。")
+                .font(.caption).foregroundColor(.secondary)
 
+            Picker("浮动工具栏位置", selection: $settings.toolbarAlignment) {
+                ForEach(ToolbarAlignment.allCases, id: \.self) { alignment in
+                    Text(alignment.title).tag(alignment)
+                }
+            }
             Picker("截图后的默认工具", selection: Binding(
                 get: { settings.defaultEditorTool },
                 set: { settings.setDefaultEditorTool($0) }

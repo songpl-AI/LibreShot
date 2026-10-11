@@ -3,6 +3,7 @@ import SwiftUI
 struct OverlayView: View {
     @ObservedObject var viewModel: OverlayViewModel
     var showsToolbar = true
+    var imageOpacity: Double = 1
 
     var body: some View {
         GeometryReader { geometry in
@@ -13,6 +14,7 @@ struct OverlayView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geometry.size.width, height: geometry.size.height)
+                        .opacity(imageOpacity)
                         .allowsHitTesting(false)
                 }
                 if viewModel.translationSource != nil, !viewModel.showsOriginalTranslation,
@@ -29,6 +31,7 @@ struct OverlayView: View {
                         context.clip(to: Path(roundedRect: viewModel.selectionRect, cornerRadius: viewModel.selectionCornerRadius))
                         context.draw(Image(decorative: effects, scale: viewModel.previewScale, orientation: .up), in: viewModel.effectPreviewRect)
                     }
+                    .opacity(imageOpacity)
                     .allowsHitTesting(false)
                 }
 
@@ -46,6 +49,7 @@ struct OverlayView: View {
                 if viewModel.state == .editing {
                     Canvas { context, size in
                         var drawingContext = context
+                        drawingContext.opacity *= imageOpacity
                         drawingContext.clip(to: Path(roundedRect: viewModel.selectionRect, cornerRadius: viewModel.selectionCornerRadius))
                         // Control points remain outside this clip so they are always visible.
                         for annotation in viewModel.annotations {
@@ -135,7 +139,7 @@ struct OverlayView: View {
                     let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: geometry.size.width - 20)
                     let accessorySize = editorAccessorySize(screenSize: geometry.size)
                     let toolbarPos = layout.position(selection: viewModel.selectionRect, screenSize: geometry.size,
-                                                     accessorySize: accessorySize)
+                                                     accessorySize: accessorySize, alignment: viewModel.toolbarAlignment)
                     let accessoriesAbove = toolbarPos.y < viewModel.selectionRect.midY
                     VStack(spacing: 0) {
                         if accessoriesAbove { editorAccessories(screenSize: geometry.size) }
@@ -354,7 +358,7 @@ struct OverlayView: View {
         guard showsToolbar && viewModel.state == .editing else { return .null }
         let layout = ToolbarLayout(items: viewModel.visibleToolbarItems, availableWidth: screenSize.width - 20)
         let accessory = editorAccessorySize(screenSize: screenSize)
-        return layout.frame(selection: viewModel.selectionRect, screenSize: screenSize, accessorySize: accessory)
+        return layout.frame(selection: viewModel.selectionRect, screenSize: screenSize, accessorySize: accessory, alignment: viewModel.toolbarAlignment)
     }
 
     @ViewBuilder private func editorAccessories(screenSize: CGSize) -> some View {

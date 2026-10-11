@@ -11,6 +11,7 @@ struct EditorShortcut: Codable, Equatable {
         ToolbarItem.save.rawValue: .init(keyCode: kVK_ANSI_S, modifiers: cmdKey),
         ToolbarItem.saveAs.rawValue: .init(keyCode: kVK_ANSI_S, modifiers: cmdKey | shiftKey),
         ToolbarItem.complete.rawValue: .init(keyCode: kVK_Return, modifiers: 0),
+        ToolbarItem.pin.rawValue: .init(keyCode: kVK_ANSI_P, modifiers: cmdKey),
         ToolbarItem.undo.rawValue: .init(keyCode: kVK_ANSI_Z, modifiers: cmdKey)
     ]
 
