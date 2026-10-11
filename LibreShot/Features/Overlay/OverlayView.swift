@@ -211,7 +211,11 @@ struct OverlayView: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
-                        if editorToolbarFrame(screenSize: geometry.size).contains(value.startLocation) { return }
+                        guard viewModel.acceptsOverlayDrag(from: value.startLocation, excluding: editorToolbarFrame(screenSize: geometry.size)) else { return }
+                        if viewModel.isMovingSelection {
+                            viewModel.updateMoveSelection(to: value.location, within: geometry.frame(in: .named("overlay")))
+                            return
+                        }
                         if viewModel.handleTextInputPress(from: value.startLocation) { return }
                         if viewModel.handleSelectionResizeDrag(
                             from: value.startLocation, to: value.location,
@@ -230,6 +234,8 @@ struct OverlayView: View {
                         if viewModel.canToggleTranslationPreview(from: value.startLocation, to: value.location) {
                             return
                         }
+                        if viewModel.handleSelectionMoveDrag(from: value.startLocation, to: value.location,
+                                                             within: geometry.frame(in: .named("overlay"))) { return }
                         
                         if viewModel.state == .idle || viewModel.state == .selecting {
                             if viewModel.state != .selecting {
@@ -246,55 +252,9 @@ struct OverlayView: View {
                             // 2. Selection/Move Logic (No tool selected)
                             if viewModel.selectedTool == nil {
                                 let bounds = geometry.frame(in: .named("overlay"))
-                                
-                                if viewModel.isMovingSelection {
-                                    viewModel.updateMoveSelection(to: value.location, within: bounds)
-                                    return
-                                }
-                                
-                                if value.translation == .zero {
-                                    // 文字缩放手柄
-                                    if let textHandle = viewModel.selectedTextResizeHandle,
-                                       abs(value.startLocation.x - textHandle.x) <= 8,
-                                       abs(value.startLocation.y - textHandle.y) <= 8 {
-                                        viewModel.beginTextResize(at: value.startLocation)
-                                        return
-                                    }
-                                    
-                                    if viewModel.canMoveSelection(from: value.startLocation) {
-                                        viewModel.beginMoveSelection(at: value.startLocation)
-                                        viewModel.updateMoveSelection(to: value.location, within: bounds)
-                                        return
-                                    }
-                                    
-                                    if viewModel.state == .editing {
-                                        viewModel.startDrawing(at: value.location)
-                                    }
-                                } else {
-                                    if viewModel.isResizingText {
-                                        viewModel.updateTextResize(to: value.location)
-                                        return
-                                    }
-
-                                    if viewModel.isMovingSelection {
-                                        viewModel.updateMoveSelection(to: value.location, within: bounds)
-                                        return
-                                    }
-                                    
-                                    if viewModel.state != .editing {
-                                        return
-                                    }
-                                    
-                                    // Dragging selected annotation
-                                    let currentX = viewModel.currentPoint?.x ?? value.startLocation.x
-                                    let currentY = viewModel.currentPoint?.y ?? value.startLocation.y
-                                    
-                                    let deltaX = value.location.x - currentX
-                                    let deltaY = value.location.y - currentY
-                                    
-                                    viewModel.moveSelectedAnnotation(offset: CGSize(width: deltaX, height: deltaY))
-                                    
-                                    viewModel.currentPoint = value.location
+                                if viewModel.state == .editing {
+                                    viewModel.startDrawing(at: value.startLocation)
+                                    _ = viewModel.handleSelectedShapeDrag(from: value.startLocation, to: value.location, within: bounds)
                                 }
                                 return
                             }
@@ -306,15 +266,22 @@ struct OverlayView: View {
                         }
                     }
                     .onEnded { value in
-                        if editorToolbarFrame(screenSize: geometry.size).contains(value.startLocation) { return }
                         defer {
+                            viewModel.endOverlayDrag()
                             viewModel.clearAnnotationPress()
                             viewModel.endTextInputPress()
                         }
+                        guard viewModel.acceptsOverlayDrag(from: value.startLocation, excluding: editorToolbarFrame(screenSize: geometry.size)) else { return }
                         if viewModel.didCommitTextOnPress { return }
                         if viewModel.state == .selecting {
                             viewModel.endSelection()
                         } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {
+                            if viewModel.isMovingSelection {
+                                viewModel.updateMoveSelection(to: value.location, within: geometry.frame(in: .named("overlay")))
+                                viewModel.endMoveSelection()
+                                viewModel.currentPoint = nil
+                                return
+                            }
                             if viewModel.activeSelectionHandle != nil {
                                 viewModel.endResizeSelection()
                                 viewModel.currentPoint = nil

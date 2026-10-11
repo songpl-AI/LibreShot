@@ -32,8 +32,8 @@ import SwiftUI
         let original = model.selectionRect
         model.beginMoveSelection(at: CGPoint(x: 400, y: 350))
         model.updateMoveSelection(to: CGPoint(x: 450, y: 390), within: CGRect(x: 0, y: 0, width: 1200, height: 900))
-        check(!model.isMovingSelection && model.selectionRect == original,
-              "dragging empty crop interior does not move the capture")
+        check(model.isMovingSelection && model.selectionRect == original.offsetBy(dx: 50, dy: 40),
+              "dragging empty crop interior moves the capture in Select mode")
         model.endMoveSelection()
 
         let outside = CGPoint(x: 600, y: 400)

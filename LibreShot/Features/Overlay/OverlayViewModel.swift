@@ -265,7 +265,7 @@ class OverlayViewModel: ObservableObject {
         if let rect = selectedShapeRect, SelectionHandle.allCases.contains(where: {
             hitsHandle($0.position(in: rect), tolerance: 8)
         }) { return false }
-        if selectedMoveRect?.contains(point) == true || canMoveSelection(from: point) { return false }
+        if selectedMoveRect?.contains(point) == true || (canMoveSelection(from: point) && isSelectionMoveBorder(point)) { return false }
         if let arrow = annotations.first(where: { $0.id == selectedAnnotationID && $0.type == .arrow }),
            [arrow.startPoint, arrow.endPoint].contains(where: { hypot(point.x - $0.x, point.y - $0.y) <= 8 }) {
             return false
@@ -961,6 +961,7 @@ class OverlayViewModel: ObservableObject {
     func reset() {
         endToolPropertyAdjustment()
         toolPropertyInputID = nil
+        endOverlayDrag()
         toolPropertyDetailsExpanded = false
         confirmationClick = nil
         clearImageTranslation()
@@ -1226,6 +1227,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     func cursorStyle(at point: CGPoint) -> CursorStyle {
+        if isMovingSelection { return .move }
         func nearest(_ rect: CGRect, tolerance: CGFloat) -> SelectionHandle? {
             SelectionHandle.allCases.filter {
                 let p = $0.position(in: rect)
@@ -1263,7 +1265,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     func handleTextResizeDrag(from start: CGPoint, to point: CGPoint) -> Bool {
-        guard state == .editing, !isEditingText else { return false }
+        guard state == .editing, !isEditingText, !isMovingSelection, !isTransformingShape else { return false }
         if !isResizingText {
             guard let handle = selectedTextResizeHandle,
                   abs(start.x - handle.x) <= 8, abs(start.y - handle.y) <= 8 else { return false }
@@ -1479,20 +1481,40 @@ class OverlayViewModel: ObservableObject {
         guard captureMode != .imageEditor, selectedTool == nil, !isEditingText,
               state == .editing || state == .longCaptureReady,
               !selectionRect.isEmpty, hitTest(at: point) == nil else { return false }
-        let tolerance: CGFloat = 6
-        let outer = selectionRect.insetBy(dx: -tolerance, dy: -tolerance)
-        let inner = selectionRect.insetBy(dx: tolerance, dy: tolerance)
-        guard outer.contains(point), !inner.contains(point) else { return false }
-        // The visible eight resize handles take precedence over the move band.
+        guard selectionRect.insetBy(dx: -6, dy: -6).contains(point),
+              selectedMoveRect?.contains(point) != true else { return false }
+        // Annotation controls and the eight crop handles retain priority.
+        if let handle = selectedTextResizeHandle,
+           abs(point.x - handle.x) <= 8 && abs(point.y - handle.y) <= 8 { return false }
+        if let arrow = annotations.first(where: { $0.id == selectedAnnotationID && $0.type == .arrow }),
+           [arrow.startPoint, arrow.endPoint].contains(where: { hypot(point.x - $0.x, point.y - $0.y) <= 8 }) { return false }
         return !SelectionHandle.allCases.contains { handle in
             let position = handle.position(in: selectionRect)
             return abs(point.x - position.x) <= 10 && abs(point.y - position.y) <= 10
         }
     }
 
+    private func isSelectionMoveBorder(_ point: CGPoint) -> Bool {
+        selectionRect.insetBy(dx: -6, dy: -6).contains(point)
+            && !selectionRect.insetBy(dx: 6, dy: 6).contains(point)
+    }
+
+    /// Begin from the original down point even if the first callback already moved.
+    @discardableResult
+    func handleSelectionMoveDrag(from start: CGPoint, to point: CGPoint, within bounds: CGRect) -> Bool {
+        guard activeSelectionHandle == nil, !isResizingText, !isTransformingShape, !hasDrawingGesture else { return false }
+        if !isMovingSelection {
+            guard canMoveSelection(from: start) else { return false }
+            beginMoveSelection(at: start)
+        }
+        updateMoveSelection(to: point, within: bounds)
+        return true
+    }
+
     func beginMoveSelection(at point: CGPoint) {
         guard canMoveSelection(from: point) else { return }
         isMovingSelection = true
+        selectionMoveHasDragged = false
         selectionDragStartPoint = point
         selectionDragStartRect = selectionRect
     }
@@ -1501,10 +1523,13 @@ class OverlayViewModel: ObservableObject {
         guard isMovingSelection else { return }
         let deltaX = point.x - selectionDragStartPoint.x
         let deltaY = point.y - selectionDragStartPoint.y
-        let maxX = max(bounds.width - selectionDragStartRect.width, 0)
-        let maxY = max(bounds.height - selectionDragStartRect.height, 0)
-        let newX = min(max(selectionDragStartRect.minX + deltaX, 0), maxX)
-        let newY = min(max(selectionDragStartRect.minY + deltaY, 0), maxY)
+        selectionMoveHasDragged = selectionMoveHasDragged || hypot(deltaX, deltaY) >= annotationClickTolerance
+        guard selectionMoveHasDragged else { return }
+        cancelConfirmationClick()
+        let maxX = max(bounds.maxX - selectionDragStartRect.width, bounds.minX)
+        let maxY = max(bounds.maxY - selectionDragStartRect.height, bounds.minY)
+        let newX = min(max(selectionDragStartRect.minX + deltaX, bounds.minX), maxX)
+        let newY = min(max(selectionDragStartRect.minY + deltaY, bounds.minY), maxY)
         let newRect = CGRect(x: newX, y: newY, width: selectionDragStartRect.width, height: selectionDragStartRect.height)
         let offset = CGSize(width: newRect.minX - selectionRect.minX, height: newRect.minY - selectionRect.minY)
         selectionRect = newRect
@@ -1514,6 +1539,7 @@ class OverlayViewModel: ObservableObject {
 
     func endMoveSelection() {
         isMovingSelection = false
+        selectionMoveHasDragged = false
     }
 
     var canResizeSelection: Bool {
@@ -1620,12 +1646,22 @@ class OverlayViewModel: ObservableObject {
         isMovingSelection || activeSelectionHandle != nil
     }
 
+    private var overlayDragAccepted: Bool?
+    /// Decide once at pointer-down. Following toolbars cannot steal an active drag.
+    func acceptsOverlayDrag(from start: CGPoint, excluding toolbar: CGRect) -> Bool {
+        if overlayDragAccepted == nil { overlayDragAccepted = !toolbar.contains(start) }
+        return overlayDragAccepted == true
+    }
+
+    func endOverlayDrag() { overlayDragAccepted = nil }
+
     private var selectionDragStartRect: CGRect = .zero
     private var selectionDragStartPoint: CGPoint = .zero
+    private var selectionMoveHasDragged = false
 
     private func moveAllAnnotations(offset: CGSize) {
         guard offset.width != 0 || offset.height != 0 else { return }
-        annotations = annotations.map { annotation in
+        func moved(_ annotation: Annotation) -> Annotation {
             var updated = annotation
             updated.startPoint.x += offset.width
             updated.startPoint.y += offset.height
@@ -1636,16 +1672,20 @@ class OverlayViewModel: ObservableObject {
             }
             return updated
         }
-        if var current = currentAnnotation {
-            current.startPoint.x += offset.width
-            current.startPoint.y += offset.height
-            current.endPoint.x += offset.width
-            current.endPoint.y += offset.height
-            if current.type == .pen || current.type == .mosaic || current.type == .blur {
-                current.points = current.points.map { CGPoint(x: $0.x + offset.width, y: $0.y + offset.height) }
+        func movedUndo(_ action: AnnotationUndo) -> AnnotationUndo {
+            switch action {
+            case .remove: return action
+            case .restore(let annotation, let index): return .restore(moved(annotation), index)
+            case .numbered(let wrapped, let next, let last, let font, let color, let style):
+                return .numbered(movedUndo(wrapped), next, last, font, color, style)
+            case .effect(let wrapped, let block, let width, let radius):
+                return .effect(movedUndo(wrapped), block, width, radius)
             }
-            currentAnnotation = current
         }
+        annotations = annotations.map(moved)
+        // Historical object snapshots must stay in the same coordinate system as the crop.
+        annotationUndo = annotationUndo.map(movedUndo)
+        if let current = currentAnnotation { currentAnnotation = moved(current) }
     }
 
     private func moveEditingTextPosition(offset: CGSize) {
