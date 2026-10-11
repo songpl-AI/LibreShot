@@ -29,7 +29,7 @@ Packages use ad-hoc signing and are not notarized, so macOS may block opening th
 
 1. Choose area, full-screen or scrolling capture from the menu bar, or use a shortcut.
 2. Select a region and annotate it. Tool properties appear automatically; rounded corners are in Rectangle Properties.
-3. Double-click the selected image, press Return or click ✅ to finish. New users copy only by default. Use `⌘S` to save, `⌘⇧S` for Save As, or `Esc` to cancel.
+3. Double-click a blank area inside the selection, press Return or click ✅ to finish. New users copy only by default. Use `⌘S` to save, `⌘⇧S` for Save As, or `Esc` to cancel.
 
 | Action | Default shortcut |
 | --- | --- |

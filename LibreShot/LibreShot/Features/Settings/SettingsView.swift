@@ -194,6 +194,11 @@ struct GeneralSettingsView: View {
                     
                     Divider()
                     
+                    SettingsRow("截图音效:") {
+                        Toggle("完成截图时播放音效", isOn: $settings.playSound)
+                    }
+                    Divider()
+
                     SettingsRow("长截图:") {
                         Toggle("完成后进入标注编辑", isOn: $settings.editLongCaptureAfterFinish)
                     }
@@ -395,8 +400,8 @@ struct ShortcutSettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
-                    Toggle("框选后双击完成截图", isOn: $settings.doubleClickCompletesCapture)
-                    Text("双击选区即可完成，遵循自动保存设置；适用于所有标注工具。关闭后双击文字或序号可编辑。")
+                    Toggle("双击选区空白处完成截图", isOn: $settings.doubleClickCompletesCapture)
+                    Text("适用于所有标注工具，遵循自动保存设置；双击已有文字或序号仍可编辑，编辑输入框及标注控制点不会触发完成。")
                         .font(.caption).foregroundStyle(.secondary)
                     Picker("编辑时空格", selection: $settings.editorSpaceAction) {
                         ForEach(EditorSpaceAction.allCases, id: \.self) { action in

@@ -216,18 +216,54 @@ class OverlayViewModel: ObservableObject {
     
     // MARK: - Finalize
 
-    private var confirmationClick: (point: CGPoint, annotations: [Annotation], undoCount: Int)?
+    private struct ConfirmationClick {
+        let point: CGPoint
+        let selection: CGRect
+        let tool: AnnotationType?
+        let annotations: [Annotation]
+        let undoCount: Int
+    }
+    private var confirmationClick: ConfirmationClick?
 
     func canConfirmDoubleClick(at point: CGPoint) -> Bool {
         settings.doubleClickCompletesCapture && state == .editing
             && !selectionRect.isEmpty && selectionRect.contains(point)
+            && !isEditingText && !isResizingText && !isMovingSelection
+            && activeSelectionHandle == nil && !isTransformingShape
+            && isConfirmationBlank(at: point, annotations: annotations)
     }
 
-    /// Observe the first click without delaying drawing or text input. Only the
-    /// number tool creates a valid annotation on a stationary first click.
-    func beginConfirmationClick(at point: CGPoint) {
-        confirmationClick = canConfirmDoubleClick(at: point) && selectedTool == .number && !isEditingText
-            ? (point, annotations, annotationUndo.count) : nil
+    private func isConfirmationBlank(at point: CGPoint, annotations: [Annotation]) -> Bool {
+        guard !annotations.contains(where: { isPoint(point, in: $0) }) else { return false }
+        func hitsHandle(_ position: CGPoint, tolerance: CGFloat) -> Bool {
+            abs(point.x - position.x) <= tolerance && abs(point.y - position.y) <= tolerance
+        }
+        if canResizeSelection, SelectionHandle.allCases.contains(where: {
+            hitsHandle($0.position(in: selectionRect), tolerance: 10)
+        }) { return false }
+        if let position = selectedTextResizeHandle, hitsHandle(position, tolerance: 8) { return false }
+        if let rect = selectedShapeRect, SelectionHandle.allCases.contains(where: {
+            hitsHandle($0.position(in: rect), tolerance: 8)
+        }) { return false }
+        if selectedMoveRect?.contains(point) == true || canMoveSelection(from: point) { return false }
+        if let arrow = annotations.first(where: { $0.id == selectedAnnotationID && $0.type == .arrow }),
+           [arrow.startPoint, arrow.endPoint].contains(where: { hypot(point.x - $0.x, point.y - $0.y) <= 8 }) {
+            return false
+        }
+        return true
+    }
+
+    /// Remember blank space before the first click can create text or a number.
+    @discardableResult
+    func beginConfirmationClick(at point: CGPoint) -> Bool {
+        confirmationClick = canConfirmDoubleClick(at: point)
+            ? ConfirmationClick(point: point, selection: selectionRect, tool: selectedTool,
+                                annotations: annotations, undoCount: annotationUndo.count) : nil
+        return confirmationClick != nil
+    }
+
+    func cancelConfirmationClick() {
+        confirmationClick = nil
     }
 
     func endConfirmationClick(at point: CGPoint) {
@@ -238,15 +274,26 @@ class OverlayViewModel: ObservableObject {
 
     @discardableResult
     func confirmDoubleClick(at point: CGPoint) -> Bool {
-        guard canConfirmDoubleClick(at: point) else { return false }
-        if let click = confirmationClick, hypot(point.x - click.point.x, point.y - click.point.y) < 5,
-           annotations.count == click.annotations.count + 1,
-           Array(annotations.dropLast()) == click.annotations,
-           annotations.last?.type == .number, annotationUndo.count == click.undoCount + 1 {
+        let click = confirmationClick
+        confirmationClick = nil
+        guard let click, settings.doubleClickCompletesCapture, state == .editing,
+              selectionRect == click.selection, selectionRect.contains(point), selectedTool == click.tool,
+              hypot(point.x - click.point.x, point.y - click.point.y) < 5,
+              !isResizingText, !isMovingSelection, activeSelectionHandle == nil, !isTransformingShape,
+              isConfirmationBlank(at: point, annotations: click.annotations) else { return false }
+        // A blank first click may open a new empty text editor. Existing editors
+        // never arm confirmation; actual input still takes priority over export.
+        if isEditingText {
+            guard click.tool == .text, editingTextAnnotationID == nil, editingTextContent.isEmpty else { return false }
+        }
+        let placedNumber = click.tool == .number && annotations.count == click.annotations.count + 1
+            && Array(annotations.dropLast()) == click.annotations && annotations.last?.type == .number
+            && annotationUndo.count == click.undoCount + 1
+        guard placedNumber || (annotations == click.annotations && annotationUndo.count == click.undoCount) else { return false }
+        if placedNumber {
             undoLastAnnotation()
         }
-        confirmationClick = nil
-        // Confirmation wins over text selection/editing and every drawing tool.
+        if isEditingText { cancelTextInput() }
         currentAnnotation = nil
         pendingDrawing = nil
         clearAnnotationPress()

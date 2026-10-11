@@ -16,12 +16,12 @@ Selecting a tool or existing annotation shows its properties automatically. Each
 - **Select and adjust**: Click an annotation to select it; click rectangle/ellipse outlines. Drag to move, use handles to resize, or adjust arrow endpoints. Delete/Backspace removes the selection; `⌘Z` undoes. Select/Move or clicking the active tool again returns to selection mode.
 - **Text**: Choose Text, click the image and type inline. Return inserts a line break; click empty space to commit. Resize selected text with its bottom-right handle.
 - **Numbers**: Click to place incrementing numbers. Set filled/outlined style, size and independent border, fill and digit colors. Choose a color target, then use the shared palette. Outline mode hides fill options; filled numbers can have no border, and digits support automatic coloring. Switching modes retains the fill preference.
-- **Edit numbers**: Disable Double-click to finish capture to double-click and edit text or numbers. Numbers accept 1–9999; Return commits and Esc cancels the edit. Setting N makes the next number N+1. Resize with the bottom-right handle. Deleting the most recently placed or edited number can roll back the next number; deleting a middle number does not renumber others.
+- **Edit numbers**: Double-click existing text or numbers to edit, even when double-click completion is enabled. Numbers accept 1–9999; Return commits and Esc cancels the edit. Setting N makes the next number N+1. Resize with the bottom-right handle. Deleting the most recently placed or edited number can roll back the next number; deleting a middle number does not renumber others.
 - **Mosaic and blur**: Choose Brush or Rectangle in the property bar, then set brush size, block size or blur strength. Continue brushing after releasing the pointer; use Select/Move to edit existing strokes.
 
 ## Finish, copy and save
 
-Double-click the selected image, press Return or click ✅ to finish. Auto Save is off for new users, so finishing copies only; upgrades preserve existing choices. Enabling it copies and saves on completion.
+Double-click a blank area inside the selection, press Return or click ✅ to finish. Auto Save is off for new users, so finishing copies only; upgrades preserve existing choices. Enabling it copies and saves on completion.
 
 - `⌘S` / Save always writes to the configured folder independently of Auto Save.
 - `⌘⇧S` / Save As opens a dialog starting in that folder, with a choice of name and location.
@@ -29,7 +29,7 @@ Double-click the selected image, press Return or click ✅ to finish. Auto Save 
 - Saving an area capture ends that session; manual saving in the full-screen editor keeps it open.
 - Esc cancels a capture, including while entering text. While editing a number, it first cancels the number edit; press again to cancel the capture.
 
-Disable double-click completion to restore double-click editing. Space can be Off (default), Finish, or Save & Copy. While entering text, Space and Return retain their normal input behavior.
+Double-click completion can be disabled in Settings. Double-clicks on annotations, handles, the toolbar or properties do not finish the capture, nor do double-clicks during text editing. Space can be Off (default), Finish, or Save & Copy. While entering text, Space and Return retain their normal input behavior.
 
 ## Pin and scrolling capture
 
@@ -47,6 +47,6 @@ Screenshots, OCR and translation text are processed locally. Initial language-pa
 
 ## Settings
 
-Use the menu bar or `⌘,` while LibreShot is active. Configure save folder, Auto Save, launch at login, capture corners, shortcuts, double-Option, double-click completion and Space behavior.
+Use the menu bar or `⌘,` while LibreShot is active. Configure save folder, Auto Save, launch at login, capture sound, capture corners, shortcuts, double-Option, double-click completion and Space behavior.
 
 Toolbar settings control visibility, order, editor shortcuts and the default tool. Complete and Cancel always remain visible. Changes apply to the next capture. Hiding the default tool falls back to Select/Move. Restore Defaults resets visibility, order and the default tool.

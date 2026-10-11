@@ -469,8 +469,8 @@ struct OverlayView: View {
 
 }
 
-/// Intercept the second mouse-down before SwiftUI drawing gestures or NSTextView
-/// double-click editing. The observer never consumes ordinary clicks or drags.
+/// Complete only a double-click that began on blank canvas. Annotation editing,
+/// ordinary clicks and drags retain their normal event handling.
 private struct CaptureConfirmationMouseView: NSViewRepresentable {
     let model: OverlayViewModel
     let acceptsPoint: (CGPoint) -> Bool
@@ -506,6 +506,7 @@ private final class CaptureConfirmationObserver: NSView {
             if event.type == .leftMouseDown {
                 guard self.bounds.contains(point), self.acceptsPoint?(point) == true else {
                     self.confirmationPoint = nil
+                    model.cancelConfirmationClick()
                     return event
                 }
                 if event.clickCount == 2, let first = self.confirmationPoint,
@@ -515,8 +516,13 @@ private final class CaptureConfirmationObserver: NSView {
                     self.consumesMouseUp = true
                     return nil
                 }
-                self.confirmationPoint = model.canConfirmDoubleClick(at: point) ? point : nil
-                model.beginConfirmationClick(at: point)
+                // A rejected second click belongs to editing, never a new pair.
+                if event.clickCount != 1 {
+                    self.confirmationPoint = nil
+                    model.cancelConfirmationClick()
+                    return event
+                }
+                self.confirmationPoint = model.beginConfirmationClick(at: point) ? point : nil
             } else {
                 if let first = self.confirmationPoint, hypot(point.x - first.x, point.y - first.y) >= 5 {
                     self.confirmationPoint = nil
