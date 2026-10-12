@@ -29,10 +29,27 @@
 | 本次源码及原生回归 | 通过 | 贴图位置、滚轮、Ctrl 透明度、首次点击、主栏右对齐、编辑移动、实际 PNG 保存、保留撤销、关闭释放；普通工具栏 25 组、全屏 8 组，原生全屏 Space 不跳转；详见关联设计与 QA |
 | 本包贴图编辑实际体验 | 通过（用户实测） | 用户确认五项均正常：实体 Option、调整属性后首次拖动绘制、选择工具空白移动及抓手移动、空白双击保存、收起箭头/Esc 后重开 Cmd+Z 撤销 |
 | 台前调度与跨屏专项 | 通过（观察及用户实测） | 系统开启状态、外接屏截图和编辑入口已观察；用户确认内外屏原位、跨屏移动及工具栏、缩放保存撤销、切换应用均正常，详见 [专项记录](pin-stage-manager-cross-display-20261012.md) |
-| 最终交付、发布与回退 | 本机安装及本次五项功能验收通过 | 基础截图保存和用户交互实测均通过；当前双屏配置的台前调度与跨屏组合也已通过用户实测。本轮未发布 Release、未回复或关闭 Issue。退役副本可从废纸篓恢复、旧 DMG 保留，恢复时须重新验收 |
+| 最终交付、发布与回退 | 本机安装及本次五项功能验收通过 | 基础截图保存和用户交互实测均通过；当前双屏配置的台前调度与跨屏组合也已通过用户实测。现已发布 v1.3.19 并简短回复 #22、#32–#36，均保持开放。退役副本可从废纸篓恢复、旧 DMG 保留，恢复时须重新验收 |
 
 公开成图证据为候选目录下 `installation-qa/before-restart.png` 与 `after-restart.png`。OCR 窗口已关闭，公开测试 fixture 从菜单正常退出，新版正式应用保持运行。未重新编译、替换或重签名已验收应用。
 
 ## Issue 范围
 
 详见 [Issue 核对](../design/pin-issue-followup-20261012.md)。本次额外补修 #22 调整属性后首次绘制点击与 #34 主工具栏对齐；此前 #32、#33、#35 相关改动共同进入此包。#36 最近截图召回/历史、#27 悬停高亮、#28/#37 截图前取色与 #38 菜单动作属于独立能力，另行设计；不把现有编辑期间 Cmd+P 当成全局召回。
+
+## 发布与公开下载核验
+
+2026-10-12 发布 [LibreShot 1.3.19](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.19)，正式版、非草稿，设为 Latest。标签指向 `8c8d600`，包含构建源码 `405ccac`；其后的提交只更新文档及发布记录，不改变已验收应用。
+
+中英文 README、CHANGELOG、版本说明及使用指南已更新。发布资产为原候选 DMG、SHA256SUMS 与 INSTALL-AND-PERMISSIONS.md；没有重新构建或签名。通过 GitHub Release 重新下载三份资产至 `dist/LibreShot-1.3.19-47-public-download`，逐一与原文件 SHA-256 比较一致，DMG 校验值仍为 `4efdd67f5eabd09e00f14243684a0cde5ed34d8caf85241fada2662c3b27f16a`。
+
+发送前核对已有评论，无 v1.3.19 重复回复。公开下载核验通过后，简短回复如下；未关闭任何 Issue，未实现范围在对应回复中说明。
+
+| Issue | 回复 | 状态 |
+| --- | --- | --- |
+| #22 | [版本回复](https://github.com/songpl-AI/LibreShot/issues/22#issuecomment-6119335730) | OPEN |
+| #32 | [版本回复](https://github.com/songpl-AI/LibreShot/issues/32#issuecomment-6119336241) | OPEN |
+| #33 | [版本回复](https://github.com/songpl-AI/LibreShot/issues/33#issuecomment-6119336773) | OPEN |
+| #34 | [版本回复](https://github.com/songpl-AI/LibreShot/issues/34#issuecomment-6119337273) | OPEN |
+| #35 | [版本回复](https://github.com/songpl-AI/LibreShot/issues/35#issuecomment-6119337823) | OPEN |
+| #36 | [版本回复](https://github.com/songpl-AI/LibreShot/issues/36#issuecomment-6119338284) | OPEN |
