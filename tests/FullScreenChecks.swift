@@ -151,7 +151,7 @@ import AppKit
         precondition(pinController.pinDocument.annotations == [pinnedAnnotation], "production pin action must retain editable annotations")
         pinController.beginEditing()
         precondition(pinController.presentation.editor!.annotations == [pinnedAnnotation])
-        pinController.cancelEditing()
+        pinController.finishEditing()
         precondition(abs(pinned.frame.midX - targetVisible.midX) < 1
                      && abs(pinned.frame.midY - targetVisible.midY) < 1)
         precondition(files().count == beforePinFiles && NSPasteboard.general.changeCount == beforePinCopy)

@@ -52,6 +52,8 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     private(set) var pinDocument: PinnedImageDocument
     private let settings: SettingsService
     private var editorPanel: OverlayWindow?
+    // Keep the undo history with the pin, including while its tools are hidden.
+    private var editingModel: OverlayViewModel?
     private var editorSubscriptions = Set<AnyCancellable>()
     private var opacityRemainder: CGFloat = 0
     private let displayMode: DisplayMode
@@ -129,7 +131,8 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
             },
             onEdit: displayMode == .pinned ? { [weak self] in self?.beginEditing() }
                 : onEditAction.map { action in { [weak self] in self?.close(); action() } },
-            onResetSize: { [weak self] in self?.restoreOriginalSize() }
+            onResetSize: { [weak self] in self?.restoreOriginalSize() },
+            onFinishEditing: { [weak self] in self?.finishEditing() }
         )
         let hosting = PinnedImageHostingView(rootView: contentView)
         if displayMode == .pinned {
@@ -148,6 +151,8 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     
     override func close() {
         endEditing()
+        editingModel?.reset()
+        editingModel = nil
         window?.delegate = nil
         window?.contentView = nil
         super.close()
@@ -298,19 +303,28 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
 
     func beginEditing() {
         guard displayMode == .pinned, presentation.editor == nil, let window else { return }
-        let model = OverlayViewModel(settings: settings, useRoundedCorners: pinDocument.roundedCorners)
-        model.captureMode = .imageEditor
-        model.allowsCaptureCompletion = false
+        let model: OverlayViewModel
+        if let retained = editingModel {
+            model = retained
+        } else {
+            model = OverlayViewModel(settings: settings, useRoundedCorners: pinDocument.roundedCorners)
+            model.captureMode = .imageEditor
+            model.allowsCaptureCompletion = false
+            model.selectionRect = CGRect(origin: .zero, size: pinDocument.baseImage.size)
+            let cg = pinDocument.baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            model.updatePreviewImage(cg, scale: CGFloat(cg?.width ?? 1) / max(1, pinDocument.baseImage.size.width))
+            model.loadAnnotationsForEditing(pinDocument.annotations)
+            editingModel = model
+        }
         model.state = .editing
-        model.selectionRect = CGRect(origin: .zero, size: pinDocument.baseImage.size)
-        let cg = pinDocument.baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        model.updatePreviewImage(cg, scale: CGFloat(cg?.width ?? 1) / max(1, pinDocument.baseImage.size.width))
-        model.loadAnnotationsForEditing(pinDocument.annotations)
-        model.onCancel = { [weak self] in self?.cancelEditing() }
+        model.onCancel = { [weak self] in self?.finishEditing() }
         model.onCapture = { [weak self] _, _, action, _ in
             if action == .save || action == .saveAs { self?.handleSave() }
         }
         presentation.editor = model
+        model.$annotations.sink { [weak self] annotations in
+            self?.pinDocument.annotations = annotations
+        }.store(in: &editorSubscriptions)
         (window as? PinnedImageWindow)?.editingEnabled = true
         window.isMovableByWindowBackground = false
         let panel = OverlayWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -318,15 +332,13 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         panel.level = .floating
         panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let host = NSHostingView(rootView: PinnedEditorTools(model: model, apply: { [weak self] in self?.applyEditing() },
-            cancel: { [weak self] in self?.cancelEditing() }, copy: { [weak self] in self?.handleCopy() },
-            save: { [weak self] in self?.handleSave() }))
+        let host = PinnedEditorHostingView(rootView: PinnedEditorTools(model: model))
         host.sizingOptions = []
         panel.contentView = host
         editorPanel = panel
         for keyWindow in [window as? OverlayWindow, panel].compactMap({ $0 }) {
             keyWindow.bindEditingActions(to: model)
-            keyWindow.onEscapeKey = { [weak self] in self?.cancelEditing() }
+            keyWindow.onEscapeKey = { [weak self] in self?.finishEditing() }
         }
         model.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { [weak self] in self?.positionEditorPanel() }
@@ -337,7 +349,8 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    func applyEditing() {
+    /// Hide the tools; edits are already live. Escape is not a rollback action.
+    func finishEditing() {
         guard let model = presentation.editor else { return }
         model.commitTextInput()
         guard !model.isEditingText else { return }
@@ -345,8 +358,6 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         presentation.image = pinDocument.rendered()
         endEditing()
     }
-
-    func cancelEditing() { endEditing() }
 
     private func endEditing() {
         editorSubscriptions.removeAll()
@@ -362,7 +373,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         }
         let model = presentation.editor
         presentation.editor = nil
-        model?.onCancel = nil; model?.onCapture = nil; model?.reset()
+        model?.onCancel = nil; model?.onCapture = nil
     }
 
     private func imageForAction() -> NSImage {
@@ -374,7 +385,11 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) { positionEditorPanel() }
     func windowDidResize(_ notification: Notification) { positionEditorPanel() }
-    func windowWillClose(_ notification: Notification) { endEditing() }
+    func windowWillClose(_ notification: Notification) {
+        endEditing()
+        editingModel?.reset()
+        editingModel = nil
+    }
 
     private func positionEditorPanel() {
         guard let model = presentation.editor, let panel = editorPanel, let window else { return }
@@ -383,8 +398,8 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         let tools = model.visibleToolbarItems.filter { $0.annotationType != nil || $0 == .select || $0 == .undo }
         let layout = ToolbarLayout(items: tools, availableWidth: available - 16)
         let properties = ToolPropertyBarView.size(for: model, availableWidth: available - 16)
-        let width = max(320, max(layout.size.width, properties.width) + 16)
-        let height = layout.size.height + (properties.height > 0 ? properties.height + 8 : 0) + 52
+        let width = max(layout.size.width, properties.width) + 16
+        let height = layout.size.height + (properties.height > 0 ? properties.height + 8 : 0) + 16
         let x: CGFloat
         switch model.toolbarAlignment {
         case .left: x = window.frame.minX + layout.size.width / 2 - width / 2
@@ -409,6 +424,10 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
 final class PinnedImageHostingView: NSHostingView<PinnedImageView> {
     var onScroll: ((NSEvent) -> Bool)?
     var onMagnify: ((NSEvent) -> Bool)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        rootView.presentation.editor != nil || super.acceptsFirstMouse(for: event)
+    }
 
     func isImagePoint(_ pointInWindow: CGPoint) -> Bool {
         var target = super.hitTest(convert(pointInWindow, from: nil))
@@ -438,6 +457,7 @@ struct PinnedImageView: View {
     var onSaveAs: () -> Void
     var onEdit: (() -> Void)? = nil
     var onResetSize: () -> Void = {}
+    var onFinishEditing: () -> Void = {}
     
     private var opacity: Double { presentation.opacity }
     
@@ -529,7 +549,11 @@ struct PinnedImageView: View {
             }
             if displayMode == .pinned {
                 Divider()
-                Button("编辑标注") { onEdit?() }.disabled(presentation.editor != nil)
+                if presentation.editor != nil {
+                    Button("结束编辑", action: onFinishEditing)
+                } else {
+                    Button("编辑标注") { onEdit?() }
+                }
                 Button("恢复原始大小", action: onResetSize)
             }
             Divider()
@@ -542,12 +566,14 @@ struct PinnedImageView: View {
     }
 }
 
+/// The image and its tools alternate key-window ownership. A toolbar click must
+/// activate its window and perform the action in the same gesture.
+final class PinnedEditorHostingView: NSHostingView<PinnedEditorTools> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 struct PinnedEditorTools: View {
     @ObservedObject var model: OverlayViewModel
-    let apply: () -> Void
-    let cancel: () -> Void
-    let copy: () -> Void
-    let save: () -> Void
     var body: some View {
         GeometryReader { geometry in
             let tools = model.visibleToolbarItems.filter { $0.annotationType != nil || $0 == .select || $0 == .undo }
@@ -557,13 +583,6 @@ struct PinnedEditorTools: View {
                 if model.propertyTool != nil {
                     ToolPropertyBarView(viewModel: model, availableWidth: geometry.size.width - 16)
                 }
-                HStack {
-                    Button("应用", action: apply).buttonStyle(.borderedProminent)
-                    Button("取消", action: cancel)
-                    Spacer()
-                    Button("复制", action: copy)
-                    Button("保存…", action: save)
-                }.controlSize(.small)
             }.padding(8)
         }.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
     }

@@ -193,7 +193,20 @@ import Carbon
         precondition(model.toolbarAlignment == .right && !model.allowsCaptureCompletion)
         precondition(!model.beginConfirmationClick(at: CGPoint(x: 140, y: 100)))
         precondition(!pin.window!.isMovableByWindowBackground && pin.window!.childWindows?.count == 1)
+        let toolsPanel = pin.window!.childWindows!.first!
+        RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+        let toolsHost = toolsPanel.contentView!
+        let click = NSEvent.mouseEvent(with: .leftMouseDown,
+            location: CGPoint(x: 29, y: toolsPanel.frame.height - 29), modifierFlags: [],
+            timestamp: 0, windowNumber: toolsPanel.windowNumber, context: nil,
+            eventNumber: 1, clickCount: 1, pressure: 1)!
+        let target = toolsHost.hitTest(toolsHost.convert(click.locationInWindow, from: nil))!
+        print("First-click target: \(type(of: target)), accepts=\(target.acceptsFirstMouse(for: click))")
+        precondition(target.acceptsFirstMouse(for: click),
+                     "a tool button must accept the first click while the image window owns focus")
         let imageHost = pin.window!.contentView as! PinnedImageHostingView
+        precondition(imageHost.acceptsFirstMouse(for: click),
+                     "the first drawing click must also work after selecting a tool in the other window")
         let textInput = NSTextView(frame: CGRect(x: 5, y: 5, width: 40, height: 20))
         imageHost.addSubview(textInput)
         precondition(!imageHost.isImagePoint(CGPoint(x: 10, y: 10)), "text input must not trigger image wheel gestures")
@@ -230,25 +243,34 @@ import Carbon
         let untouchedWidth = model.annotations[0].lineWidth
         property.enabled = false; property.scrollWheel(with: wheel(1)); property.finish()
         precondition(model.annotations[0].lineWidth == untouchedWidth)
-        model.annotations[0].color = .green
-        pin.cancelEditing()
-        precondition(pin.presentation.editor == nil && pin.pinDocument.annotations == doc.annotations)
+        model.selectedAnnotationID = shape.id
+        model.setColor(.green)
+        precondition(pin.pinDocument.annotations[0].color == .green,
+                     "pin edits must update the document immediately, without Apply")
+        pin.finishEditing()
+        precondition(pin.presentation.editor == nil && pin.pinDocument.annotations[0].color == .green)
         precondition(pin.window!.frame == beforeEdit && pin.presentation.opacity == beforeOpacity)
         pin.beginEditing()
-        pin.presentation.editor!.annotations[0].color = .green
-        pin.applyEditing()
+        precondition(pin.presentation.editor === model, "reopening the tools must retain undo history")
+        pin.presentation.editor!.undoLastAnnotation()
+        precondition(pin.pinDocument.annotations == doc.annotations, "undo must restore the earlier edit after reopening")
+        pin.presentation.editor!.selectedAnnotationID = shape.id
+        pin.presentation.editor!.setColor(.green)
+        pin.finishEditing()
         precondition(pin.pinDocument.annotations[0].color == .green && pin.presentation.editor == nil)
         let applied = pin.presentation.image.tiffRepresentation!
         precondition(applied != originalPixels)
-        for _ in 0..<4 { pin.beginEditing(); pin.applyEditing() }
+        for _ in 0..<4 { pin.beginEditing(); pin.finishEditing() }
         precondition(pin.pinDocument.baseImage === base, "re-editing must retain the cropped immutable base, not the rendered pixels")
         precondition(pin.presentation.image.tiffRepresentation == applied, "unchanged re-edit must not repeatedly bake effects")
         precondition(pin.window!.frame == beforeEdit && pin.presentation.opacity == beforeOpacity)
         precondition(pin.window!.childWindows?.isEmpty != false)
         weak var releasedModel: OverlayViewModel?
         autoreleasepool {
-            pin.beginEditing(); releasedModel = pin.presentation.editor
             pin.close()
+            let other = PinnedImageWindowController(image: base, document: doc, settings: settings)
+            other.beginEditing(); releasedModel = other.presentation.editor
+            other.close()
         }
         RunLoop.current.run(until: Date().addingTimeInterval(0.4))
         precondition(releasedModel == nil && pin.presentation.editor == nil)
@@ -261,11 +283,11 @@ import Carbon
                 let item = PinnedImageWindowController(image: source,
                     document: PinnedImageDocument(baseImage: source, roundedCorners: false), settings: settings)
                 closedPin = item
-                item.beginEditing(); item.cancelEditing(); item.close()
+                item.beginEditing(); item.finishEditing(); item.close()
             }
             precondition(closedPin == nil && croppedBase == nil, "closed pin windows must release their documents and cropped source")
         }
-        print("PASS: source/local annotations, number continuation, native in-place editor panel, grouped wheel undo, cancel/apply, repeated editing and model release")
+        print("PASS: source/local annotations, number continuation, native in-place editor panel, grouped wheel undo, live edits, undo across tool sessions, repeated editing and model release")
     }
 
     @MainActor static func checkPinShortcuts() {
