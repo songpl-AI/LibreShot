@@ -186,120 +186,134 @@ struct SettingsRow<Content: View>: View {
 
 struct GeneralSettingsView: View {
     @ObservedObject var settings: SettingsService
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    // 1. Launch at Login
-                    SettingsRow("启动:") {
-                        Toggle("登录时自动启动", isOn: $settings.launchAtLogin)
-                            .onChange(of: settings.launchAtLogin) { newValue in
-                                toggleLaunchAtLogin(newValue)
-                            }
-                    }
-                    
-                    Divider()
-                    
-                    SettingsRow("截图音效:") {
-                        Toggle("完成截图时播放音效", isOn: $settings.playSound)
-                    }
-                    Divider()
-
-                    SettingsRow("长截图:") {
-                        Toggle("完成后进入标注编辑", isOn: $settings.editLongCaptureAfterFinish)
-                    }
-                    Divider()
-
-                    // 2. Corner Radius
-                    SettingsRow("截图样式:") {
-                        Picker("", selection: $settings.useRoundedCorners) {
-                            Text("圆角").tag(true)
-                            Text("直角").tag(false)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 1. Launch at Login
+                        SettingsRow("启动:") {
+                            Toggle("登录时自动启动", isOn: $settings.launchAtLogin)
+                                .onChange(of: settings.launchAtLogin) { newValue in
+                                    toggleLaunchAtLogin(newValue)
+                                }
                         }
-                        .pickerStyle(.radioGroup)
-                        .horizontalRadioGroupLayout()
-                        .help("圆角输出为透明 PNG；在白色背景上查看白色截图时可能不明显。")
-                    }
-                }
-                .padding(8)
-            } label: {
-                Text("基本设置")
-                    .font(.headline)
-            }
-            
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    // 3. Save Location
-                    HStack(alignment: .top) {
-                        Text("保存位置:")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .frame(width: 80, alignment: .trailing)
-                            .padding(.top, 4)
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "folder.fill")
-                                    .foregroundColor(.blue)
-                                    .font(.system(size: 14))
-                                Text(settings.saveDirectory?.path ?? "图片 (默认)")
-                                    .font(.system(size: 13))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .foregroundColor(settings.saveDirectory == nil ? .secondary : .primary)
+
+                        Divider()
+
+                        SettingsRow("菜单栏左键:") {
+                            Picker("菜单栏左键", selection: $settings.menuBarLeftClickAction) {
+                                ForEach(MenuBarLeftClickAction.allCases) { Text($0.title).tag($0) }
+                            }.labelsHidden()
+                        }
+                        Text("右键始终显示截图菜单。")
+                            .font(.caption).foregroundStyle(.secondary).padding(.leading, 88)
+                        Divider()
+                        SettingsRow("框选辅助:") {
+                            Toggle("显示十字辅助线", isOn: $settings.showSelectionGuides)
+                        }
+                        Divider()
+
+                        SettingsRow("截图音效:") {
+                            Toggle("完成截图时播放音效", isOn: $settings.playSound)
+                        }
+                        Divider()
+
+                        SettingsRow("长截图:") {
+                            Toggle("完成后进入标注编辑", isOn: $settings.editLongCaptureAfterFinish)
+                        }
+                        Divider()
+
+                        // 2. Corner Radius
+                        SettingsRow("截图样式:") {
+                            Picker("", selection: $settings.useRoundedCorners) {
+                                Text("圆角").tag(true)
+                                Text("直角").tag(false)
                             }
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color(NSColor.controlBackgroundColor))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color(NSColor.separatorColor), lineWidth: 1)
-                            )
-                            
-                            Button("更改保存位置...") {
-                                selectFolder()
-                            }
-                            .controlSize(.small)
+                            .pickerStyle(.radioGroup)
+                            .horizontalRadioGroupLayout()
+                            .help("圆角输出为透明 PNG；在白色背景上查看白色截图时可能不明显。")
                         }
                     }
                     .padding(8)
-
-                    Divider()
-
-                    SettingsRow("自动保存:") {
-                        Toggle("完成截图时自动保存", isOn: $settings.autoSaveEnabled)
-                            .help("开启后，双击、Enter 或完成按钮复制并保存到指定目录；关闭后仅复制。手动保存始终写入指定目录，另存为可选择位置。")
-                    }
-                    .padding(8)
+                } label: {
+                    Text("基本设置")
+                        .font(.headline)
                 }
-            } label: {
-                Text("存储")
-                    .font(.headline)
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 3. Save Location
+                        HStack(alignment: .top) {
+                            Text("保存位置:")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .frame(width: 80, alignment: .trailing)
+                                .padding(.top, 4)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "folder.fill")
+                                        .foregroundColor(.blue)
+                                        .font(.system(size: 14))
+                                    Text(settings.saveDirectory?.path ?? "图片 (默认)")
+                                        .font(.system(size: 13))
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .foregroundColor(settings.saveDirectory == nil ? .secondary : .primary)
+                                }
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(NSColor.controlBackgroundColor))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                )
+
+                                Button("更改保存位置...") {
+                                    selectFolder()
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+                        .padding(8)
+
+                        Divider()
+
+                        SettingsRow("自动保存:") {
+                            Toggle("完成截图时自动保存", isOn: $settings.autoSaveEnabled)
+                                .help("开启后，双击、Enter 或完成按钮复制并保存到指定目录；关闭后仅复制。手动保存始终写入指定目录，另存为可选择位置。")
+                        }
+                        .padding(8)
+                    }
+                } label: {
+                    Text("存储")
+                        .font(.headline)
+                }
+
             }
-            
-            Spacer()
+            .padding()
         }
-        .padding()
     }
-    
+
     private func selectFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "选择"
-        
+
         panel.begin { response in
             if response == .OK, let url = panel.url {
                 settings.saveSaveDirectory(url)
             }
         }
     }
-    
+
     private func toggleLaunchAtLogin(_ enabled: Bool) {
         if #available(macOS 13.0, *) {
             do {

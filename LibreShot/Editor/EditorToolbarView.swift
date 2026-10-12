@@ -107,8 +107,8 @@ struct EditorToolbarView: View {
             label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
         case .save: label = "保存到预设目录"
         case .pin: label = "贴图到屏幕：在截图位置显示，可滚轮缩放"
-        case .mosaic: label = "马赛克：支持涂抹和框选，拖动时预览；在属性栏切换"
-        case .blur: label = "模糊：支持涂抹和框选，拖动时预览；在属性栏切换"
+        case .mosaic: label = "马赛克"
+        case .blur: label = "模糊"
         case .style: label = viewModel.propertyTitle
         case .undo where isDisabled(item): label = "撤销（当前没有标注）"
         case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
@@ -179,18 +179,18 @@ struct ToolPropertyBarView: View {
     let availableWidth: CGFloat
     @State private var numberColorRole: NumberColorRole = .fill
 
-    static let inset: CGFloat = 6
-    static let spacing: CGFloat = 6
+    static let inset: CGFloat = 4
+    static let spacing: CGFloat = 4
 
     enum Control: Hashable {
-        case color, width, corner, font, numberStyle, effectMode, brush, block, blur, details, actions
+        case color, width, corner, font, numberStyle, effectMode, brush, block, blur, details, actions, collapse
         var width: CGFloat {
             switch self {
             case .color: return 102
             case .numberStyle: return 88
             case .effectMode: return 110
-            case .details, .actions: return 28
-            default: return 148
+            case .details, .actions, .collapse: return 24
+            default: return 140
             }
         }
     }
@@ -208,7 +208,7 @@ struct ToolPropertyBarView: View {
             if model.effectDrawingMode(for: tool) == .brush { controls.append(.brush) }
             controls.append(tool == .mosaic ? .block : .blur)
         }
-        controls.append(.actions)
+        controls.append(contentsOf: [.actions, .collapse])
         let usable = max(0, availableWidth - inset * 2)
         var rows: [[Control]] = [[]]
         var used: CGFloat = 0
@@ -227,8 +227,9 @@ struct ToolPropertyBarView: View {
         guard model.propertyTool != nil else { return .zero }
         let rows = rows(for: model, availableWidth: availableWidth)
         let rowWidth = rows.map { row in row.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, row.count - 1)) * spacing }.max() ?? 0
+        if model.toolPropertiesCollapsed { return CGSize(width: min(availableWidth, 120), height: 28) }
         let detailHeight: CGFloat = model.propertyTool == .number && model.toolPropertyDetailsExpanded ? spacing + 64 : 0
-        return CGSize(width: min(availableWidth, rowWidth + inset * 2), height: inset * 2 + CGFloat(rows.count) * 28 + CGFloat(max(0, rows.count - 1)) * spacing + detailHeight)
+        return CGSize(width: min(availableWidth, rowWidth + inset * 2), height: inset * 2 + CGFloat(rows.count) * 24 + CGFloat(max(0, rows.count - 1)) * spacing + detailHeight)
     }
 
     private struct ColorPreset {
@@ -243,16 +244,24 @@ struct ToolPropertyBarView: View {
     var body: some View {
         let size = Self.size(for: viewModel, availableWidth: availableWidth)
         VStack(alignment: .leading, spacing: Self.spacing) {
-            let rows = Self.rows(for: viewModel, availableWidth: availableWidth)
-            ForEach(rows.indices, id: \.self) { index in
-                HStack(spacing: Self.spacing) {
-                    ForEach(rows[index], id: \.self) { item in
-                        control(item).frame(width: min(item.width, max(0, size.width - Self.inset * 2)), height: 28)
+            if viewModel.toolPropertiesCollapsed {
+                Button { viewModel.toolPropertiesCollapsed = false } label: {
+                    Label("展开属性", systemImage: "slider.horizontal.3")
+                        .font(.system(size: 11)).frame(maxWidth: .infinity, minHeight: 20)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("展开工具属性")
+            } else {
+                let rows = Self.rows(for: viewModel, availableWidth: availableWidth)
+                ForEach(rows.indices, id: \.self) { index in
+                    HStack(spacing: Self.spacing) {
+                        ForEach(rows[index], id: \.self) { item in
+                            control(item).frame(width: min(item.width, max(0, size.width - Self.inset * 2)), height: 24)
+                        }
                     }
                 }
-            }
-            if viewModel.propertyTool == .number && viewModel.toolPropertyDetailsExpanded {
-                numberDetails
+                if viewModel.propertyTool == .number && viewModel.toolPropertyDetailsExpanded {
+                    numberDetails
+                }
             }
         }
         .padding(Self.inset)
@@ -288,6 +297,11 @@ struct ToolPropertyBarView: View {
             iconButton("slider.horizontal.3", label: viewModel.toolPropertyDetailsExpanded ? "收起详细颜色" : "更多颜色设置") {
                 viewModel.toolPropertyDetailsExpanded.toggle()
             }
+        case .collapse:
+            iconButton("chevron.up", label: "收起工具属性") {
+                viewModel.endToolPropertyAdjustment()
+                viewModel.toolPropertiesCollapsed = true
+            }.disabled(viewModel.isToolPropertyInputActive)
         case .actions:
             iconButton("arrow.counterclockwise", label: "恢复本工具默认值") { viewModel.restoreCurrentToolDefaults() }
         }
@@ -295,7 +309,7 @@ struct ToolPropertyBarView: View {
 
     private func iconButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).frame(width: 28, height: 28).contentShape(Rectangle())
+            Image(systemName: symbol).frame(width: 24, height: 24).contentShape(Rectangle())
         }.buttonStyle(.plain).help(label).accessibilityLabel(label)
     }
 
@@ -326,14 +340,14 @@ struct ToolPropertyBarView: View {
         HStack(spacing: 2) {
             ForEach(Self.colorPresets, id: \.name) { preset in
                 Button { setColor(preset.color, role: role) } label: {
-                    RoundedRectangle(cornerRadius: 3).fill(preset.color).frame(width: 20, height: 20)
+                    RoundedRectangle(cornerRadius: 3).fill(preset.color).frame(width: 18, height: 18)
                         .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
                         .overlay {
                             if AnnotationInk(color(for: role)) == AnnotationInk(preset.color) && !(viewModel.propertyTool == .number && role == .border && viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil) {
                                 Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color.white)
                             }
                         }
-                        .frame(width: 24, height: 28).contentShape(Rectangle())
+                        .frame(width: 24, height: 24).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("\(viewModel.propertyTool == .number ? role.title : "颜色")\(preset.name)")
             }
             CompactPropertyColorWell(selection: Binding(get: { color(for: role) }, set: { setColor($0, role: role) }),
@@ -413,7 +427,12 @@ struct CompactPropertySlider: View {
                 end: { viewModel.endToolPropertyAdjustment(owner: inputID) },
                 change: action))
             .onHover { hovered = $0 }
-            .help("\(title)：\(Self.formatted(value))；滚轮调整")
+            .overlay(alignment: .top) {
+                if hovered {
+                    ToolbarTooltipView(text: "\(title)：\(Self.formatted(value)) · 滚轮调整")
+                        .fixedSize().offset(y: -30).allowsHitTesting(false)
+                }
+            }
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.accentColor.opacity(hovered ? 0.5 : 0), lineWidth: 1).allowsHitTesting(false))
             .overlay(alignment: .bottom) {
                 GeometryReader { geometry in

@@ -43,6 +43,13 @@ struct ToolPropertiesChecks {
         defaults.set(["style"], forKey: "hiddenToolbarItems")
         defaults.set(try JSONEncoder().encode(["style": EditorShortcut(keyCode: 3, modifiers: 0)]), forKey: "editorShortcuts")
         let settings = SettingsService(defaults: defaults)
+        require(settings.menuBarLeftClickAction == .selection && settings.showSelectionGuides, "New interaction settings default to direct selection and visible guides")
+        settings.menuBarLeftClickAction = .menu
+        settings.showSelectionGuides = false
+        let reloaded = SettingsService(defaults: defaults)
+        require(reloaded.menuBarLeftClickAction == .menu && !reloaded.showSelectionGuides, "Menu and guide preferences survive relaunch")
+        defaults.set("unknown", forKey: "menuBarLeftClickAction")
+        require(SettingsService(defaults: defaults).menuBarLeftClickAction == .selection, "Invalid menu preferences recover to region capture")
         checkInitialDefaults()
         checkCompactProperties(settings: settings)
         checkNativePropertyInput()
@@ -226,6 +233,9 @@ struct ToolPropertiesChecks {
             try render(640, name: "number-details-dark", scheme: .dark)
             second.selectTool(.rectangle); second.restoreCurrentToolDefaults()
             try render(640, name: "rectangle-defaults-640")
+            second.toolPropertiesCollapsed = true
+            try render(640, name: "properties-collapsed")
+            second.toolPropertiesCollapsed = false
             second.selectTool(.text); second.restoreCurrentToolDefaults()
             try render(640, name: "text-defaults-640")
         }
@@ -339,11 +349,16 @@ struct ToolPropertiesChecks {
         model.selectTool(.arrow)
         require(settings.annotationStyle(for: .text).fontSize == 39 && model.currentToolStyle.lineWidth == 3, "Tool switch commits the outgoing gesture without changing the next tool")
         model.selectTool(.rectangle)
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 456, height: 40), "Rectangle controls reserve the tightened single-row bounds")
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 454, height: 32), "Rectangle controls reserve the tightened single-row bounds")
+        let beforeCollapse = model.currentToolStyle
+        model.toolPropertiesCollapsed = true
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 120, height: 28), "Collapsed properties reserve only the reopen control")
+        require(model.currentToolStyle == beforeCollapse, "Collapsing properties preserves drawing values")
+        model.toolPropertiesCollapsed = false
         model.selectTool(.number)
         let compact = ToolPropertyBarView.size(for: model, availableWidth: 640)
         model.toolPropertyDetailsExpanded = true
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 70, "Detailed number colors reserve their own hit area")
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 68, "Detailed number colors reserve their own hit area")
         for tool in [AnnotationType.rectangle, .ellipse, .arrow, .pen, .text, .number, .mosaic, .blur] {
             model.selectTool(tool)
             for width: CGFloat in [200, 400, 640] {
@@ -364,7 +379,7 @@ struct ToolPropertiesChecks {
         let cancellation = model.toolPropertyInputCancellation
         require(model.performEditorShortcut(escape, textResponder: true) && model.toolPropertyInputCancellation != cancellation && model.state == .editing, "Escape cancels a property draft without cancelling the capture")
         model.reset()
-        require(!model.toolPropertyDetailsExpanded, "New sessions start with compact common controls")
+        require(!model.toolPropertyDetailsExpanded && !model.toolPropertiesCollapsed, "New sessions start with compact common controls")
         for tool in [AnnotationType.rectangle, .text, .arrow] {
             settings.setAnnotationStyle(.factory(for: tool), for: tool)
         }

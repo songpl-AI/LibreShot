@@ -6,6 +6,20 @@ extension Notification.Name {
     static let hotkeyDidChange = Notification.Name("com.allensong.MyScreenShots.hotkeyDidChange")
 }
 
+enum MenuBarLeftClickAction: String, CaseIterable, Identifiable {
+    case selection, fullScreen, longScreenshot, settings, menu
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .selection: return "区域截图"
+        case .fullScreen: return "全屏截图"
+        case .longScreenshot: return "长截图"
+        case .settings: return "打开设置"
+        case .menu: return "显示菜单"
+        }
+    }
+}
+
 class SettingsService: ObservableObject {
     static let shared = SettingsService()
     
@@ -84,6 +98,14 @@ class SettingsService: ObservableObject {
             defaults.set(toolbarConfiguration.hiddenItems.sorted(), forKey: "hiddenToolbarItems")
             defaults.set(toolbarConfiguration.orderedItems.map(\.rawValue), forKey: "toolbarItemOrder")
         }
+    }
+
+    @Published var menuBarLeftClickAction: MenuBarLeftClickAction {
+        didSet { defaults.set(menuBarLeftClickAction.rawValue, forKey: "menuBarLeftClickAction") }
+    }
+
+    @Published var showSelectionGuides: Bool {
+        didSet { defaults.set(showSelectionGuides, forKey: "showSelectionGuides") }
     }
 
     @Published var toolbarAlignment: ToolbarAlignment {
@@ -189,6 +211,8 @@ class SettingsService: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.menuBarLeftClickAction = MenuBarLeftClickAction(rawValue: defaults.string(forKey: "menuBarLeftClickAction") ?? "") ?? .selection
+        self.showSelectionGuides = defaults.object(forKey: "showSelectionGuides") as? Bool ?? true
         self.toolbarAlignment = ToolbarAlignment(rawValue: defaults.string(forKey: "toolbarAlignment") ?? "") ?? .center
         self.annotationToolStyles = defaults.data(forKey: "annotationToolStyles")
             .flatMap { try? JSONDecoder().decode([String: AnnotationToolStyle].self, from: $0) } ?? [:]

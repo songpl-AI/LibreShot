@@ -5,6 +5,8 @@ struct OverlayView: View {
     var showsToolbar = true
     var imageOpacity: Double = 1
     var onBlankCanvasDrag: ((CGSize, Bool) -> Void)? = nil
+    @ObservedObject private var settings = SettingsService.shared
+    @State private var guidePoint: CGPoint?
     @State private var movingBlankCanvas = false
 
     var body: some View {
@@ -107,6 +109,20 @@ struct OverlayView: View {
                     .allowsHitTesting(false)
                 }
                 
+                if settings.showSelectionGuides, viewModel.captureMode != .imageEditor,
+                   viewModel.state == .idle || viewModel.state == .selecting,
+                   let point = guidePoint {
+                    Canvas { context, size in
+                        var lines = Path()
+                        lines.move(to: CGPoint(x: 0, y: point.y))
+                        lines.addLine(to: CGPoint(x: size.width, y: point.y))
+                        lines.move(to: CGPoint(x: point.x, y: 0))
+                        lines.addLine(to: CGPoint(x: point.x, y: size.height))
+                        context.stroke(lines, with: .color(.black.opacity(0.85)), lineWidth: 3)
+                        context.stroke(lines, with: .color(.white.opacity(0.95)), lineWidth: 1)
+                    }.allowsHitTesting(false).accessibilityHidden(true)
+                }
+
                 // Layer 3: Selection Border
                 if viewModel.selectionRect != .zero {
                     let rect = viewModel.selectionRect
@@ -203,14 +219,17 @@ struct OverlayView: View {
             }
             .background(CaptureConfirmationMouseView(model: viewModel, acceptsPoint: { point in
                 !editorToolbarFrame(screenSize: geometry.size).contains(point)
+            }, onInitialPointer: { point in
+                if viewModel.state == .idle || viewModel.state == .selecting { guidePoint = point }
             }))
             .onContinuousHover(coordinateSpace: .named("overlay")) { phase in
                 switch phase {
                 case .active(let point):
+                    if viewModel.state == .idle || viewModel.state == .selecting { guidePoint = point }
                     if editorToolbarFrame(screenSize: geometry.size).contains(point) { NSCursor.arrow.set() }
                     else if onBlankCanvasDrag != nil && viewModel.canMoveBlankCanvas(at: point) { NSCursor.openHand.set() }
                     else { OverlayPointerCursor.cursor(for: viewModel.cursorStyle(at: point)).set() }
-                case .ended: NSCursor.arrow.set()
+                case .ended: guidePoint = nil; NSCursor.arrow.set()
                 }
             }
             .coordinateSpace(name: "overlay")
@@ -218,6 +237,7 @@ struct OverlayView: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
+                        if viewModel.state == .idle || viewModel.state == .selecting { guidePoint = value.location }
                         if let onBlankCanvasDrag, movingBlankCanvas || viewModel.canMoveBlankCanvas(at: value.startLocation) {
                             movingBlankCanvas = true
                             onBlankCanvasDrag(value.translation, false)
@@ -458,11 +478,13 @@ struct OverlayView: View {
 private struct CaptureConfirmationMouseView: NSViewRepresentable {
     let model: OverlayViewModel
     let acceptsPoint: (CGPoint) -> Bool
+    let onInitialPointer: (CGPoint) -> Void
 
     func makeNSView(context: Context) -> CaptureConfirmationObserver { CaptureConfirmationObserver() }
     func updateNSView(_ view: CaptureConfirmationObserver, context: Context) {
         view.model = model
         view.acceptsPoint = acceptsPoint
+        view.onInitialPointer = onInitialPointer
     }
     static func dismantleNSView(_ view: CaptureConfirmationObserver, coordinator: ()) { view.stopObserving() }
 }
@@ -472,6 +494,7 @@ private final class CaptureConfirmationObserver: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     weak var model: OverlayViewModel?
     var acceptsPoint: ((CGPoint) -> Bool)?
+    var onInitialPointer: ((CGPoint) -> Void)?
     private var monitor: Any?
     private var consumesMouseUp = false
     private var confirmationPoint: CGPoint?
@@ -480,6 +503,12 @@ private final class CaptureConfirmationObserver: NSView {
         super.viewDidMoveToWindow()
         stopObserving()
         guard window != nil else { return }
+        // Show the guides immediately, even if the pointer has not moved since capture began.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            let point = self.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+            if self.bounds.contains(point) { self.onInitialPointer?(point) }
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] event in
             guard let self, event.window === self.window, let model = self.model else { return event }
             if self.consumesMouseUp {

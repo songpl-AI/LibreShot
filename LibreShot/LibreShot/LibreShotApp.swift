@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
     private var captureSelectionMenuItem: NSMenuItem?
     private var captureFullScreenMenuItem: NSMenuItem?
     private var longCaptureMenuItem: NSMenuItem?
@@ -118,10 +119,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q"))
-        item.menu = menu
+        statusMenu = menu
+        if let button = item.button {
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.toolTip = "LibreShot（右键打开菜单）"
+        }
         statusItem = item
     }
     
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        let action = SettingsService.shared.menuBarLeftClickAction
+        if NSApp.currentEvent?.type == .rightMouseUp || action == .menu {
+            guard let menu = statusMenu, let item = statusItem else { return }
+            // Attach only while tracking, so AppKit can position and dismiss its menu normally.
+            item.menu = menu
+            sender.performClick(nil)
+            item.menu = nil
+            return
+        }
+        switch action {
+        case .selection: captureSelection()
+        case .fullScreen: captureFullScreen()
+        case .longScreenshot: captureLongScreenshot()
+        case .settings: openSettings()
+        case .menu: break
+        }
+    }
+
     private func setupKeepAliveWindow() {
         let window = NSWindow(
             contentRect: NSRect(x: -10_000, y: -10_000, width: 1, height: 1),
