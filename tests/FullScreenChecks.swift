@@ -14,6 +14,16 @@ import AppKit
     @MainActor static func main() async throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
+        let captureOverlay = OverlayWindowController()
+        precondition(captureOverlay.window!.contentView!.acceptsFirstMouse(for: nil),
+                     "region capture canvas must also accept the activating drawing click")
+        let overlayFrame = captureOverlay.window!.frame
+        captureOverlay.window!.setFrame(CGRect(x: overlayFrame.minX, y: overlayFrame.minY,
+            width: 800, height: 600), display: false)
+        captureOverlay.window!.layoutIfNeeded()
+        precondition(captureOverlay.window!.contentView!.bounds.size == CGSize(width: 800, height: 600),
+                     "click-through hosting must still resize with its capture window")
+        captureOverlay.close()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LibreShot.FullScreen.\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -69,6 +79,8 @@ import AppKit
             exit(1)
         }
         precondition(first.model.state == .editing && first.model.selectionRect.size == image.size)
+        precondition(first.window!.contentView!.acceptsFirstMouse(for: nil),
+                     "returning from another window must allow the first drawing click")
         precondition(files().isEmpty, "Must not save before confirmation")
         first.model.selectTool(.rectangle)
         first.model.startDrawing(at: CGPoint(x: 20, y: 20))

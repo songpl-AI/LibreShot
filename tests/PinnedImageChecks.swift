@@ -144,6 +144,23 @@ import Carbon
             precondition(layout.frame(selection: selection, screenSize: screen, accessorySize: CGSize(width: 300, height: 40), alignment: alignment).contains(p))
         }
         print("PASS: alignment defaults/persistence and main-toolbar geometry with wider accessory")
+        let alignmentPin = PinnedImageWindowController(image: NSImage(size: CGSize(width: 160, height: 120)), settings: settings)
+        alignmentPin.window!.setFrame(CGRect(x: 300, y: 300, width: 300, height: 200), display: false)
+        alignmentPin.beginEditing()
+        let alignmentModel = alignmentPin.presentation.editor!
+        alignmentModel.selectTool(.rectangle)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        let panel = alignmentPin.window!.childWindows!.first!
+        let tools = alignmentModel.visibleToolbarItems.filter { $0.annotationType != nil || $0 == .select || $0 == .undo }
+        let available = min(720, alignmentPin.window!.screen!.visibleFrame.width - 20)
+        let mainWidth = ToolbarLayout(items: tools, availableWidth: available - 16 - PinnedEditorTools.accessoryWidth).size.width
+        // 18-point grip + 3-point gap precede the main toolbar; the trailing
+        // collapse button is not part of the right-aligned annotation tools.
+        let mainRight = panel.frame.minX + (panel.frame.width - mainWidth - 54) / 2 + 21 + mainWidth
+        print("Pin alignment: image=\(alignmentPin.window!.frame), panel=\(panel.frame), tools=\(mainWidth), right=\(mainRight)")
+        precondition(closeEnough(mainRight, alignmentPin.window!.frame.maxX),
+                     "right alignment must align the main toolbar, excluding grip and collapse controls")
+        alignmentPin.close()
 
         func wheel(_ delta: Int32, flags: CGEventFlags = [], precise: Bool = false) -> NSEvent {
             let event = CGEvent(scrollWheelEvent2Source: nil, units: precise ? .pixel : .line, wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0)!

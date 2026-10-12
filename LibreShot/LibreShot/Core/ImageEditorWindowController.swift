@@ -30,7 +30,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: ImageEditorView(model: model, imageSize: image.size))
+        window.contentView = DrawingHostingView(rootView: ImageEditorView(model: model, imageSize: image.size))
         window.bindEditingActions(to: model)
         window.onEscapeKey = { [weak self] in self?.close() }
         model.onCancel = { [weak self] in self?.close() }
@@ -204,7 +204,7 @@ struct ImageEditorScrollView: NSViewRepresentable {
         scroll.scrollerStyle = .overlay
         scroll.backgroundColor = .underPageBackgroundColor
         let layout = ImageEditorViewportLayout(imageSize: imageSize, viewport: viewportSize, mode: zoomMode, zoom: zoom)
-        let host = NSHostingView(rootView: document(layout))
+        let host = DrawingHostingView(rootView: document(layout))
         host.sizingOptions = []
         host.isFlipped = true
         host.frame = CGRect(origin: .zero, size: layout.documentSize)

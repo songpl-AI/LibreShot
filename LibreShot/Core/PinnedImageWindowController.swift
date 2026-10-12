@@ -467,14 +467,13 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         let layout = ToolbarLayout(items: tools, availableWidth: available - 16 - PinnedEditorTools.accessoryWidth)
         let headerWidth = layout.size.width + PinnedEditorTools.accessoryWidth
         let properties = ToolPropertyBarView.size(for: model, availableWidth: available - 16)
-        let width = max(headerWidth, properties.width) + 16
+        let rawWidth = max(headerWidth, properties.width) + 16
+        // Keep the centered header inset integral. AppKit rounds window origins;
+        // an odd difference otherwise shifts left/right alignment by half a point.
+        let width = headerWidth + ceil((rawWidth - headerWidth) / 2) * 2
         let height = layout.size.height + (properties.height > 0 ? properties.height + 8 : 0) + 16
-        let x: CGFloat
-        switch model.toolbarAlignment {
-        case .left: x = window.frame.minX + headerWidth / 2 - width / 2
-        case .center: x = window.frame.midX - width / 2
-        case .right: x = window.frame.maxX - headerWidth / 2 - width / 2
-        }
+        let x = PinnedEditorTools.preferredPanelX(imageFrame: window.frame, toolWidth: layout.size.width,
+                                                panelWidth: width, alignment: model.toolbarAlignment)
         let below = window.frame.minY - height - 8
         let y = below >= visible.minY ? below : window.frame.maxY + 8
         panel.setFrame(CGRect(x: min(max(x, visible.minX + 10), visible.maxX - width - 10),
@@ -645,6 +644,20 @@ final class PinnedEditorHostingView: NSHostingView<PinnedEditorTools> {
 
 struct PinnedEditorTools: View {
     static let accessoryWidth: CGFloat = 54
+    static let gripWidth: CGFloat = 18
+    static let controlSpacing: CGFloat = 3
+
+    static func preferredPanelX(imageFrame: CGRect, toolWidth: CGFloat, panelWidth: CGFloat,
+                                alignment: ToolbarAlignment) -> CGFloat {
+        let toolLeft: CGFloat
+        switch alignment {
+        case .left: toolLeft = imageFrame.minX
+        case .center: toolLeft = imageFrame.midX - toolWidth / 2
+        case .right: toolLeft = imageFrame.maxX - toolWidth
+        }
+        let toolOffset = (panelWidth - toolWidth - accessoryWidth) / 2 + gripWidth + controlSpacing
+        return toolLeft - toolOffset
+    }
     @ObservedObject var model: OverlayViewModel
     let finish: () -> Void
     let move: (CGSize, Bool) -> Void
@@ -653,10 +666,10 @@ struct PinnedEditorTools: View {
             let tools = model.visibleToolbarItems.filter { $0.annotationType != nil || $0 == .select || $0 == .undo }
             let layout = ToolbarLayout(items: tools, availableWidth: geometry.size.width - 16 - Self.accessoryWidth)
             VStack(spacing: 8) {
-                HStack(spacing: 3) {
+                HStack(spacing: Self.controlSpacing) {
                     Image(systemName: "line.3.horizontal")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                        .frame(width: 18, height: layout.size.height)
+                        .frame(width: Self.gripWidth, height: layout.size.height)
                         .contentShape(Rectangle())
                         .help("拖动把手移动贴图")
                         .accessibilityLabel("移动贴图把手")
