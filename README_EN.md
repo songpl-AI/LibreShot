@@ -4,7 +4,7 @@
 
 A free, open-source native screenshot and annotation tool for macOS.
 
-[Download v1.3.16](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.16) · [Release notes](docs/releases/1.3.16.md) · [Changelog](CHANGELOG.md)
+[Download v1.3.19](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.19) · [Release notes](docs/releases/1.3.19.md) · [Changelog](CHANGELOG.md)
 
 ## Features
 
@@ -12,7 +12,7 @@ A free, open-source native screenshot and annotation tool for macOS.
 - **Annotation and tool properties**: Pen, rectangle, ellipse, arrow, text, numbers, mosaic and blur. Compact properties combine sliders and exact values, red/green/blue quick colors and custom colors, and retain independent preferences, reset and undo.
 - **Rounded rectangles and number colors**: Rounded corners, filled/outlined numbers, and independent border, fill and digit colors.
 - **OCR and translation**: On-device text recognition, text translation and translation in place. Translation requires macOS 26+; initial language-pack downloads require internet access.
-- **Copy, save and pin**: New users finish by copying only, with optional Auto Save, manual Save, Save As and floating pinned images.
+- **Copy, save and pin**: New users finish by copying only, with optional Auto Save, manual Save, Save As and pins at the capture position. Zoom pins with the wheel, adjust opacity with Ctrl+wheel and edit through the context menu.
 - **Custom controls**: Configure shortcuts, toolbar order and the default tool; optionally double-tap Option to start a capture.
 
 ## Installation

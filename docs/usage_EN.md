@@ -37,7 +37,11 @@ Double-click completion can be disabled in Settings. Double-clicks on annotation
 
 ## Pin and scrolling capture
 
-Pin creates an always-on-top image. Drag it to move; double-click to close.
+Click Pin or use the default `⌘P` during capture editing to pin at the capture position. The wheel or Cmd+wheel zooms; Ctrl+wheel adjusts display opacity. Copy and Save retain the original pixel dimensions and image opacity. Outside editing, drag to move and double-click to close; Close is also available in the context menu.
+
+Choose Edit Annotations from the context menu to edit in place. Changes persist immediately. Drag blank space in Select/Move mode to move the pin; drawing tools still draw. The toolbar's left handle moves the pin with any tool. With blank double-click completion enabled, double-clicking blank space during pin editing saves to the configured folder and keeps editing open. Collapse with the right arrow or Esc, then reopen to continue undoing with `⌘Z`. Text input handles Esc first; existing text, numbers and handles do not trigger saving.
+
+Global recall of the most recent capture and history browsing are not included. `⌘P` is an editing shortcut.
 
 Start scrolling capture from the menu bar or capture toolbar. Select a region, then scroll while keeping overlapping content between frames. Return finishes; Esc cancels. The result opens for scrolling, zooming and annotation by default. Disable post-capture editing in Settings for a preview-first copy/save workflow.
 
@@ -53,4 +57,4 @@ Screenshots, OCR and translation text are processed locally. Initial language-pa
 
 Use the menu bar or `⌘,` while LibreShot is active. Configure save folder, Auto Save, launch at login, capture sound, capture corners, shortcuts, double-Option, double-click completion and Space behavior.
 
-Toolbar settings control visibility, order, editor shortcuts and the default tool. Complete and Cancel always remain visible. Changes apply to the next capture. Hiding the default tool falls back to Select/Move. Restore Defaults resets visibility, order and the default tool.
+Toolbar settings control visibility, order, editor shortcuts, the default tool and left/center/right alignment. Hover a property slider to see its value and adjust it with the wheel. Complete and Cancel always remain visible. Changes apply to the next capture. Hiding the default tool falls back to Select/Move. Restore Defaults resets visibility, order and the default tool.
