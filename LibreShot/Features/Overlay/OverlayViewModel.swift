@@ -238,6 +238,8 @@ class OverlayViewModel: ObservableObject {
     // Actions
     var onCapture: ((CGRect, [Annotation], CaptureAction, CGImage?) -> Void)?
     var onCancel: (() -> Void)?
+    // A pin can save on blank double-click without completing a capture session.
+    var onBlankDoubleClick: (() -> Void)?
     var onLongCaptureStart: ((CGRect) -> Void)?
     
     // MARK: - Finalize
@@ -252,7 +254,7 @@ class OverlayViewModel: ObservableObject {
     private var confirmationClick: ConfirmationClick?
 
     func canConfirmDoubleClick(at point: CGPoint) -> Bool {
-        allowsCaptureCompletion && settings.doubleClickCompletesCapture && state == .editing
+        (allowsCaptureCompletion || onBlankDoubleClick != nil) && settings.doubleClickCompletesCapture && state == .editing
             && !selectionRect.isEmpty && selectionRect.contains(point)
             && !isEditingText && !isResizingText && !isMovingSelection
             && activeSelectionHandle == nil && !isTransformingShape
@@ -277,6 +279,12 @@ class OverlayViewModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    func canMoveBlankCanvas(at point: CGPoint) -> Bool {
+        state == .editing && selectedTool == nil && !isEditingText && !isResizingText
+            && !isTransformingShape && selectionRect.contains(point)
+            && isConfirmationBlank(at: point, annotations: annotations)
     }
 
     /// Remember blank space before the first click can create text or a number.
@@ -323,7 +331,8 @@ class OverlayViewModel: ObservableObject {
         currentAnnotation = nil
         pendingDrawing = nil
         clearAnnotationPress()
-        confirmCopy()
+        if let onBlankDoubleClick { onBlankDoubleClick() }
+        else { confirmCopy() }
         return true
     }
     

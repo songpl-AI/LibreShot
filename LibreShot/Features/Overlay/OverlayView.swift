@@ -4,6 +4,8 @@ struct OverlayView: View {
     @ObservedObject var viewModel: OverlayViewModel
     var showsToolbar = true
     var imageOpacity: Double = 1
+    var onBlankCanvasDrag: ((CGSize, Bool) -> Void)? = nil
+    @State private var movingBlankCanvas = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -206,6 +208,7 @@ struct OverlayView: View {
                 switch phase {
                 case .active(let point):
                     if editorToolbarFrame(screenSize: geometry.size).contains(point) { NSCursor.arrow.set() }
+                    else if onBlankCanvasDrag != nil && viewModel.canMoveBlankCanvas(at: point) { NSCursor.openHand.set() }
                     else { OverlayPointerCursor.cursor(for: viewModel.cursorStyle(at: point)).set() }
                 case .ended: NSCursor.arrow.set()
                 }
@@ -215,6 +218,11 @@ struct OverlayView: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
+                        if let onBlankCanvasDrag, movingBlankCanvas || viewModel.canMoveBlankCanvas(at: value.startLocation) {
+                            movingBlankCanvas = true
+                            onBlankCanvasDrag(value.translation, false)
+                            return
+                        }
                         guard viewModel.acceptsOverlayDrag(from: value.startLocation, excluding: editorToolbarFrame(screenSize: geometry.size)) else { return }
                         if viewModel.isMovingSelection {
                             viewModel.updateMoveSelection(to: value.location, within: geometry.frame(in: .named("overlay")))
@@ -270,6 +278,11 @@ struct OverlayView: View {
                         }
                     }
                     .onEnded { value in
+                        if movingBlankCanvas {
+                            movingBlankCanvas = false
+                            onBlankCanvasDrag?(value.translation, true)
+                            return
+                        }
                         defer {
                             viewModel.endOverlayDrag()
                             viewModel.clearAnnotationPress()

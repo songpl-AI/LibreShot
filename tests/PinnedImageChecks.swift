@@ -191,7 +191,60 @@ import Carbon
         model.selectedAnnotationID = shape.id
         precondition(model.annotations == doc.annotations && model.nextNumber == 8)
         precondition(model.toolbarAlignment == .right && !model.allowsCaptureCompletion)
-        precondition(!model.beginConfirmationClick(at: CGPoint(x: 140, y: 100)))
+        precondition(model.beginConfirmationClick(at: CGPoint(x: 140, y: 100)),
+                     "blank double-click must remain available while editing a pin")
+        model.cancelConfirmationClick()
+        let blank = CGPoint(x: 140, y: 100)
+        precondition(model.canMoveBlankCanvas(at: blank))
+        precondition(!model.canMoveBlankCanvas(at: doc.annotations[0].startPoint),
+                     "annotation handles must retain their own editing gestures")
+        model.selectTool(.pen)
+        precondition(!model.canMoveBlankCanvas(at: blank), "drawing must not move the pin")
+        model.selectTool(nil)
+        model.selectedAnnotationID = shape.id
+        let dragFrame = pin.window!.frame, localAnnotations = model.annotations
+        let dragScale = dragFrame.width / base.size.width
+        pin.moveEditingPin(by: CGSize(width: 25, height: 15), ended: false)
+        pin.moveEditingPin(by: CGSize(width: 40, height: 20), ended: true)
+        precondition(closeEnough(pin.window!.frame.minX, dragFrame.minX + 40 * dragScale)
+            && closeEnough(pin.window!.frame.minY, dragFrame.minY - 20 * dragScale))
+        precondition(model.annotations == localAnnotations && pin.presentation.editor === model)
+        pin.moveEditingPin(by: CGSize(width: -40, height: -20), ended: true)
+        precondition(pin.window!.frame == dragFrame, "successive moves must use their own starting frame")
+        pin.moveEditingPinFromPointer(translation: .zero, imageCoordinates: true, ended: false,
+                                     pointer: CGPoint(x: 500, y: 500))
+        pin.moveEditingPinFromPointer(translation: .zero, imageCoordinates: true, ended: true,
+                                     pointer: CGPoint(x: 560, y: 460))
+        precondition(pin.window!.frame.origin == CGPoint(x: dragFrame.minX + 60, y: dragFrame.minY - 40),
+                     "moving a window must not cancel out the drag in its changing local coordinate space")
+        pin.moveEditingPinFromPointer(translation: .zero, imageCoordinates: false, ended: false,
+                                     pointer: CGPoint(x: 560, y: 460))
+        pin.moveEditingPinFromPointer(translation: CGSize(width: -60, height: -40), imageCoordinates: false, ended: true,
+                                     pointer: CGPoint(x: 500, y: 500))
+        precondition(pin.window!.frame == dragFrame)
+        var savedImages: [NSImage] = []
+        let saveDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("LibreShot.PinSave.\(UUID())")
+        try! FileManager.default.createDirectory(at: saveDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: saveDirectory) }
+        precondition(settings.saveSaveDirectory(saveDirectory))
+        let saveService = CaptureService(settings: settings)
+        pin.savePinnedImage = { image in
+            savedImages.append(image)
+            return try await saveService.saveImageDirectly(image)
+        }
+        precondition(model.beginConfirmationClick(at: blank) && model.confirmDoubleClick(at: blank))
+        precondition(!model.confirmDoubleClick(at: blank), "a double-click must save only once")
+        for _ in 0..<100 where pin.isSavingPin {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        print("Pin save: requests=\(savedImages.count), busy=\(pin.isSavingPin), saved=\(pin.lastSavedURL?.path ?? "nil"), expected=\(saveDirectory.path)")
+        precondition(savedImages.count == 1 && pin.lastSavedURL?.deletingLastPathComponent().resolvingSymlinksInPath().path == saveDirectory.resolvingSymlinksInPath().path && !pin.isSavingPin)
+        let savedPNG = try! Data(contentsOf: pin.lastSavedURL!)
+        precondition(NSBitmapImageRep(data: savedPNG) != nil
+            && savedPNG == saveService.pngData(from: pin.pinDocument.rendered()),
+                     "blank double-click must write the current composed image to the configured directory")
+        precondition(pin.presentation.editor === model && model.annotations == localAnnotations,
+                     "saving must preserve live editing, annotations and undo history")
         precondition(!pin.window!.isMovableByWindowBackground && pin.window!.childWindows?.count == 1)
         let toolsPanel = pin.window!.childWindows!.first!
         RunLoop.current.run(until: Date().addingTimeInterval(0.15))
@@ -287,7 +340,7 @@ import Carbon
             }
             precondition(closedPin == nil && croppedBase == nil, "closed pin windows must release their documents and cropped source")
         }
-        print("PASS: source/local annotations, number continuation, native in-place editor panel, grouped wheel undo, live edits, undo across tool sessions, repeated editing and model release")
+        print("PASS: blank move at current zoom, drawing/handle isolation, double-click direct PNG save without ending editing, compact collapse tools, live edits and retained undo/model release")
     }
 
     @MainActor static func checkPinShortcuts() {

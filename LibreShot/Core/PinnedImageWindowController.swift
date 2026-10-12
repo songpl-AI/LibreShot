@@ -54,6 +54,14 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     private var editorPanel: OverlayWindow?
     // Keep the undo history with the pin, including while its tools are hidden.
     private var editingModel: OverlayViewModel?
+    private var editorDragOrigin: CGPoint?
+    private var editorDragPointerOrigin: CGPoint?
+    private var editorDragScale: CGFloat = 1
+    private(set) var lastSavedURL: URL?
+    private(set) var isSavingPin = false
+    var savePinnedImage: (NSImage) async throws -> URL = { image in
+        try await CaptureService.shared.saveImageDirectly(image)
+    }
     private var editorSubscriptions = Set<AnyCancellable>()
     private var opacityRemainder: CGFloat = 0
     private let displayMode: DisplayMode
@@ -132,7 +140,10 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
             onEdit: displayMode == .pinned ? { [weak self] in self?.beginEditing() }
                 : onEditAction.map { action in { [weak self] in self?.close(); action() } },
             onResetSize: { [weak self] in self?.restoreOriginalSize() },
-            onFinishEditing: { [weak self] in self?.finishEditing() }
+            onFinishEditing: { [weak self] in self?.finishEditing() },
+            onEditorMove: { [weak self] translation, ended in
+                self?.moveEditingPinFromPointer(translation: translation, imageCoordinates: true, ended: ended)
+            }
         )
         let hosting = PinnedImageHostingView(rootView: contentView)
         if displayMode == .pinned {
@@ -318,6 +329,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         }
         model.state = .editing
         model.onCancel = { [weak self] in self?.finishEditing() }
+        model.onBlankDoubleClick = { [weak self] in self?.saveEditingPin() }
         model.onCapture = { [weak self] _, _, action, _ in
             if action == .save || action == .saveAs { self?.handleSave() }
         }
@@ -332,7 +344,11 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         panel.level = .floating
         panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let host = PinnedEditorHostingView(rootView: PinnedEditorTools(model: model))
+        let host = PinnedEditorHostingView(rootView: PinnedEditorTools(model: model,
+            finish: { [weak self] in self?.finishEditing() },
+            move: { [weak self] translation, ended in
+                self?.moveEditingPinFromPointer(translation: translation, imageCoordinates: false, ended: ended)
+            }))
         host.sizingOptions = []
         panel.contentView = host
         editorPanel = panel
@@ -359,7 +375,59 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         endEditing()
     }
 
+    /// Translation is in immutable image coordinates, not in the zoomed window.
+    /// Use screen pointer positions once movement starts: local SwiftUI translation
+    /// changes as the window itself moves and otherwise makes a drag oscillate.
+    func moveEditingPinFromPointer(translation: CGSize, imageCoordinates: Bool, ended: Bool,
+                                   pointer: CGPoint = NSEvent.mouseLocation) {
+        guard presentation.editor != nil, let window else { return }
+        let scale = window.frame.width / max(1, pinDocument.baseImage.size.width)
+        if editorDragPointerOrigin == nil {
+            let inputScale = imageCoordinates ? scale : 1
+            editorDragPointerOrigin = CGPoint(x: pointer.x - translation.width * inputScale,
+                                              y: pointer.y + translation.height * inputScale)
+        }
+        let start = editorDragPointerOrigin!
+        moveEditingPin(by: CGSize(width: (pointer.x - start.x) / scale,
+                                  height: (start.y - pointer.y) / scale), ended: ended)
+        if ended { editorDragPointerOrigin = nil }
+    }
+
+    func moveEditingPin(by translation: CGSize, ended: Bool) {
+        guard presentation.editor != nil, let window else { return }
+        if editorDragOrigin == nil {
+            editorDragOrigin = window.frame.origin
+            editorDragScale = window.frame.width / max(1, pinDocument.baseImage.size.width)
+        }
+        let origin = editorDragOrigin!
+        window.setFrameOrigin(CGPoint(x: origin.x + translation.width * editorDragScale,
+                                     y: origin.y - translation.height * editorDragScale))
+        positionEditorPanel()
+        if ended { editorDragOrigin = nil }
+    }
+
+    func saveEditingPin() {
+        guard !isSavingPin, presentation.editor != nil else { return }
+        let output = imageForAction()
+        guard presentation.editor?.isEditingText != true else { return }
+        isSavingPin = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isSavingPin = false }
+            do { self.lastSavedURL = try await self.savePinnedImage(output) }
+            catch is CancellationError { }
+            catch {
+                let alert = NSAlert()
+                alert.messageText = "贴图保存失败"
+                alert.informativeText = error.localizedDescription
+                if let window = self.window { await alert.beginSheetModal(for: window) }
+            }
+        }
+    }
+
     private func endEditing() {
+        editorDragOrigin = nil
+        editorDragPointerOrigin = nil
         editorSubscriptions.removeAll()
         if let panel = editorPanel {
             window?.removeChildWindow(panel)
@@ -373,7 +441,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         }
         let model = presentation.editor
         presentation.editor = nil
-        model?.onCancel = nil; model?.onCapture = nil
+        model?.onCancel = nil; model?.onCapture = nil; model?.onBlankDoubleClick = nil
     }
 
     private func imageForAction() -> NSImage {
@@ -396,15 +464,16 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         let visible = (window.screen ?? NSScreen.main)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
         let available = min(720, visible.width - 20)
         let tools = model.visibleToolbarItems.filter { $0.annotationType != nil || $0 == .select || $0 == .undo }
-        let layout = ToolbarLayout(items: tools, availableWidth: available - 16)
+        let layout = ToolbarLayout(items: tools, availableWidth: available - 16 - PinnedEditorTools.accessoryWidth)
+        let headerWidth = layout.size.width + PinnedEditorTools.accessoryWidth
         let properties = ToolPropertyBarView.size(for: model, availableWidth: available - 16)
-        let width = max(layout.size.width, properties.width) + 16
+        let width = max(headerWidth, properties.width) + 16
         let height = layout.size.height + (properties.height > 0 ? properties.height + 8 : 0) + 16
         let x: CGFloat
         switch model.toolbarAlignment {
-        case .left: x = window.frame.minX + layout.size.width / 2 - width / 2
+        case .left: x = window.frame.minX + headerWidth / 2 - width / 2
         case .center: x = window.frame.midX - width / 2
-        case .right: x = window.frame.maxX - layout.size.width / 2 - width / 2
+        case .right: x = window.frame.maxX - headerWidth / 2 - width / 2
         }
         let below = window.frame.minY - height - 8
         let y = below >= visible.minY ? below : window.frame.maxY + 8
@@ -458,6 +527,7 @@ struct PinnedImageView: View {
     var onEdit: (() -> Void)? = nil
     var onResetSize: () -> Void = {}
     var onFinishEditing: () -> Void = {}
+    var onEditorMove: (CGSize, Bool) -> Void = { _, _ in }
     
     private var opacity: Double { presentation.opacity }
     
@@ -487,7 +557,8 @@ struct PinnedImageView: View {
                 
                 if let model = presentation.editor {
                     GeometryReader { geometry in
-                        OverlayView(viewModel: model, showsToolbar: false, imageOpacity: opacity)
+                        OverlayView(viewModel: model, showsToolbar: false, imageOpacity: opacity,
+                                    onBlankCanvasDrag: onEditorMove)
                             .frame(width: image.size.width, height: image.size.height)
                             .scaleEffect(geometry.size.width / image.size.width, anchor: .topLeading)
                             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -573,13 +644,31 @@ final class PinnedEditorHostingView: NSHostingView<PinnedEditorTools> {
 }
 
 struct PinnedEditorTools: View {
+    static let accessoryWidth: CGFloat = 54
     @ObservedObject var model: OverlayViewModel
+    let finish: () -> Void
+    let move: (CGSize, Bool) -> Void
     var body: some View {
         GeometryReader { geometry in
             let tools = model.visibleToolbarItems.filter { $0.annotationType != nil || $0 == .select || $0 == .undo }
-            let layout = ToolbarLayout(items: tools, availableWidth: geometry.size.width - 16)
+            let layout = ToolbarLayout(items: tools, availableWidth: geometry.size.width - 16 - Self.accessoryWidth)
             VStack(spacing: 8) {
-                EditorToolbarView(viewModel: model, layout: layout)
+                HStack(spacing: 3) {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .frame(width: 18, height: layout.size.height)
+                        .contentShape(Rectangle())
+                        .help("拖动把手移动贴图")
+                        .accessibilityLabel("移动贴图把手")
+                        .gesture(DragGesture(minimumDistance: 3)
+                            .onChanged { move($0.translation, false) }
+                            .onEnded { move($0.translation, true) })
+                    EditorToolbarView(viewModel: model, layout: layout)
+                    Button(action: finish) { Image(systemName: "chevron.down").frame(width: 30, height: 30) }
+                        .buttonStyle(.plain)
+                        .help("收起工具栏，保留编辑（Esc）")
+                        .accessibilityLabel("收起工具栏")
+                }
                 if model.propertyTool != nil {
                     ToolPropertyBarView(viewModel: model, availableWidth: geometry.size.width - 16)
                 }
