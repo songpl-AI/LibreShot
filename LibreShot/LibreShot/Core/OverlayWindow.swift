@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Drawing must start with the activating click when returning from a property
 /// or color panel; it must not require a separate focus-only click.
-final class DrawingHostingView<Content: View>: NSHostingView<Content> {
+final class DrawingHostingView: NSHostingView<AnyView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 

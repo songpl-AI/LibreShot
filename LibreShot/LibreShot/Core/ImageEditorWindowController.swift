@@ -30,7 +30,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
-        window.contentView = DrawingHostingView(rootView: ImageEditorView(model: model, imageSize: image.size))
+        window.contentView = DrawingHostingView(rootView: AnyView(ImageEditorView(model: model, imageSize: image.size)))
         window.bindEditingActions(to: model)
         window.onEscapeKey = { [weak self] in self?.close() }
         model.onCancel = { [weak self] in self?.close() }

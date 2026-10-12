@@ -57,7 +57,7 @@ class OverlayWindowController: NSWindowController {
         // Or simply add the view directly to contentView without constraints if using pure frame layout
         
         let hostingController = NSViewController()
-        let drawingHost = DrawingHostingView(rootView: overlayView)
+        let drawingHost = DrawingHostingView(rootView: AnyView(overlayView))
         drawingHost.sizingOptions = []
         drawingHost.autoresizingMask = [.width, .height]
         hostingController.view = drawingHost
