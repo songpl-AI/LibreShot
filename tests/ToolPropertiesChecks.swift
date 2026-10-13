@@ -295,7 +295,7 @@ struct ToolPropertiesChecks {
             (view as? NSColorWell).map { [$0] } ?? view.subviews.flatMap(colorWells)
         }
         let wells = colorWells(hosting)
-        require(wells.count == 1 && wells[0].frame.size == CGSize(width: 14, height: 14), "Native custom color swatch remains the same compact size as the presets")
+        require(wells.count == 1 && wells[0].frame.size == CGSize(width: 22, height: 22), "Custom palette icon keeps the same button hit area as the presets")
         wells[0].activate(true)
         require(wells[0].isActive, "Compact swatch retains native color-panel activation")
         wells[0].deactivate()

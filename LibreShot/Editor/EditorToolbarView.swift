@@ -338,7 +338,7 @@ struct ToolPropertyBarView: View {
             }
             CompactPropertyColorWell(selection: Binding(get: { color(for: role) }, set: { setColor($0, role: role) }),
                 label: "\(viewModel.propertyTool == .number ? role.title : "")自定义颜色")
-                .frame(width: 14, height: 14).padding(4)
+                .frame(width: 22, height: 22)
         }
     }
 
@@ -512,7 +512,7 @@ final class PropertyWheelView: NSView {
 }
 
 /// SwiftUI's color picker has a large intrinsic width on newer macOS versions.
-/// The minimal native well keeps the same system color selection in a fixed square.
+/// A compact palette icon retains native color selection and a full button hit area.
 struct CompactPropertyColorWell: NSViewRepresentable {
     @Binding var selection: Color
     let label: String
@@ -537,7 +537,7 @@ struct CompactPropertyColorWell: NSViewRepresentable {
         well.color = NSColor(selection)
         well.needsDisplay = true
         well.setAccessibilityLabel(label)
-        well.toolTip = label
+        well.toolTip = "\(label)：打开调色板选择更多颜色"
     }
 
     static func dismantleNSView(_ well: NSColorWell, coordinator: Coordinator) { well.deactivate() }
@@ -551,17 +551,26 @@ struct CompactPropertyColorWell: NSViewRepresentable {
     }
 }
 
-/// Preserve native color-panel behavior without its oversized minimal-style swatch.
+/// Give custom color selection a distinct icon, while preserving native panel behavior.
 private final class CompactSwatchColorWell: NSColorWell {
-    override var intrinsicContentSize: NSSize { NSSize(width: 14, height: 14) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 22, height: 22) }
 
     override func draw(_ dirtyRect: NSRect) {
-        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5))
+        if isActive {
+            NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        }
+        let configuration = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        let icon = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [NSColor.labelColor]))
+        icon?.draw(in: NSRect(x: bounds.midX - 7, y: bounds.midY - 4, width: 14, height: 14))
+        let indicator = NSBezierPath(roundedRect: NSRect(x: bounds.midX - 7, y: bounds.minY + 2, width: 14, height: 2), xRadius: 1, yRadius: 1)
         color.setFill()
-        circle.fill()
-        NSColor.labelColor.withAlphaComponent(isActive ? 0.6 : 0.2).setStroke()
-        circle.lineWidth = 1
-        circle.stroke()
+        indicator.fill()
+        NSColor.labelColor.withAlphaComponent(0.2).setStroke()
+        indicator.lineWidth = 0.5
+        indicator.stroke()
     }
 }
 
