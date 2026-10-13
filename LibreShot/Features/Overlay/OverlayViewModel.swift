@@ -90,7 +90,6 @@ class OverlayViewModel: ObservableObject {
         willSet { if newValue != selectedTool { endToolPropertyAdjustment() } }
         didSet { if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) } }
     }
-    @Published var toolPropertiesCollapsed = false
     @Published var toolPropertyDetailsExpanded = false
     @Published private(set) var toolPropertyInputCancellation = UUID()
     @Published private var toolPropertyInputID: UUID?
@@ -988,7 +987,6 @@ class OverlayViewModel: ObservableObject {
         toolPropertyInputID = nil
         endOverlayDrag()
         toolPropertyDetailsExpanded = false
-        toolPropertiesCollapsed = false
         confirmationClick = nil
         clearImageTranslation()
         endSelectedShapeDrag()

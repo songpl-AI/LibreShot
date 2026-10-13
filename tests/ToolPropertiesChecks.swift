@@ -233,9 +233,6 @@ struct ToolPropertiesChecks {
             try render(640, name: "number-details-dark", scheme: .dark)
             second.selectTool(.rectangle); second.restoreCurrentToolDefaults()
             try render(640, name: "rectangle-defaults-640")
-            second.toolPropertiesCollapsed = true
-            try render(640, name: "properties-collapsed")
-            second.toolPropertiesCollapsed = false
             second.selectTool(.text); second.restoreCurrentToolDefaults()
             try render(640, name: "text-defaults-640")
         }
@@ -294,6 +291,15 @@ struct ToolPropertiesChecks {
         func fields(_ view: NSView) -> [NSTextField] {
             (view as? NSTextField).map { $0.isEditable ? [$0] : [] } ?? view.subviews.flatMap(fields)
         }
+        func colorWells(_ view: NSView) -> [NSColorWell] {
+            (view as? NSColorWell).map { [$0] } ?? view.subviews.flatMap(colorWells)
+        }
+        let wells = colorWells(hosting)
+        require(wells.count == 1 && wells[0].frame.size == CGSize(width: 14, height: 14), "Native custom color swatch remains the same compact size as the presets")
+        wells[0].activate(true)
+        require(wells[0].isActive, "Compact swatch retains native color-panel activation")
+        wells[0].deactivate()
+        NSColorPanel.shared.orderOut(nil)
         let inputs = fields(hosting)
         require(inputs.count == 2, "Native compact rectangle exposes two exact value inputs")
         let input = inputs.first { $0.stringValue == "3" }!
@@ -315,6 +321,10 @@ struct ToolPropertiesChecks {
         require(model.currentToolStyle.lineWidth == 7.5 && !cancelled && !captured, "Native Escape discards the draft and preserves the capture")
         enterDraft("invalid"); key(36, "\r")
         require(model.currentToolStyle.lineWidth == 7.5 && !captured, "Invalid native input restores the current value")
+        model.setLineWidth(18); settle()
+        require(model.currentToolStyle.lineWidth == 18 && input.stringValue == "18", "Rendering a saved width above the common drag limit must not clamp the model or exact field")
+        enterDraft("19"); key(36, "\r")
+        require(model.currentToolStyle.lineWidth == 19, "Exact input still accepts supported values above the common drag range")
         window.orderOut(nil); window.clearEditingActions()
         print("PASS: native exact input, Return commit, Escape cancellation, shortcut isolation")
     }
@@ -349,16 +359,11 @@ struct ToolPropertiesChecks {
         model.selectTool(.arrow)
         require(settings.annotationStyle(for: .text).fontSize == 39 && model.currentToolStyle.lineWidth == 3, "Tool switch commits the outgoing gesture without changing the next tool")
         model.selectTool(.rectangle)
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 454, height: 32), "Rectangle controls reserve the tightened single-row bounds")
-        let beforeCollapse = model.currentToolStyle
-        model.toolPropertiesCollapsed = true
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 120, height: 28), "Collapsed properties reserve only the reopen control")
-        require(model.currentToolStyle == beforeCollapse, "Collapsing properties preserves drawing values")
-        model.toolPropertiesCollapsed = false
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 385, height: 26), "Rectangle controls reserve the tightened single-row bounds")
         model.selectTool(.number)
         let compact = ToolPropertyBarView.size(for: model, availableWidth: 640)
         model.toolPropertyDetailsExpanded = true
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 68, "Detailed number colors reserve their own hit area")
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 50, "Detailed number colors reserve their own hit area")
         for tool in [AnnotationType.rectangle, .ellipse, .arrow, .pen, .text, .number, .mosaic, .blur] {
             model.selectTool(tool)
             for width: CGFloat in [200, 400, 640] {
@@ -379,7 +384,7 @@ struct ToolPropertiesChecks {
         let cancellation = model.toolPropertyInputCancellation
         require(model.performEditorShortcut(escape, textResponder: true) && model.toolPropertyInputCancellation != cancellation && model.state == .editing, "Escape cancels a property draft without cancelling the capture")
         model.reset()
-        require(!model.toolPropertyDetailsExpanded && !model.toolPropertiesCollapsed, "New sessions start with compact common controls")
+        require(!model.toolPropertyDetailsExpanded, "New sessions start with compact common controls")
         for tool in [AnnotationType.rectangle, .text, .arrow] {
             settings.setAnnotationStyle(.factory(for: tool), for: tool)
         }

@@ -179,18 +179,18 @@ struct ToolPropertyBarView: View {
     let availableWidth: CGFloat
     @State private var numberColorRole: NumberColorRole = .fill
 
-    static let inset: CGFloat = 4
-    static let spacing: CGFloat = 4
+    static let inset: CGFloat = 2
+    static let spacing: CGFloat = 3
 
     enum Control: Hashable {
-        case color, width, corner, font, numberStyle, effectMode, brush, block, blur, details, actions, collapse
+        case color, width, corner, font, numberStyle, effectMode, brush, block, blur, details, actions
         var width: CGFloat {
             switch self {
-            case .color: return 102
-            case .numberStyle: return 88
-            case .effectMode: return 110
-            case .details, .actions, .collapse: return 24
-            default: return 140
+            case .color: return 94
+            case .numberStyle: return 76
+            case .effectMode: return 92
+            case .details, .actions: return 22
+            default: return 128
             }
         }
     }
@@ -208,7 +208,7 @@ struct ToolPropertyBarView: View {
             if model.effectDrawingMode(for: tool) == .brush { controls.append(.brush) }
             controls.append(tool == .mosaic ? .block : .blur)
         }
-        controls.append(contentsOf: [.actions, .collapse])
+        controls.append(.actions)
         let usable = max(0, availableWidth - inset * 2)
         var rows: [[Control]] = [[]]
         var used: CGFloat = 0
@@ -227,9 +227,8 @@ struct ToolPropertyBarView: View {
         guard model.propertyTool != nil else { return .zero }
         let rows = rows(for: model, availableWidth: availableWidth)
         let rowWidth = rows.map { row in row.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, row.count - 1)) * spacing }.max() ?? 0
-        if model.toolPropertiesCollapsed { return CGSize(width: min(availableWidth, 120), height: 28) }
-        let detailHeight: CGFloat = model.propertyTool == .number && model.toolPropertyDetailsExpanded ? spacing + 64 : 0
-        return CGSize(width: min(availableWidth, rowWidth + inset * 2), height: inset * 2 + CGFloat(rows.count) * 24 + CGFloat(max(0, rows.count - 1)) * spacing + detailHeight)
+        let detailHeight: CGFloat = model.propertyTool == .number && model.toolPropertyDetailsExpanded ? spacing + 47 : 0
+        return CGSize(width: min(availableWidth, rowWidth + inset * 2), height: inset * 2 + CGFloat(rows.count) * 22 + CGFloat(max(0, rows.count - 1)) * spacing + detailHeight)
     }
 
     private struct ColorPreset {
@@ -244,31 +243,23 @@ struct ToolPropertyBarView: View {
     var body: some View {
         let size = Self.size(for: viewModel, availableWidth: availableWidth)
         VStack(alignment: .leading, spacing: Self.spacing) {
-            if viewModel.toolPropertiesCollapsed {
-                Button { viewModel.toolPropertiesCollapsed = false } label: {
-                    Label("展开属性", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 11)).frame(maxWidth: .infinity, minHeight: 20)
-                        .contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("展开工具属性")
-            } else {
-                let rows = Self.rows(for: viewModel, availableWidth: availableWidth)
-                ForEach(rows.indices, id: \.self) { index in
-                    HStack(spacing: Self.spacing) {
-                        ForEach(rows[index], id: \.self) { item in
-                            control(item).frame(width: min(item.width, max(0, size.width - Self.inset * 2)), height: 24)
-                        }
+            let rows = Self.rows(for: viewModel, availableWidth: availableWidth)
+            ForEach(rows.indices, id: \.self) { index in
+                HStack(spacing: Self.spacing) {
+                    ForEach(rows[index], id: \.self) { item in
+                        control(item).frame(width: min(item.width, max(0, size.width - Self.inset * 2)), height: 22)
                     }
                 }
-                if viewModel.propertyTool == .number && viewModel.toolPropertyDetailsExpanded {
-                    numberDetails
-                }
+            }
+            if viewModel.propertyTool == .number && viewModel.toolPropertyDetailsExpanded {
+                numberDetails
             }
         }
         .padding(Self.inset)
         .frame(width: size.width, height: size.height, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
         .contentShape(Rectangle())
         .accessibilityIdentifier("tool-property-bar")
         .onDisappear { viewModel.endToolPropertyAdjustment() }
@@ -277,31 +268,26 @@ struct ToolPropertyBarView: View {
     @ViewBuilder private func control(_ item: Control) -> some View {
         switch item {
         case .color: colorControls(role: quickColorRole)
-        case .width: numericControl("粗细", range: 1...20, value: viewModel.currentToolStyle.lineWidth, ticks: [1, 3, 5, 8, 12, 20], action: viewModel.setLineWidth)
-        case .corner: numericControl("圆角", range: 0...128, value: viewModel.currentToolStyle.rectangleCornerRadius ?? 0, ticks: [0, 4, 8, 16, 32, 64, 128], action: viewModel.setRectangleCornerRadius)
-        case .font: numericControl("字号", range: 8...128, value: viewModel.currentToolStyle.fontSize, ticks: [8, 16, 24, 32, 48, 64, 128], action: viewModel.setFontSize)
-        case .brush: numericControl("笔刷", range: 12...120, value: viewModel.effectValue("width"), ticks: [12, 20, 36, 60, 90, 120]) { viewModel.setEffectValue($0, parameter: "width") }
-        case .block: numericControl("颗粒", range: 4...64, value: viewModel.effectValue("block"), ticks: [4, 8, 16, 24, 32, 64]) { viewModel.setEffectValue($0, parameter: "block") }
-        case .blur: numericControl("强度", range: 2...32, value: viewModel.effectValue("radius"), ticks: [2, 4, 8, 12, 20, 32]) { viewModel.setEffectValue($0, parameter: "radius") }
+        case .width: numericControl("粗细", range: 1...20, dragRange: 1...10, value: viewModel.currentToolStyle.lineWidth, ticks: [1, 3, 5, 8, 10], action: viewModel.setLineWidth)
+        case .corner: numericControl("圆角", range: 0...128, dragRange: 0...30, value: viewModel.currentToolStyle.rectangleCornerRadius ?? 0, ticks: [0, 5, 10, 15, 20, 25, 30], action: viewModel.setRectangleCornerRadius)
+        case .font: numericControl("字号", range: 8...128, dragRange: 12...48, value: viewModel.currentToolStyle.fontSize, ticks: [12, 18, 24, 32, 40, 48], action: viewModel.setFontSize)
+        case .brush: numericControl("笔刷", range: 12...120, dragRange: 12...60, value: viewModel.effectValue("width"), ticks: [12, 20, 30, 40, 50, 60]) { viewModel.setEffectValue($0, parameter: "width") }
+        case .block: numericControl("颗粒", range: 4...64, dragRange: 4...40, value: viewModel.effectValue("block"), ticks: [4, 8, 16, 24, 32, 40]) { viewModel.setEffectValue($0, parameter: "block") }
+        case .blur: numericControl("强度", range: 2...32, dragRange: 2...20, value: viewModel.effectValue("radius"), ticks: [2, 4, 8, 12, 16, 20]) { viewModel.setEffectValue($0, parameter: "radius") }
         case .numberStyle:
             Picker("序号样式", selection: Binding(get: { viewModel.currentToolStyle.numberStyle }, set: { viewModel.setNumberStyle($0) })) {
                 ForEach(NumberAnnotationStyle.allCases) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("序号样式")
+            }.pickerStyle(.segmented).controlSize(.mini).labelsHidden().accessibilityLabel("序号样式")
         case .effectMode:
             if let tool = viewModel.propertyTool {
                 Picker("应用方式", selection: Binding(get: { viewModel.effectDrawingMode(for: tool) }, set: { viewModel.setEffectDrawingMode($0, for: tool) })) {
                     ForEach(EffectDrawingMode.allCases) { Text($0.title).tag($0) }
-                }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("应用方式")
+                }.pickerStyle(.segmented).controlSize(.mini).labelsHidden().accessibilityLabel("应用方式")
             }
         case .details:
             iconButton("slider.horizontal.3", label: viewModel.toolPropertyDetailsExpanded ? "收起详细颜色" : "更多颜色设置") {
                 viewModel.toolPropertyDetailsExpanded.toggle()
             }
-        case .collapse:
-            iconButton("chevron.up", label: "收起工具属性") {
-                viewModel.endToolPropertyAdjustment()
-                viewModel.toolPropertiesCollapsed = true
-            }.disabled(viewModel.isToolPropertyInputActive)
         case .actions:
             iconButton("arrow.counterclockwise", label: "恢复本工具默认值") { viewModel.restoreCurrentToolDefaults() }
         }
@@ -309,15 +295,15 @@ struct ToolPropertyBarView: View {
 
     private func iconButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).frame(width: 24, height: 24).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: 11)).frame(width: 22, height: 22).contentShape(Rectangle())
         }.buttonStyle(.plain).help(label).accessibilityLabel(label)
     }
 
-    private func numericControl(_ title: String, range: ClosedRange<CGFloat>, value: CGFloat, ticks: [CGFloat], action: @escaping (CGFloat) -> Void) -> some View {
+    private func numericControl(_ title: String, range: ClosedRange<CGFloat>, dragRange: ClosedRange<CGFloat>, value: CGFloat, ticks: [CGFloat], action: @escaping (CGFloat) -> Void) -> some View {
         // Losing focus or switching an object must never apply a stale draft to another object.
         let tool = viewModel.propertyTool
         let annotationID = viewModel.selectedAnnotationID
-        return CompactPropertySlider(title: title, range: range, value: value, ticks: ticks, viewModel: viewModel) { value in
+        return CompactPropertySlider(title: title, range: range, dragRange: dragRange, value: value, ticks: ticks, viewModel: viewModel) { value in
             guard viewModel.propertyTool == tool, viewModel.selectedAnnotationID == annotationID else { return }
             action(value)
         }.id("\(String(describing: tool))-\(String(describing: annotationID))-\(title)")
@@ -340,28 +326,28 @@ struct ToolPropertyBarView: View {
         HStack(spacing: 2) {
             ForEach(Self.colorPresets, id: \.name) { preset in
                 Button { setColor(preset.color, role: role) } label: {
-                    RoundedRectangle(cornerRadius: 3).fill(preset.color).frame(width: 18, height: 18)
-                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
+                    Circle().fill(preset.color).frame(width: 14, height: 14)
+                        .overlay(Circle().stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
                         .overlay {
                             if AnnotationInk(color(for: role)) == AnnotationInk(preset.color) && !(viewModel.propertyTool == .number && role == .border && viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil) {
-                                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color.white)
+                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.white)
                             }
                         }
-                        .frame(width: 24, height: 24).contentShape(Rectangle())
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("\(viewModel.propertyTool == .number ? role.title : "颜色")\(preset.name)")
             }
             CompactPropertyColorWell(selection: Binding(get: { color(for: role) }, set: { setColor($0, role: role) }),
                 label: "\(viewModel.propertyTool == .number ? role.title : "")自定义颜色")
-                .frame(width: 24, height: 24)
+                .frame(width: 14, height: 14).padding(4)
         }
     }
 
     private var numberDetails: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 3) {
             Picker("颜色对象", selection: Binding(get: { activeNumberColorRole }, set: { numberColorRole = $0 })) {
                 ForEach(NumberColorRole.allCases.filter { $0 != .fill || viewModel.currentToolStyle.numberStyle == .filled }) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("颜色对象").frame(height: 28)
-            HStack(spacing: 8) {
+            }.pickerStyle(.segmented).controlSize(.mini).labelsHidden().accessibilityLabel("颜色对象").frame(height: 22)
+            HStack(spacing: 3) {
                 colorControls(role: activeNumberColorRole).frame(width: Control.color.width)
                 if activeNumberColorRole == .digit {
                     Button("自动") { viewModel.setNumberColor(nil, role: .digit) }.buttonStyle(.plain).frame(width: 28).font(.caption)
@@ -372,7 +358,7 @@ struct ToolPropertyBarView: View {
                         .foregroundStyle(viewModel.currentToolStyle.numberBorderInk == nil ? Color.accentColor : Color.secondary)
                         .help("无序号边框").accessibilityLabel("无序号边框")
                 }
-            }.frame(height: 28)
+            }.frame(height: 22)
         }
     }
 }
@@ -381,6 +367,7 @@ struct ToolPropertyBarView: View {
 struct CompactPropertySlider: View {
     let title: String
     let range: ClosedRange<CGFloat>
+    let dragRange: ClosedRange<CGFloat>
     let value: CGFloat
     let ticks: [CGFloat]
     @ObservedObject var viewModel: OverlayViewModel
@@ -413,12 +400,13 @@ struct CompactPropertySlider: View {
     }
 
     var body: some View {
-        HStack(spacing: 5) {
-            Text(title).font(.caption).foregroundStyle(.secondary).fixedSize()
-            Slider(value: Binding(get: { value }, set: { action($0.rounded()) }), in: range) { editing in
+        HStack(spacing: 4) {
+            Text(title).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize()
+            Slider(value: Binding(get: { min(max(value, dragRange.lowerBound), dragRange.upperBound) }, set: { action($0.rounded()) }), in: dragRange) { editing in
                 if editing { viewModel.beginToolPropertyAdjustment() }
                 else { viewModel.endToolPropertyAdjustment() }
             }
+            .controlSize(.mini)
             .accessibilityLabel(title).accessibilityValue("\(Self.formatted(value))")
             .overlay(PropertyWheelOverlay(value: value, range: range,
                 enabled: !viewModel.isToolPropertyInputActive,
@@ -429,7 +417,7 @@ struct CompactPropertySlider: View {
             .onHover { hovered = $0 }
             .overlay(alignment: .top) {
                 if hovered {
-                    ToolbarTooltipView(text: "\(title)：\(Self.formatted(value)) · 滚轮调整")
+                    ToolbarTooltipView(text: "\(title)：\(Self.formatted(value)) · 拖动 \(Self.formatted(dragRange.lowerBound))–\(Self.formatted(dragRange.upperBound)) · 滚轮微调")
                         .fixedSize().offset(y: -30).allowsHitTesting(false)
                 }
             }
@@ -438,7 +426,7 @@ struct CompactPropertySlider: View {
                 GeometryReader { geometry in
                     Path { path in
                         for tick in ticks {
-                            let x = 7 + (geometry.size.width - 14) * (tick - range.lowerBound) / (range.upperBound - range.lowerBound)
+                            let x = 7 + (geometry.size.width - 14) * (tick - dragRange.lowerBound) / (dragRange.upperBound - dragRange.lowerBound)
                             path.move(to: CGPoint(x: x, y: geometry.size.height - 3))
                             path.addLine(to: CGPoint(x: x, y: geometry.size.height))
                         }
@@ -446,8 +434,8 @@ struct CompactPropertySlider: View {
                 }.allowsHitTesting(false).accessibilityHidden(true)
             }
             TextField(title, text: $draft)
-                .textFieldStyle(.roundedBorder).font(.system(size: 11).monospacedDigit())
-                .multilineTextAlignment(.center).frame(width: 40)
+                .textFieldStyle(.roundedBorder).controlSize(.mini).font(.system(size: 10).monospacedDigit())
+                .multilineTextAlignment(.center).frame(width: 34)
                 .focused($focused).accessibilityLabel("\(title)精确数值")
                 .onSubmit { commit(); focused = false }
                 .help("输入 \(Self.formatted(range.lowerBound))–\(Self.formatted(range.upperBound))；回车确认，Esc 取消")
@@ -532,8 +520,9 @@ struct CompactPropertyColorWell: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
 
     func makeNSView(context: Context) -> NSColorWell {
-        let well = NSColorWell(frame: .zero)
-        well.colorWellStyle = .minimal
+        let well = CompactSwatchColorWell(frame: .zero)
+        well.isBordered = false
+        well.controlSize = .mini
         if #available(macOS 14.0, *) { well.supportsAlpha = false }
         well.target = context.coordinator
         well.action = #selector(Coordinator.changeColor(_:))
@@ -546,6 +535,7 @@ struct CompactPropertyColorWell: NSViewRepresentable {
     func updateNSView(_ well: NSColorWell, context: Context) {
         context.coordinator.selection = $selection
         well.color = NSColor(selection)
+        well.needsDisplay = true
         well.setAccessibilityLabel(label)
         well.toolTip = label
     }
@@ -558,6 +548,20 @@ struct CompactPropertyColorWell: NSViewRepresentable {
         @objc func changeColor(_ well: NSColorWell) {
             selection.wrappedValue = Color(nsColor: well.color.withAlphaComponent(1))
         }
+    }
+}
+
+/// Preserve native color-panel behavior without its oversized minimal-style swatch.
+private final class CompactSwatchColorWell: NSColorWell {
+    override var intrinsicContentSize: NSSize { NSSize(width: 14, height: 14) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5))
+        color.setFill()
+        circle.fill()
+        NSColor.labelColor.withAlphaComponent(isActive ? 0.6 : 0.2).setStroke()
+        circle.lineWidth = 1
+        circle.stroke()
     }
 }
 
