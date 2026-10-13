@@ -4,7 +4,7 @@
 
 A free, open-source native screenshot and annotation tool for macOS.
 
-[Download v1.3.19](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.19) · [Release notes](docs/releases/1.3.19.md) · [Changelog](CHANGELOG.md)
+[Download v1.3.23](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.23) · [Release notes](docs/releases/1.3.23.md) · [Changelog](CHANGELOG.md)
 
 ## Features
 

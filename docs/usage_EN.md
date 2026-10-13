@@ -8,9 +8,11 @@ Use the scissors menu for area, full-screen or scrolling capture. Default shortc
 
 Full-screen captures the display under the pointer and opens annotation editing. Area capture defaults to Select/Move after selecting a region; change the default tool in toolbar settings. Outer handles resize the capture region.
 
+Left-click the menu bar scissors to start area capture by default; right-click opens the full menu. Change the left-click action in General settings. Fine dashed crosshair guides appear while selecting and can be disabled in Settings.
+
 ## Annotation and properties
 
-Selecting a tool or existing annotation directly shows a compact property bar; narrow screens wrap controls into rows. Short sliders preview numeric changes live; release to finish one adjustment, which can be undone in one step. Edit the current value for precision: Return commits, Esc discards the draft, and invalid input leaves the property unchanged. Quick colors are red, green and blue; the adjacent color well supports custom colors. Each tool remembers its own color, width, font size and effect settings. Reset affects only that tool. `⌘Z` undoes object changes; explicitly chosen preferences for future annotations remain saved.
+Selecting a tool or existing annotation directly shows a compact property bar; narrow screens wrap controls into rows. Short sliders preview numeric changes live; release to finish one adjustment, which can be undone in one step. Edit the current value for precision: Return commits, Esc discards the draft, and invalid input leaves the property unchanged. Quick colors are red, green and blue; the adjacent palette icon opens the system color panel for custom colors. Each tool remembers its own color, width, font size and effect settings. Reset affects only that tool. `⌘Z` undoes object changes; explicitly chosen preferences for future annotations remain saved.
 
 In Select/Move mode, drag blank space inside the capture region to move the entire region and its annotations. Drag an annotation to adjust that object; crop handles still resize the capture. Drawing tools remain active after drawing for continuous annotation. Click Select/Move, or click the active tool again, before moving the crop from blank space. Small click jitter does not move the crop, and blank double-click completion still works. Movement stays within the screen and resumes when dragging back from its edge. Image and long-image editors keep their document crop fixed.
 
