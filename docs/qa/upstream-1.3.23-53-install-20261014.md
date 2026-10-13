@@ -8,13 +8,13 @@
 | DMG、主应用/helper签名、安装内容一致 | 通过 | 固定package、install --plan、install退出0，通用架构/ad-hoc校验通过，build.log；安装与候选可执行文件同SHA256 f8078c108bc3219fb5214b5f2b58173bff3d9fcfeefab985000699a157f603df |
 | 旧实例退出、备份路径、实际新进程路径 | 通过 | 菜单正常退出后status none；旧副本移入废纸篓，retired-apps.json；pre-upgrade-preferences.plist；最终PID32061来自/Applications/LibreShot.app/Contents/MacOS/LibreShot |
 | 屏幕录制处理及路径 | 通过 | 新包实际报缺失；退出后准备刷新授权，用户随后确认已全部替换为最新副本。最终从/Applications/LibreShot.app重新启动，真实遮罩、标注及重启前后PNG成功；无再次授权提示 |
-| 输入监控状态、Option开关及实体触发 | 状态通过／实体待验 | 用户确认已刷新最新权限；新版缺失提示消失，Option仍为1。已请求本包双击Option和Esc实体确认，尚未收到结果，旧包结果不替代 |
+| 输入监控状态、Option开关及实体触发 | 通过 | 用户确认已刷新最新权限；新版缺失提示消失，Option仍为1。用户确认本包双击Option出现遮罩并按Esc取消正常，未借用旧包结果 |
 | 重启前遮罩、保存目录、文件、剪贴板 | 通过 | `/Volumes/ExtremeSSD/Download/ScreenShots/Screenshot 2026-10-14 07.39.13.png`；940×440公开中英文字加红色圆角矩形，图片可解码；剪贴板PNG字节一致；before-restart.png |
 | 同包重启后遮罩、保存、剪贴板 | 通过 | 正常菜单退出、status无进程、Finder同安装路径重开；`/Volumes/ExtremeSSD/Download/ScreenShots/Screenshot 2026-10-14 07.40.08.png`，940×440公开文字加红色画笔；剪贴板字节一致；after-restart.png |
 | OCR helper实际调用 | 通过 | 同安装副本框选公开文字，返回五行中英文字，ocr-result.txt；首行0识别为O，不作为字符准确率专项 |
 | 原用户设置 | 通过 | 保存书签、自动保存、Option、登录启动、工具配置/样式、快捷键、左键行为、辅助线共17项语义一致，settings-preservation.json |
 | 本次新增改动及环境边界 | 基础通过／专项待用户试用 | 基础区域截图、矩形/画笔、PNG/剪贴板/OCR通过；本次主线合入长截图与内存生命周期实现，未重复完整长截图、翻译、贴图内存专项；不能据此宣称这些专项全部通过 |
-| 最终交付、发布/回退 | 基础验收通过 | 可以测试本次主线改动；新版保持运行，公开fixture已退出。Option实体待验单列；本次未推送/发布/回复Issue，原已发布build52不被替换。旧DMG和废纸篓可回退，回退须复验 |
+| 最终交付、发布/回退 | 基础验收通过 | 可以测试本次主线改动；新版保持运行，公开fixture已退出。Option实体触发已由用户确认通过；本次未推送/发布/回复Issue，原已发布build52不被替换。旧DMG和废纸篓可回退，回退须复验 |
 
 ## 桌面工具定位修正
 
