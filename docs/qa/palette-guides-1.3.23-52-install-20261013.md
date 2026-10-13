@@ -15,6 +15,14 @@
 | 辅助线样式 | 通过 | 真实遮罩看到细半透明短虚线；选区编辑时消失，最终导出无辅助线；源码生产Canvas浅/深背景图片已检查 |
 | 原设置保留 | 通过 | 共17项语义一致，包含保存书签、自动保存、Option、登录启动、工具配置与样式、快捷键、左键行为、辅助线；settings-preservation.json |
 | OCR实际调用 | 通过 | 最终包框选同公开内容，返回五行中英文字，ocr-result.txt；首行0被识别成O，非字符准确率专项 |
-| 最终交付状态、发布/回退状态 | 基础验收通过 | 可测试色盘及辅助线；应用保持运行，公开fixture已退出；Option实体触发已由用户确认通过。未发布、未推送、未回复Issue；旧DMG/废纸篓可用于回退，回退须复验 |
+| 最终交付状态、发布/回退状态 | 基础验收通过 | 可测试色盘及辅助线；应用保持运行，公开fixture已退出；Option实体触发已由用户确认通过。已发布v1.3.23并快进推送master；本次未授权Issue回复，保持原Issue状态。旧DMG/废纸篓可用于回退，回退须复验 |
 
 验收始终使用同一最终安装包。工具关闭截图窗口后偶发native pipe closed，重新识别窗口并以真实新文件、解码内容和剪贴板确认结果。菜单/授权/OCR读数使用此前用户明确批准的AppleScript/System Events；未更改其他应用权限。未覆盖其他macOS与显示配置。
+
+## 发布记录
+
+2026-10-13，维护者授权更新文档并发布新版。中英文README、使用指南、CHANGELOG、docs/releases/1.3.23.md已更新，代码与文档正常快进推送master；标签v1.3.23指向4c299d3（含构建源码76255fc与后续文档）。原DMG直接上传，未重编译/重签名。
+
+公开Release：https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.23 ，isDraft=false，isPrerelease=false，设为Latest。资产：LibreShot-1.3.23-52.dmg、SHA256SUMS、INSTALL-AND-PERMISSIONS.md。从公开Release重新下载全部三项，DMG SHA256仍为b49746708a057eb76701367fb8cf56bc37c7bdbbd17087dc9eeef897c4869dc5，校验文件与授权规范字节一致。下载验证目录/tmp/libreshot-v1.3.23-public-verify。
+
+仅授权文档与Release，本次未发送Issue评论或修改Issue状态。内存优化、其他显示配置验证和更大需求不声明完成。
