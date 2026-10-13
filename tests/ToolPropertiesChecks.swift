@@ -282,6 +282,7 @@ struct ToolPropertiesChecks {
         model.onCapture = { _, _, _, _ in captured = true }
         let size = ToolPropertyBarView.size(for: model, availableWidth: 640)
         let window = OverlayWindow(contentRect: CGRect(x: 80, y: 80, width: size.width + 24, height: size.height + 24), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.level = .screenSaver
         window.isReleasedWhenClosed = false; window.bindEditingActions(to: model)
         window.onEscapeKey = { cancelled = true }
         let hosting = NSHostingView(rootView: ToolPropertyBarView(viewModel: model, availableWidth: 640).padding(12))
@@ -298,6 +299,7 @@ struct ToolPropertiesChecks {
         require(wells.count == 1 && wells[0].frame.size == CGSize(width: 22, height: 22), "Custom palette icon keeps the same button hit area as the presets")
         wells[0].activate(true)
         require(wells[0].isActive, "Compact swatch retains native color-panel activation")
+        require(NSColorPanel.shared.level.rawValue > window.level.rawValue, "Color panel appears above the production screenshot overlay")
         wells[0].deactivate()
         NSColorPanel.shared.orderOut(nil)
         let inputs = fields(hosting)

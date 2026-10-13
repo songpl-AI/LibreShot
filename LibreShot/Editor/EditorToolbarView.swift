@@ -553,7 +553,28 @@ struct CompactPropertyColorWell: NSViewRepresentable {
 
 /// Give custom color selection a distinct icon, while preserving native panel behavior.
 private final class CompactSwatchColorWell: NSColorWell {
+    private var previousPanelLevel: NSWindow.Level?
+
     override var intrinsicContentSize: NSSize { NSSize(width: 22, height: 22) }
+
+    override func activate(_ exclusive: Bool) {
+        super.activate(exclusive)
+        let panel = NSColorPanel.shared
+        if previousPanelLevel == nil { previousPanelLevel = panel.level }
+        // The capture overlay sits above ordinary floating panels.
+        panel.level = NSWindow.Level(rawValue: max(panel.level.rawValue, (window?.level.rawValue ?? 0) + 1))
+        panel.makeKeyAndOrderFront(nil)
+        needsDisplay = true
+    }
+
+    override func deactivate() {
+        super.deactivate()
+        if let previousPanelLevel {
+            NSColorPanel.shared.level = previousPanelLevel
+            self.previousPanelLevel = nil
+        }
+        needsDisplay = true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         if isActive {
