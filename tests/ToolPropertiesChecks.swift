@@ -201,6 +201,21 @@ struct ToolPropertiesChecks {
         if let output = ProcessInfo.processInfo.environment["LIBRESHOT_PROPERTY_QA_OUTPUT"] {
             try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             second.annotations = [rounded, colorfulNumber]
+            for dark in [false, true] {
+                let view = ZStack {
+                    (dark ? Color(red: 0.12, green: 0.17, blue: 0.23) : Color(red: 0.91, green: 0.94, blue: 0.97))
+                    Text("LibreShot · 对齐参考").font(.system(size: 24)).foregroundStyle(dark ? .white : .black)
+                    SelectionGuidesView(point: CGPoint(x: 230, y: 105))
+                }
+                let hosting = NSHostingView(rootView: view)
+                let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 640, height: 280), styleMask: [.borderless], backing: .buffered, defer: false)
+                window.contentView = hosting; window.orderFrontRegardless(); window.layoutIfNeeded()
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+                let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds)!
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output).appendingPathComponent("guides-\(dark ? "dark" : "light").png"))
+                window.orderOut(nil)
+            }
             func render(_ width: CGFloat, name: String, scheme: ColorScheme = .light) throws {
                 let size = ToolPropertyBarView.size(for: second, availableWidth: width)
                 let hosting = NSHostingView(rootView: ToolPropertyBarView(viewModel: second, availableWidth: width).padding(12).environment(\.colorScheme, scheme))
@@ -297,6 +312,21 @@ struct ToolPropertiesChecks {
         }
         let wells = colorWells(hosting)
         require(wells.count == 1 && wells[0].frame.size == CGSize(width: 22, height: 22), "Custom palette icon keeps the same button hit area as the presets")
+        let clickPoint = wells[0].convert(CGPoint(x: 11, y: 11), to: nil)
+        let mouseUp = NSEvent.mouseEvent(with: .leftMouseUp, location: clickPoint, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0)!
+        NSApp.postEvent(mouseUp, atStart: true)
+        wells[0].mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown, location: clickPoint, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!)
+        settle()
+        require(wells[0].isActive && NSColorPanel.shared.isVisible, "Mouse click on palette icon opens the color panel")
+        NSColorPanel.shared.performClose(nil)
+        settle()
+        wells[0].mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown, location: clickPoint, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 3, clickCount: 1, pressure: 1)!)
+        require(wells[0].isActive && NSColorPanel.shared.isVisible, "Mouse click reopens a closed color panel")
+        wells[0].deactivate()
+        NSColorPanel.shared.orderOut(nil)
         wells[0].activate(true)
         require(wells[0].isActive, "Compact swatch retains native color-panel activation")
         require(NSColorPanel.shared.level.rawValue > window.level.rawValue, "Color panel appears above the production screenshot overlay")

@@ -112,15 +112,8 @@ struct OverlayView: View {
                 if settings.showSelectionGuides, viewModel.captureMode != .imageEditor,
                    viewModel.state == .idle || viewModel.state == .selecting,
                    let point = guidePoint {
-                    Canvas { context, size in
-                        var lines = Path()
-                        lines.move(to: CGPoint(x: 0, y: point.y))
-                        lines.addLine(to: CGPoint(x: size.width, y: point.y))
-                        lines.move(to: CGPoint(x: point.x, y: 0))
-                        lines.addLine(to: CGPoint(x: point.x, y: size.height))
-                        context.stroke(lines, with: .color(.black.opacity(0.85)), lineWidth: 3)
-                        context.stroke(lines, with: .color(.white.opacity(0.95)), lineWidth: 1)
-                    }.allowsHitTesting(false).accessibilityHidden(true)
+                    SelectionGuidesView(point: point)
+                        .allowsHitTesting(false).accessibilityHidden(true)
                 }
 
                 // Layer 3: Selection Border
@@ -608,5 +601,40 @@ private enum OverlayPointerCursor {
             return true
         }
         return NSCursor(image: image, hotSpot: CGPoint(x: 12, y: 12))
+    }
+}
+
+
+/// Subtle alignment guides; the cursor keeps a clear center for pixel targeting.
+struct SelectionGuidesView: View {
+    let point: CGPoint
+
+    var body: some View {
+        Canvas { context, size in
+            let gap: CGFloat = 10
+            var lines = Path()
+            if point.x > gap {
+                lines.move(to: CGPoint(x: 0, y: point.y))
+                lines.addLine(to: CGPoint(x: point.x - gap, y: point.y))
+            }
+            if point.x + gap < size.width {
+                lines.move(to: CGPoint(x: point.x + gap, y: point.y))
+                lines.addLine(to: CGPoint(x: size.width, y: point.y))
+            }
+            if point.y > gap {
+                lines.move(to: CGPoint(x: point.x, y: 0))
+                lines.addLine(to: CGPoint(x: point.x, y: point.y - gap))
+            }
+            if point.y + gap < size.height {
+                lines.move(to: CGPoint(x: point.x, y: point.y + gap))
+                lines.addLine(to: CGPoint(x: point.x, y: size.height))
+            }
+            let stroke = StrokeStyle(lineWidth: 1, lineCap: .butt, dash: [4, 4])
+            // A faint offset shadow keeps a single fine line readable on light content.
+            var shadow = context
+            shadow.translateBy(x: 0.5, y: 0.5)
+            shadow.stroke(lines, with: .color(.black.opacity(0.2)), style: stroke)
+            context.stroke(lines, with: .color(.white.opacity(0.65)), style: stroke)
+        }
     }
 }

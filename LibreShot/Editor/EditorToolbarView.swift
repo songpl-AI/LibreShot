@@ -557,6 +557,13 @@ private final class CompactSwatchColorWell: NSColorWell {
 
     override var intrinsicContentSize: NSSize { NSSize(width: 22, height: 22) }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        // Custom drawing has no native swatch hit region. Treat the whole icon as an opener.
+        activate(true)
+    }
+
     override func activate(_ exclusive: Bool) {
         super.activate(exclusive)
         let panel = NSColorPanel.shared
