@@ -65,9 +65,11 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     private var editorSubscriptions = Set<AnyCancellable>()
     private var opacityRemainder: CGFloat = 0
     private let displayMode: DisplayMode
-    private let onCopyAction: (() -> Void)?
-    private let onSaveAction: (() -> Void)?
-    private let onSaveAsAction: (() -> Void)?
+    private var onCopyAction: (() -> Void)?
+    private var onSaveAction: (() -> Void)?
+    private var onSaveAsAction: (() -> Void)?
+    private var exportService: CaptureService?
+    private var didTearDown = false
     private var minimumZoomScale: CGFloat = 0.1
     var onClose: (() -> Void)?
 
@@ -81,7 +83,8 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         onCopyAction: (() -> Void)? = nil,
         onSaveAction: (() -> Void)? = nil,
         onSaveAsAction: (() -> Void)? = nil,
-        onEditAction: (() -> Void)? = nil
+        onEditAction: (() -> Void)? = nil,
+        exportService: CaptureService? = nil
     ) {
         self.presentation = PinnedImagePresentation(image: image)
         self.pinDocument = document ?? PinnedImageDocument(baseImage: image, roundedCorners: false)
@@ -90,6 +93,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         self.onCopyAction = onCopyAction
         self.onSaveAction = onSaveAction
         self.onSaveAsAction = onSaveAsAction
+        self.exportService = exportService
         
         let visibleFrame = (screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         let initialFrame = Self.initialWindowFrame(for: image.size, displayMode: displayMode,
@@ -161,28 +165,56 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     }
     
     override func close() {
+        tearDown()
+        super.close()
+    }
+
+    private func tearDown() {
+        guard !didTearDown else { return }
+        didTearDown = true
         endEditing()
         editingModel?.reset()
         editingModel = nil
         window?.delegate = nil
         window?.contentView = nil
-        super.close()
-        onClose?()
+        presentation.image = NSImage()
+        pinDocument = PinnedImageDocument(baseImage: NSImage(), roundedCorners: false)
+        onCopyAction = nil
+        onSaveAction = nil
+        onSaveAsAction = nil
+        exportService = nil
+        savePinnedImage = { _ in throw CancellationError() }
+        let completion = onClose
+        onClose = nil
+        completion?()
     }
     
-    private func handleCopy() {
+    func handleCopy() {
+        guard !didTearDown else { return }
         if let onCopyAction {
             onCopyAction()
             if displayMode == .longCapturePreview { close() }
             return
         }
         
-        let output = imageForAction()
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([output])
+        currentExportService().copyToClipboard(imageForAction())
+    }
+
+    /// The presentation and rendered edit already have their final outline.
+    func pngDataForSave() -> Data? {
+        guard !didTearDown else { return nil }
+        return currentExportService().pngData(from: imageForAction())
+    }
+
+    private func currentExportService() -> CaptureService {
+        if let exportService { return exportService }
+        let service = PinnedImageExportService()
+        exportService = service
+        return service
     }
     
-    private func handleSave() {
+    func handleSave() {
+        guard !didTearDown else { return }
         if let onSaveAction {
             if displayMode == .longCapturePreview {
                 close()
@@ -201,17 +233,15 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         savePanel.isExtensionHidden = false
         savePanel.nameFieldStringValue = "PinnedImage.png"
         
-        let output = imageForAction()
-        savePanel.begin { response in
-            if response == .OK, let url = savePanel.url {
-                if let tiff = output.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) {
-                    try? png.write(to: url)
-                }
+        savePanel.begin { [weak self] response in
+            if response == .OK, let url = savePanel.url, let png = self?.pngDataForSave() {
+                try? png.write(to: url)
             }
         }
     }
 
-    private func handleSaveAs() {
+    func handleSaveAs() {
+        guard !didTearDown else { return }
         if let onSaveAsAction {
             if displayMode == .longCapturePreview {
                 close()
@@ -313,7 +343,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func beginEditing() {
-        guard displayMode == .pinned, presentation.editor == nil, let window else { return }
+        guard !didTearDown, displayMode == .pinned, presentation.editor == nil, let window else { return }
         let model: OverlayViewModel
         if let retained = editingModel {
             model = retained
@@ -454,9 +484,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     func windowDidMove(_ notification: Notification) { positionEditorPanel() }
     func windowDidResize(_ notification: Notification) { positionEditorPanel() }
     func windowWillClose(_ notification: Notification) {
-        endEditing()
-        editingModel?.reset()
-        editingModel = nil
+        tearDown()
     }
 
     private func positionEditorPanel() {
@@ -513,6 +541,11 @@ final class PinnedImageHostingView: NSHostingView<PinnedImageView> {
     override func magnify(with event: NSEvent) {
         if !isImagePoint(event.locationInWindow) || onMagnify?(event) != true { super.magnify(with: event) }
     }
+}
+
+/// Avoid styling an already rendered pin again during file-backed PNG/TIFF export.
+private final class PinnedImageExportService: CaptureService {
+    override func styledImage(_ image: NSImage, useRoundedCorners: Bool? = nil) -> NSImage { image }
 }
 
 struct PinnedImageView: View {

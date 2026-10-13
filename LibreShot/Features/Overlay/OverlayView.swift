@@ -393,8 +393,8 @@ struct OverlayView: View {
                 ToolPropertyBarView(viewModel: viewModel, availableWidth: screenSize.width - 20)
                     .padding(.vertical, 4)
             }
-            if #available(macOS 26.0, *), let source = viewModel.translationSource {
-                InlineImageTranslationView(viewModel: viewModel, image: source)
+            if #available(macOS 26.0, *), let model = viewModel.imageTranslationModel {
+                InlineImageTranslationView(viewModel: viewModel, model: model)
                     .id(viewModel.translationSessionID).frame(width: min(430, screenSize.width - 20))
             }
         }

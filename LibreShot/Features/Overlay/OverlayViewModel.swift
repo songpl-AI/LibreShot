@@ -52,6 +52,7 @@ enum SelectionHandle: CaseIterable {
     }
 }
 
+@MainActor
 class OverlayViewModel: ObservableObject {
     // Selection State
     @Published var startPoint: CGPoint?
@@ -124,18 +125,44 @@ class OverlayViewModel: ObservableObject {
     @Published var captureMode: CaptureMode = .normal
     @Published var longCaptureStatusText: String = "拖动选择滚动区域"
     @Published private(set) var translationSource: NSImage?
+    // Keep one model per translation session even when toolbar layout moves
+    // between SwiftUI branches. Type erasure preserves the macOS 13 target.
+    @Published private var imageTranslationModelStorage: AnyObject?
+    @available(macOS 26.0, *)
+    var imageTranslationModel: ImageTranslationModel? {
+        imageTranslationModelStorage as? ImageTranslationModel
+    }
     @Published private(set) var translationSessionID = UUID()
     @Published var translatedSelection: CGImage? { didSet { scheduleEffectPreview() } }
     @Published var showsOriginalTranslation = false { didSet { scheduleEffectPreview() } }
     @Published var translationCanExport = false
     @Published var showsTranslationControls = false
 
-    var canExportSelection: Bool { translationSource == nil || translationCanExport }
+    var canExportSelection: Bool {
+        guard translationSource != nil else { return true }
+        if #available(macOS 26.0, *) {
+            // Published view callbacks may arrive after a task was cancelled.
+            return translationCanExport && imageTranslationModel?.canExport == true
+        }
+        return false
+    }
+
+    /// A direct region capture rereads the display after the overlay closes.
+    /// Preserve the frozen preview whenever the export depends on pixels that
+    /// are no longer present on the display (for example, an inline image
+    /// translation) or on effect rendering tied to that preview.
+    var captureRequiresExistingPreview: Bool {
+        translationSource != nil || translatedSelection != nil ||
+        annotations.contains(where: { $0.type == .mosaic || $0.type == .blur }) ||
+        currentAnnotation.map { $0.type == .mosaic || $0.type == .blur } == true
+    }
 
     func clearImageTranslation() {
         #if DEBUG
         let hadTranslation = translationSource != nil || translatedSelection != nil
         #endif
+        if #available(macOS 26.0, *) { imageTranslationModel?.dismiss() }
+        imageTranslationModelStorage = nil
         translationSource = nil
         translatedSelection = nil
         translationCanExport = false
@@ -381,7 +408,9 @@ class OverlayViewModel: ObservableObject {
                             width: selectionRect.width * previewScale, height: selectionRect.height * previewScale).integral
         guard let crop = image.cropping(to: pixels) else { return }
         translationSessionID = UUID()
-        translationSource = NSImage(cgImage: crop, size: selectionRect.size)
+        let source = NSImage(cgImage: crop, size: selectionRect.size)
+        imageTranslationModelStorage = ImageTranslationModel(image: source)
+        translationSource = source
         #if DEBUG
         MemoryTrace.mark("inline_translation_source_ready")
         #endif

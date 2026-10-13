@@ -4,6 +4,8 @@ import SwiftUI
 import Translation
 
 class OCRResultWindowController: NSWindowController, NSWindowDelegate {
+    var onClose: (() -> Void)?
+    private var didClose = false
     
     convenience init(text: String) {
         let window = NSWindow(
@@ -23,9 +25,17 @@ class OCRResultWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Tear down the hosting view so SwiftUI cancels its translation task,
-        // even while AppDelegate still retains this window controller.
-        window?.contentView = nil
+        guard !didClose else { return }
+        didClose = true
+        let close = onClose
+        onClose = nil
+        // Detach the SwiftUI tree and window even if another owner retains us.
+        if let closingWindow = notification.object as? NSWindow {
+            closingWindow.contentView = nil
+            closingWindow.delegate = nil
+        }
+        window = nil
+        close?()
         #if DEBUG
         MemoryTrace.markAfterRelease("ocr_result_window_closed")
         #endif

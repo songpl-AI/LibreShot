@@ -6,10 +6,10 @@ import Combine
 @available(macOS 26.0, *)
 @MainActor
 final class ImageTranslationModel: ObservableObject {
-    let original: NSImage
+    @Published private(set) var original: NSImage?
     @Published var targetLanguageID = "zh-Hans" {
         didSet {
-            guard targetLanguageID != oldValue else { return }
+            guard !isDismissed, targetLanguageID != oldValue else { return }
             cancel()
             translatedImage = nil
             overflowIDs = []
@@ -30,10 +30,18 @@ final class ImageTranslationModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var progress = ""
     private var requestID: UUID?
+    private var translationInvocationID: UUID?
     private var recognitionID: UUID?
     private var recognitionTask: Task<[OCRTextRegion], Error>?
+    private var renderTask: Task<ImageTranslationRender, Error>?
+    private var renderInvocationID: UUID?
+    private var activeAttachmentID: UUID?
     private var lastConfiguration = TranslationSession.Configuration()
     private var loaded = false
+    private var hasActivated = false
+    private(set) var isDismissed = false
+    private enum SuspendedOperation: Equatable { case recognize, translate, render }
+    private var suspendedOperation: SuspendedOperation?
     private let recognizeImage: (NSImage) async throws -> [OCRTextRegion]
 
     init(image: NSImage, recognizeImage: @escaping (NSImage) async throws -> [OCRTextRegion] = { try await OCRService.shared.recognizeRegions(from: $0) }) {
@@ -46,7 +54,9 @@ final class ImageTranslationModel: ObservableObject {
     var activeRequestID: UUID? { requestID }
 
     func recognize() async {
-        guard !loaded else { return }
+        guard !isDismissed, !loaded, let image = original else { return }
+        hasActivated = true
+        suspendedOperation = nil
         #if DEBUG
         MemoryTrace.mark("image_translation_ocr_started")
         defer { MemoryTrace.mark("image_translation_ocr_finished") }
@@ -58,13 +68,12 @@ final class ImageTranslationModel: ObservableObject {
         errorMessage = nil
         progress = "正在识别文字…"
         let recognize = recognizeImage
-        let image = original
         let worker = Task { try await recognize(image) }
         recognitionTask = worker
         do {
             let lines = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
             try Task.checkCancellation()
-            guard recognitionID == id else { return }
+            guard !isDismissed, recognitionID == id else { return }
             loadRegions(OCRTextRegion.readingOrder(from: lines))
             isRecognizing = false
             recognitionID = nil
@@ -79,17 +88,22 @@ final class ImageTranslationModel: ObservableObject {
             recognitionTask = nil
             loaded = false
             progress = ""
-            if !(error is CancellationError) { errorMessage = error.localizedDescription }
+            if error is CancellationError {
+                suspendedOperation = .recognize
+            } else { errorMessage = error.localizedDescription }
         }
     }
 
     func loadRegions(_ source: [OCRTextRegion]) {
+        guard !isDismissed else { return }
+        hasActivated = true
         loaded = true
         regions = source.map { TranslatedImageRegion(source: $0, translation: "", isIncluded: $0.confidence >= 0.3) }
     }
 
     func startTranslation() {
-        guard !isBusy else { return }
+        guard !isDismissed, original != nil, !isBusy else { return }
+        suspendedOperation = nil
         let selected = regions.filter(\.isIncluded)
         guard !selected.isEmpty else { errorMessage = "请选择至少一个文字区域。"; return }
         errorMessage = nil
@@ -112,15 +126,20 @@ final class ImageTranslationModel: ObservableObject {
         configuration = lastConfiguration
     }
 
-    func run(requestID expectedID: UUID?, translate: ([OCRTextRegion]) async throws -> [Int: String]) async {
-        guard !Task.isCancelled, let id = expectedID, requestID == id else { return }
+    func run(requestID expectedID: UUID?, attachmentID: UUID? = nil,
+             translate: ([OCRTextRegion]) async throws -> [Int: String]) async {
+        guard !isDismissed, !Task.isCancelled, accepts(attachmentID),
+              let id = expectedID, requestID == id else { return }
+        let invocationID = UUID()
+        translationInvocationID = invocationID
         #if DEBUG
         MemoryTrace.mark("image_translation_text_started")
         defer { MemoryTrace.mark("image_translation_text_finished") }
         #endif
         let source = regions.filter(\.isIncluded).map(\.source)
         defer {
-            if requestID == id {
+            if requestID == id, translationInvocationID == invocationID {
+                translationInvocationID = nil
                 requestID = nil
                 configuration = nil
                 isTranslating = false
@@ -130,7 +149,7 @@ final class ImageTranslationModel: ObservableObject {
             try Task.checkCancellation()
             let results = try await translate(source)
             try Task.checkCancellation()
-            guard requestID == id else { return }
+            guard !isDismissed, requestID == id, translationInvocationID == invocationID else { return }
             guard source.allSatisfy({ !(results[$0.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
                 throw NSError(domain: "LibreShot.ImageTranslation", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "部分文字区域没有返回译文，请重试。"])
@@ -140,60 +159,86 @@ final class ImageTranslationModel: ObservableObject {
             }
             requestRender()
         } catch {
-            guard requestID == id else { return }
+            guard requestID == id, translationInvocationID == invocationID else { return }
             progress = ""
             if error is CancellationError || TranslationError.alreadyCancelled ~= error ||
                 ((error as NSError).domain == NSCocoaErrorDomain && (error as NSError).code == NSUserCancelledError) {
+                // A system permission/download cancellation is a user decision,
+                // while cancellation of the view task may need layout recovery.
+                if Task.isCancelled { suspendedOperation = .translate }
                 errorMessage = "已取消翻译，可重试。"
             } else { errorMessage = "翻译未完成：\(error.localizedDescription)" }
         }
     }
 
     func updateTranslation(_ text: String, id: Int) {
-        guard !isTranslating, let index = regions.firstIndex(where: { $0.id == id }) else { return }
+        guard !isDismissed, !isTranslating, let index = regions.firstIndex(where: { $0.id == id }) else { return }
         regions[index].translation = text
         requestRender()
     }
 
     func setIncluded(_ included: Bool, id: Int) {
-        guard !isTranslating, let index = regions.firstIndex(where: { $0.id == id }) else { return }
+        guard !isDismissed, !isTranslating, let index = regions.firstIndex(where: { $0.id == id }) else { return }
         regions[index].isIncluded = included
         requestRender()
     }
 
     private func requestRender() {
+        guard !isDismissed, original != nil else { return }
+        suspendedOperation = nil
+        renderInvocationID = nil
+        renderTask?.cancel()
+        renderTask = nil
         renderRevision += 1
         isRendering = true
         progress = "正在排版…"
     }
 
-    func render() async {
-        guard isRendering else { return }
+    func render(attachmentID: UUID? = nil) async {
+        guard !isDismissed, !Task.isCancelled, accepts(attachmentID), isRendering else { return }
+        let invocationID = UUID()
+        renderInvocationID = invocationID
+        renderTask?.cancel()
+        renderTask = nil
         #if DEBUG
         MemoryTrace.mark("image_translation_render_started")
         defer { MemoryTrace.mark("image_translation_render_finished") }
         #endif
         let revision = renderRevision
         let snapshot = regions
-        defer { if revision == renderRevision { isRendering = false } }
+        defer {
+            if revision == renderRevision, renderInvocationID == invocationID {
+                renderInvocationID = nil
+                renderTask = nil
+                isRendering = false
+            }
+        }
         do {
             try await Task.sleep(for: .milliseconds(180))
+            guard !isDismissed, revision == renderRevision, renderInvocationID == invocationID,
+                  let original else { return }
             guard let cg = original.cgImage(forProposedRect: nil, context: nil, hints: nil) else { throw OCRError.missingImage }
             let scale = CGFloat(cg.width) / max(original.size.width, 1)
             let worker = Task.detached(priority: .userInitiated) {
                 try ImageTranslationRenderer.render(image: cg, regions: snapshot, scale: scale)
             }
+            renderTask = worker
             let result = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
             try Task.checkCancellation()
-            guard revision == renderRevision else { return }
+            guard !isDismissed, revision == renderRevision, renderInvocationID == invocationID else { return }
             translatedImage = NSImage(cgImage: result.image, size: original.size)
             overflowIDs = result.overflowIDs
             complexBackgroundIDs = result.complexBackgroundIDs
             errorMessage = nil
             progress = result.overflowIDs.isEmpty ? "排版完成" : "\(result.overflowIDs.count) 个区域译文过长或为空，请修改译文或取消勾选。"
         } catch is CancellationError {
+            if !isDismissed, revision == renderRevision, renderInvocationID == invocationID {
+                translatedImage = nil
+                suspendedOperation = .render
+                progress = "已暂停排版"
+            }
         } catch {
-            guard revision == renderRevision else { return }
+            guard revision == renderRevision, renderInvocationID == invocationID else { return }
             translatedImage = nil
             errorMessage = error.localizedDescription
             progress = ""
@@ -201,11 +246,17 @@ final class ImageTranslationModel: ObservableObject {
     }
 
     func cancel() {
+        guard !isDismissed else { return }
+        suspendedOperation = nil
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionID = nil
         requestID = nil
+        translationInvocationID = nil
         configuration = nil
+        renderTask?.cancel()
+        renderTask = nil
+        renderInvocationID = nil
         renderRevision += 1
         isRecognizing = false
         isTranslating = false
@@ -215,8 +266,58 @@ final class ImageTranslationModel: ObservableObject {
         if regions.isEmpty { loaded = false }
     }
 
-    func translate(using session: TranslationSession, requestID: UUID?) async {
-        await run(requestID: requestID) { regions in
+    // SwiftUI may move this view between overlay layouts without ending the session.
+    private func accepts(_ attachmentID: UUID?) -> Bool {
+        attachmentID == nil || attachmentID == activeAttachmentID
+    }
+
+    func suspend(attachmentID: UUID? = nil) {
+        guard !isDismissed, accepts(attachmentID), suspendedOperation == nil else { return }
+        let operation: SuspendedOperation?
+        if isRecognizing { operation = .recognize }
+        else if isTranslating { operation = .translate }
+        else if isRendering { operation = .render }
+        else { operation = nil }
+        if isBusy { cancel() }
+        suspendedOperation = operation
+    }
+
+    func activate(attachmentID: UUID? = nil) async {
+        guard !isDismissed, !Task.isCancelled else { return }
+        if let attachmentID, activeAttachmentID != attachmentID {
+            // The new layout can appear before the old layout disappears.
+            // Hand it the work now; the old layout's callbacks then become stale.
+            suspend()
+            activeAttachmentID = attachmentID
+        }
+        let isInitialActivation = !hasActivated
+        hasActivated = true
+        let operation = suspendedOperation
+        suspendedOperation = nil
+        if operation == .recognize || (isInitialActivation && !loaded) { await recognize() }
+        else if operation == .translate { startTranslation() }
+        else if operation == .render { requestRender() }
+    }
+
+    // End the session even if a system translation callback retains the model.
+    func dismiss() {
+        guard !isDismissed else { return }
+        cancel()
+        isDismissed = true
+        activeAttachmentID = nil
+        original = nil
+        translatedImage = nil
+        regions = []
+        lastConfiguration = TranslationSession.Configuration()
+        overflowIDs = []
+        complexBackgroundIDs = []
+        errorMessage = nil
+        progress = ""
+        loaded = false
+    }
+
+    func translate(using session: TranslationSession, requestID: UUID?, attachmentID: UUID? = nil) async {
+        await run(requestID: requestID, attachmentID: attachmentID) { regions in
             var translated: [Int: String] = [:]
             for start in stride(from: 0, to: regions.count, by: 32) {
                 try Task.checkCancellation()
@@ -237,19 +338,26 @@ final class ImageTranslationModel: ObservableObject {
 @available(macOS 26.0, *)
 struct InlineImageTranslationView: View {
     @ObservedObject var viewModel: OverlayViewModel
-    @StateObject private var model: ImageTranslationModel
+    @ObservedObject private var model: ImageTranslationModel
     @State private var showsCorrections = false
     @State private var didAutoCollapse = false
+    @State private var attachmentID = UUID()
     private let sessionID: UUID
 
-    init(viewModel: OverlayViewModel, image: NSImage) {
+    init(viewModel: OverlayViewModel, model: ImageTranslationModel) {
         self.viewModel = viewModel
         sessionID = viewModel.translationSessionID
-        _model = StateObject(wrappedValue: ImageTranslationModel(image: image))
+        self.model = model
     }
 
     var body: some View {
+        let model = self.model
+        let viewModel = self.viewModel
         let requestID = model.activeRequestID
+        let attachmentID = self.attachmentID
+        let sessionID = self.sessionID
+        let collapsedState = $didAutoCollapse
+        let correctionsState = $showsCorrections
         VStack(spacing: 0) {
             if viewModel.showsTranslationControls {
                 VStack(spacing: 5) {
@@ -267,7 +375,7 @@ struct InlineImageTranslationView: View {
                         Spacer(minLength: 0)
                         Button {
                             if model.isBusy { model.cancel() }
-                            else if model.regions.isEmpty { Task { await model.recognize() } }
+                            else if model.regions.isEmpty { Task { [weak model] in await model?.recognize() } }
                             else { model.startTranslation() }
                         } label: {
                             Image(systemName: model.isBusy ? "stop.circle" : "arrow.clockwise")
@@ -280,7 +388,7 @@ struct InlineImageTranslationView: View {
                             .popover(isPresented: $showsCorrections) {
                                 ImageTranslationCorrections(model: model).frame(width: 310, height: 360)
                             }
-                        Button { model.cancel(); viewModel.clearImageTranslation() } label: {
+                        Button { viewModel.clearImageTranslation() } label: {
                             Image(systemName: "xmark").frame(width: 24, height: 24)
                         }.help("移除翻译，保留原图").accessibilityLabel("移除翻译")
                     }.buttonStyle(.plain)
@@ -300,26 +408,29 @@ struct InlineImageTranslationView: View {
                 .padding(.top, 8)
             }
         }
-        .task { await model.recognize() }
-        .task(id: model.renderRevision) { await model.render() }
-        .translationTask(model.configuration) { session in
-            await model.translate(using: session, requestID: requestID)
+        .task { [weak model] in await model?.activate(attachmentID: attachmentID) }
+        .task(id: model.renderRevision) { [weak model] in await model?.render(attachmentID: attachmentID) }
+        .translationTask(model.configuration) { [weak model, requestID, attachmentID] session in
+            await model?.translate(using: session, requestID: requestID, attachmentID: attachmentID)
         }
-        .onChange(of: model.translatedImage) { _, image in
-            guard viewModel.translationSessionID == sessionID else { return }
-            viewModel.translatedSelection = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        .onChange(of: model.translatedImage, initial: true) { [weak viewModel, weak model] _, _ in
+            guard let viewModel, let model, viewModel.translationSessionID == sessionID,
+                  viewModel.imageTranslationModel === model else { return }
+            viewModel.translatedSelection = model.translatedImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         }
-        .onChange(of: model.canExport) { _, allowed in
-            guard viewModel.translationSessionID == sessionID else { return }
+        .onChange(of: model.canExport, initial: true) { [weak viewModel, weak model] _, _ in
+            guard let viewModel, let model, viewModel.translationSessionID == sessionID,
+                  viewModel.imageTranslationModel === model else { return }
+            let allowed = model.canExport
             viewModel.translationCanExport = allowed
-            if allowed && !didAutoCollapse && !showsCorrections &&
+            if allowed && !collapsedState.wrappedValue && !correctionsState.wrappedValue &&
                model.complexBackgroundIDs.isEmpty && model.errorMessage == nil {
-                didAutoCollapse = true
+                collapsedState.wrappedValue = true
                 viewModel.showsTranslationControls = false
             }
         }
-        .onChange(of: model.targetLanguageID) { _, _ in model.startTranslation() }
-        .onDisappear { model.cancel() }
+        .onChange(of: model.targetLanguageID) { [weak model] _, _ in model?.startTranslation() }
+        .onDisappear { [weak model] in model?.suspend(attachmentID: attachmentID) }
     }
 }
 
@@ -374,7 +485,7 @@ final class ImageTranslationWindowController: NSWindowController, NSWindowDelega
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func windowWillClose(_ notification: Notification) {
-        model.cancel()
+        model.dismiss()
         window?.contentView = nil
         onAction = nil
         onEdit = nil
@@ -395,9 +506,12 @@ private struct ImageTranslationView: View {
     @State private var zoom: CGFloat = 1
     @State private var actionMessage: String?
     @State private var exporting = false
+    @State private var attachmentID = UUID()
 
     var body: some View {
+        let model = self.model
         let translationRequestID = model.activeRequestID
+        let attachmentID = self.attachmentID
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Picker("目标语言", selection: $model.targetLanguageID) {
@@ -408,7 +522,7 @@ private struct ImageTranslationView: View {
                 }.frame(width: 170).disabled(model.isBusy)
                 Button {
                     actionMessage = nil
-                    if model.regions.isEmpty { Task { await model.recognize() } }
+                    if model.regions.isEmpty { Task { [weak model] in await model?.recognize() } }
                     else { model.startTranslation() }
                 } label: { Label("翻译", systemImage: "character.bubble") }
                     .disabled(model.isBusy)
@@ -425,14 +539,15 @@ private struct ImageTranslationView: View {
             Divider()
             HStack(spacing: 0) {
                 GeometryReader { geometry in
-                    let image = showOriginal ? model.original : (model.translatedImage ?? model.original)
-                    let fit = min(1, max(0.05, (geometry.size.width - 24) / max(image.size.width, 1)))
-                    ScrollView([.horizontal, .vertical]) {
-                        Image(nsImage: image).resizable()
-                            .frame(width: image.size.width * fit * zoom, height: image.size.height * fit * zoom)
-                            .padding(12)
+                    if let image = showOriginal ? model.original : (model.translatedImage ?? model.original) {
+                        let fit = min(1, max(0.05, (geometry.size.width - 24) / max(image.size.width, 1)))
+                        ScrollView([.horizontal, .vertical]) {
+                            Image(nsImage: image).resizable()
+                                .frame(width: image.size.width * fit * zoom, height: image.size.height * fit * zoom)
+                                .padding(12)
+                        }
+                        .background(Color(NSColor.underPageBackgroundColor))
                     }
-                    .background(Color(NSColor.underPageBackgroundColor))
                 }
                 Divider()
                 List {
@@ -472,12 +587,12 @@ private struct ImageTranslationView: View {
                 }
             }.padding(12)
         }
-        .task { await model.recognize() }
-        .task(id: model.renderRevision) { await model.render() }
-        .translationTask(model.configuration) { session in
-            await model.translate(using: session, requestID: translationRequestID)
+        .task { [weak model] in await model?.activate(attachmentID: attachmentID) }
+        .task(id: model.renderRevision) { [weak model] in await model?.render(attachmentID: attachmentID) }
+        .translationTask(model.configuration) { [weak model, translationRequestID, attachmentID] session in
+            await model?.translate(using: session, requestID: translationRequestID, attachmentID: attachmentID)
         }
-        .onDisappear { model.cancel() }
+        .onDisappear { [weak model] in model?.suspend(attachmentID: attachmentID) }
     }
 
     private func export(_ action: CaptureAction) {

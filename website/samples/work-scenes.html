@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LibreShot · 工作场景示意</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 1040px; height: 700px; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; color: #26364e; background: #edf2f8; -webkit-font-smoothing: antialiased; }
+    .scene { display: none; width: 1040px; height: 700px; position: relative; overflow: hidden; }
+    .scene.active { display: block; }
+    [data-copy] { }
+    .scene-top { height: 58px; padding: 0 31px; display: flex; align-items: center; justify-content: space-between; background: #fafcff; border-bottom: 1px solid #dee6f1; }
+    .scene-title { font-size: 14px; font-weight: 600; letter-spacing: -.2px; }
+    .step { display: inline-block; color: #3b76e4; font-size: 11px; letter-spacing: 1px; margin-right: 11px; }
+    .disclosure { color: #7e8ba0; font-size: 11px; }
+    .stage { position: relative; height: 612px; }
+    .source { position: absolute; left: 30px; top: 16px; width: 980px; height: 584px; border-radius: 10px; border: 1px solid #dae2ee; box-shadow: 0 10px 22px #263a6310; }
+    .mock-source { overflow: hidden; background: #f7f9fc; }
+    .mock-app { width: 100%; height: 100%; display: grid; grid-template-columns: 174px 1fr; grid-template-rows: 52px 1fr; color: #33435b; font-size: 12px; }
+    .mock-bar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #e3e9f2; background: #fff; }
+    .mock-brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 13px; }
+    .mock-brand .mock-crumb { font-weight: 400; }
+    .mock-brand i { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: #fff; background: #4d78dc; font-style: normal; font-size: 11px; }
+    .mock-crumb { margin-left: 20px; color: #9aa6b8; font-size: 11px; }
+    .mock-status { color: #6880a1; background: #f2f6fb; border: 1px solid #e2e9f3; border-radius: 5px; padding: 5px 8px; font-size: 10px; }
+    .mock-side { padding: 20px 13px; background: #fbfcfe; border-right: 1px solid #e2e8f1; }
+    .mock-side-label { padding: 0 8px 10px; color: #a3afc0; font-size: 10px; letter-spacing: .8px; text-transform: uppercase; }
+    .mock-nav { display: flex; align-items: center; gap: 8px; padding: 9px 9px; margin-bottom: 3px; color: #74839a; border-radius: 6px; }
+    .mock-nav.active { color: #376fd0; background: #edf4ff; font-weight: 600; }
+    .mock-nav b { width: 14px; text-align: center; color: #8fa0b7; font-weight: 500; }
+    .mock-main { padding: 27px 29px; overflow: hidden; }
+    .mock-heading { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .mock-heading h2 { margin: 0 0 6px; color: #253751; font-size: 20px; letter-spacing: -.4px; }
+    .mock-heading p { margin: 0; color: #93a0b2; font-size: 11px; }
+    .mock-link { color: #4d7fda; font-size: 11px; }
+    .issue-grid { display: grid; grid-template-columns: 1.07fr .93fr; gap: 16px; }
+    .issue-card, .log-card { min-height: 190px; padding: 18px 19px; background: #fff; border: 1px solid #e0e7f0; border-radius: 8px; box-shadow: 0 4px 12px #2e44630b; }
+    .issue-card { position: relative; }
+    .issue-card h3, .log-card h3 { margin: 0 0 15px; color: #2b3d58; font-size: 14px; }
+    .issue-chip { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 15px; padding: 5px 7px; color: #b4672f; background: #fff6ed; border: 1px solid #f7deca; border-radius: 5px; font-size: 10px; font-weight: 600; }
+    .issue-chip i { width: 6px; height: 6px; border-radius: 50%; background: #e58c45; }
+    .issue-meta { display: grid; grid-template-columns: 92px 1fr; row-gap: 10px; color: #95a1b1; font-size: 11px; }
+    .issue-meta strong { color: #54657d; font-weight: 550; }
+    .issue-action { position: absolute; right: 18px; bottom: 17px; padding: 7px 10px; color: #4073d0; background: #eff5ff; border-radius: 5px; font-size: 10px; }
+    .log-card { padding-bottom: 12px; }
+    .log-line { display: flex; gap: 9px; align-items: flex-start; padding: 8px 0; border-top: 1px solid #eff2f6; color: #718198; font-size: 11px; line-height: 1.45; }
+    .log-line b { width: 6px; height: 6px; margin-top: 5px; flex: 0 0 auto; border-radius: 50%; background: #d98a45; }
+    .log-line.ok b { background: #65aa87; }
+    .log-line span { color: #9aa6b7; }
+    .incident-table { margin-top: 16px; background: #fff; border: 1px solid #e0e7f0; border-radius: 8px; overflow: hidden; }
+    .incident-head, .incident-row { display: grid; grid-template-columns: 1.25fr .75fr .8fr 1fr; align-items: center; gap: 15px; padding: 11px 17px; font-size: 10px; }
+    .incident-head { color: #9aa7b8; background: #fafbfd; border-bottom: 1px solid #e9eef4; }
+    .incident-row { color: #5c6e86; border-bottom: 1px solid #eff2f6; }
+    .incident-row:last-child { border-bottom: 0; }
+    .row-badge { display: inline-block; padding: 4px 6px; color: #b4672f; background: #fff5eb; border-radius: 4px; }
+    .row-badge.green { color: #4a8c6a; background: #edf8f2; }
+    .note-callout { padding: 10px 12px; margin-top: 14px; color: #687b95; background: #f7faff; border: 1px solid #e0eafb; border-radius: 6px; font-size: 11px; line-height: 1.5; }
+    .scene-footer { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; color: #8492a6; font-size: 10px; background: #edf2f8; }
+    .annotation-layer { position: absolute; inset: 0; width: 1040px; height: 612px; }
+    .markup { fill: none; stroke: #2c7cf2; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .mark-number { position: absolute; width: 27px; height: 27px; border-radius: 50%; background: #287bf5; color: white; font-size: 14px; font-weight: 650; display: grid; place-items: center; border: 3px solid white; box-shadow: 0 2px 6px #2e71da28; }
+    .mark-one { left: 230px; top: 210px; }
+    .mark-two { left: 636px; top: 201px; }
+    .comment { position: absolute; background: #fff; border: 1px solid #d7e5fb; border-radius: 8px; color: #3d6ead; padding: 11px 15px; box-shadow: 0 5px 15px #315d8d0b; font-size: 14px; line-height: 1.55; }
+    .comment b { color: #2977e5; margin-right: 7px; }
+    .comment-one { left: 627px; top: 370px; width: 294px; }
+    .comment-two { left: 627px; top: 442px; width: 294px; }
+    .comment small { display: block; font-size: 11px; color: #8fa3bd; margin: 3px 0 0 20px; }
+    .ocr-layout { display: grid; grid-template-columns: 508px 1fr; gap: 34px; padding: 54px 43px 0; }
+    .ocr-source-label { font-size: 12px; color: #8997ab; margin: 0 0 15px 2px; }
+    .ocr-crop { width: 508px; height: 372px; border-radius: 10px; overflow: hidden; position: relative; background: white; border: 1px solid #dce4ef; box-shadow: 0 8px 20px #2c405813; }
+    .ocr-canvas { height: 100%; padding: 28px 30px; color: #50617a; background: #fbfcff; }
+    .ocr-window-bar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; margin-bottom: 17px; border-bottom: 1px solid #e7edf5; color: #73839a; font-size: 10px; }
+    .ocr-window-bar strong { color: #3e577a; font-size: 12px; }
+    .ocr-note { padding: 18px 19px; background: #fff; border: 1px solid #dfe7f2; border-radius: 8px; box-shadow: 0 4px 10px #3450710b; }
+    .ocr-note h3 { margin: 0 0 13px; color: #2e4260; font-size: 16px; }
+    .ocr-note p { margin: 8px 0; color: #566b88; font-size: 13px; line-height: 1.4; }
+    .ocr-note p:last-child { margin-bottom: 0; }
+    .ocr-note b { display: inline-block; width: 19px; height: 19px; margin-right: 8px; text-align: center; color: #5c82ce; background: #edf4ff; border-radius: 50%; font-size: 10px; line-height: 19px; }
+    .crop-selection { position: absolute; top: 22px; left: 23px; width: 447px; height: 242px; border: 2px solid #3d80f1; border-radius: 3px; background: #367cf208; }
+    .crop-selection i { position: absolute; width: 7px; height: 7px; border: 1.5px solid #2b77ef; background: white; }
+    .crop-selection i:nth-child(1) { left: -4px; top: -4px; }.crop-selection i:nth-child(2) { right: -4px; top: -4px; }.crop-selection i:nth-child(3) { left: -4px; bottom: -4px; }.crop-selection i:nth-child(4) { right: -4px; bottom: -4px; }
+    .ocr-caption { font-size: 12px; color: #8595ab; margin: 18px 0; line-height: 1.7; }
+    .extraction { align-self: start; margin-top: 28px; min-height: 372px; padding: 28px 26px; background: #fff; border: 1px solid #dce4ee; border-radius: 11px; box-shadow: 0 8px 20px #3049680a; }
+    .extract-title { display: flex; align-items: center; justify-content: space-between; padding-bottom: 19px; border-bottom: 1px solid #edf1f6; }
+    .extract-title h2 { font-size: 15px; margin: 0; font-weight: 600; }
+    .extract-tag { font-size: 9px; color: #4280dc; background: #eef5ff; padding: 4px 6px; border-radius: 4px; }
+    .extract-text { font-size: 18px; line-height: 1.6; color: #43536c; }
+    .extract-text h3 { font-size: 19px; margin: 20px 0 17px; color: #243953; }
+    .extract-text p { margin: 0 0 13px; }
+    .extract-footer { color: #91a0b4; font-size: 10px; padding-top: 15px; }
+    .flow-arrow { position: absolute; left: 561px; top: 274px; color: #6795dc; font-size: 21px; }
+    .pin-source { left: 31px; top: 37px; width: 895px; height: 534px; opacity: .76; }
+    .pin-reference { position: absolute; top: 149px; left: 579px; width: 408px; border: 1px solid #d6dfec; border-radius: 11px; overflow: hidden; background: white; box-shadow: 0 23px 53px #243b6333, 0 4px 9px #2c487411; transform: rotate(1.5deg); }
+    .pin-label { height: 39px; display: flex; align-items: center; justify-content: space-between; padding: 0 17px; color: #72859f; font-size: 11px; background: #fff; border-bottom: 1px solid #edf1f6; }
+    .pin-label span:first-child { color: #3978d6; font-weight: 550; }
+    .pin-viewport { position: relative; width: 408px; height: 330px; overflow: hidden; background: #fafcff; }
+    .pin-viewport { padding: 19px; }
+    .pin-viewport .pin-board { height: 100%; padding: 14px 16px; color: #5d6d84; background: #f7faff; border: 1px solid #e3eaf4; border-radius: 6px; }
+    .pin-board h4 { margin: 0 0 12px; color: #394e6c; font-size: 13px; }
+    .pin-board p { margin: 7px 0; font-size: 11px; line-height: 1.4; }
+    .pin-board .pin-row { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #e7edf5; font-size: 10px; }
+    .pin-board .pin-row b { color: #cb7c3c; font-weight: 600; }
+    .pin-caption { position: absolute; left: 89px; top: 484px; font-size: 14px; color: #657b98; background: #ffffffed; border: 1px solid #e0e7f1; padding: 13px 17px; border-radius: 8px; box-shadow: 0 5px 13px #26436108; }
+    .pin-caption b { display: block; color: #3b6297; font-weight: 550; margin-bottom: 4px; }
+    .pin-caption span { font-size: 11px; color: #8a9ab0; }
+    .pin-guide { position: absolute; top: 398px; left: 491px; width: 88px; height: 60px; }
+  </style>
+</head>
+<body>
+  <section class="scene" id="annotate">
+    <header class="scene-top"><div class="scene-title"><span class="step">01 / 标注</span>把异常和修改意见，直接画在图上。</div><div class="disclosure">工作场景示意 · 非应用截图</div></header>
+    <div class="stage">
+      <div class="source mock-source" role="img" aria-label="虚构线上发布异常工作台">
+        <div class="mock-app">
+          <div class="mock-bar"><div class="mock-brand"><i>O</i>异常工作台 <span class="mock-crumb">/ 线上发布 · 版本 2.4.1</span></div><span class="mock-status">演示项目 · 仅供说明</span></div>
+          <aside class="mock-side"><div class="mock-side-label">Workspace</div><div class="mock-nav active"><b>◫</b>发布检查</div><div class="mock-nav"><b>◌</b>异常列表</div><div class="mock-nav"><b>▤</b>会议记录</div><div class="mock-nav"><b>⌁</b>设计反馈</div></aside>
+          <main class="mock-main"><div class="mock-heading"><div><h2>线上发布 · 异常排查</h2><p>把截图、日志和处理意见放在同一处。</p></div><span class="mock-link">查看本周变更 →</span></div>
+            <div class="issue-grid"><div class="issue-card"><span class="issue-chip"><i></i>需要关注 · P1</span><h3>移动端发布后出现空白区域</h3><div class="issue-meta"><span>发现时间</span><strong>今天 10:32</strong><span>影响范围</span><strong>首页 · iOS 17</strong><span>负责人</span><strong>林晓 / 前端组</strong></div><span class="issue-action">打开排查记录</span></div><div class="log-card"><h3>最近检查</h3><div class="log-line"><b></b><div>截图对比发现间距变化<br><span>11:06 · 设计评审</span></div></div><div class="log-line"><b></b><div>接口返回字段缺失<br><span>10:51 · 发布监控</span></div></div><div class="log-line ok"><b></b><div>测试环境已恢复<br><span>10:45 · 值班记录</span></div></div></div></div>
+            <div class="incident-table"><div class="incident-head"><span>异常项</span><span>状态</span><span>负责人</span><span>下一步</span></div><div class="incident-row"><span>按钮点击无响应</span><span><em class="row-badge">待复现</em></span><span>周宁</span><span>补充录屏与日志</span></div><div class="incident-row"><span>空状态文案过期</span><span><em class="row-badge green">已修复</em></span><span>陈雨</span><span>等待设计确认</span></div></div>
+            <div class="note-callout">提示：截图标注可直接指出异常位置，OCR 可把会议白板和日志中的文字整理出来。</div>
+          </main>
+        </div>
+      </div>
+      <svg class="annotation-layer" viewBox="0 0 1040 612" aria-hidden="true">
+        <defs><marker id="arrowhead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M2 2 L10 6 L2 10" class="markup" stroke-width="1.8"/></marker></defs>
+        <rect x="248" y="213" width="333" height="40" rx="6" class="markup"/>
+        <rect x="654" y="204" width="286" height="48" rx="6" class="markup"/>
+        <path d="M617 397 C608 358 595 286 579 245" class="markup" marker-end="url(#arrowhead)"/>
+        <path d="M617 463 C642 420 649 317 654 249" class="markup" marker-end="url(#arrowhead)"/>
+        <path d="M587 245 L598 245 M587 239 L587 251 M598 239 L598 251" class="markup" stroke-width="2"/>
+      </svg>
+      <span class="mark-number mark-one">1</span><span class="mark-number mark-two">2</span>
+      <div class="comment comment-one"><b>1</b>异常卡片标题需要更醒目。<small>方便值班同学快速定位</small></div>
+      <div class="comment comment-two"><b>2</b>把最近检查和处理状态放在一起。<small>减少窗口之间的来回切换</small></div>
+    </div>
+    <footer class="scene-footer"><span>示意内容：线上发布异常的截图标注</span><span>全部为虚构演示数据</span></footer>
+  </section>
+  <section class="scene" id="ocr">
+    <header class="scene-top"><div class="scene-title"><span class="step">02 / 文字识别</span>会议记录里的文字，也能继续使用。</div><div class="disclosure">工作场景示意 · 非应用截图</div></header>
+    <div class="stage">
+      <div class="ocr-layout">
+        <div><p class="ocr-source-label">会议记录截图 · 圈选文字区域</p><div class="ocr-crop"><div class="ocr-canvas"><div class="ocr-window-bar"><strong>周会记录 · 发布异常跟进</strong><span>2026 / 10 / 13</span></div><div class="ocr-note"><h3>本周处理事项</h3><p><b>1</b>复现首页空白区域，记录系统版本。</p><p><b>2</b>补齐按钮点击失败时的提示文案。</p><p><b>3</b>发布前请设计和测试共同确认。</p></div></div><div class="crop-selection" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div><p class="ocr-caption">圈选图片中的文字，提取后可复制到任务、文档或消息中。</p></div>
+        <div class="extraction"><div class="extract-title"><h2>文字提取示例</h2><span class="extract-tag">示意文本</span></div><div class="extract-text"><h3>本周处理事项</h3><p>复现首页空白区域，记录系统版本。</p><p>补齐按钮点击失败时的提示文案。</p><p>发布前请设计和测试共同确认。</p></div><div class="extract-footer">此处展示预设文字，非现场 OCR 结果</div></div>
+      </div>
+      <span class="flow-arrow" aria-hidden="true">→</span>
+    </div>
+    <footer class="scene-footer"><span>示意内容：会议记录文字提取</span><span>全部为虚构演示数据</span></footer>
+  </section>
+  <section class="scene" id="pin">
+    <header class="scene-top"><div class="scene-title"><span class="step">03 / 贴图</span>边排查，边看着参考。</div><div class="disclosure">工作场景示意 · 非应用截图</div></header>
+    <div class="stage">
+      <div class="source mock-source pin-source" role="img" aria-label="正在查看的虚构线上发布异常页面"><div class="mock-app"><div class="mock-bar"><div class="mock-brand"><i>O</i>异常工作台 <span class="mock-crumb">/ 发布检查</span></div><span class="mock-status">演示项目</span></div><aside class="mock-side"><div class="mock-side-label">Workspace</div><div class="mock-nav active"><b>◫</b>发布检查</div><div class="mock-nav"><b>◌</b>异常列表</div><div class="mock-nav"><b>▤</b>会议记录</div></aside><main class="mock-main"><div class="mock-heading"><div><h2>线上发布 · 异常排查</h2><p>检查结果与设计反馈</p></div><span class="mock-link">2026 / 10 / 13</span></div><div class="issue-grid"><div class="issue-card"><span class="issue-chip"><i></i>需要关注 · P1</span><h3>移动端发布后出现空白区域</h3><div class="issue-meta"><span>影响范围</span><strong>首页 · iOS 17</strong><span>负责人</span><strong>林晓 / 前端组</strong></div></div><div class="log-card"><h3>处理进度</h3><div class="log-line"><b></b><div>待补充复现录屏<br><span>设计评审</span></div></div><div class="log-line ok"><b></b><div>测试环境已恢复<br><span>发布监控</span></div></div></div></div><div class="note-callout">点击无响应 · 空状态文案过期 · 间距异常</div></main></div></div>
+      <div class="pin-reference"><div class="pin-label"><span>⌁ &nbsp;对照参考</span><span>异常记录 / 会议结论</span></div><div class="pin-viewport"><div class="pin-board"><h4>设计反馈清单</h4><p>把复现步骤和截图放在同一条记录里。</p><div class="pin-row"><span>空白区域</span><b>待复现</b></div><div class="pin-row"><span>按钮提示</span><b>需补文案</b></div><div class="pin-row"><span>发布确认</span><b>待同步</b></div></div></div></div>
+      <svg class="pin-guide" viewBox="0 0 88 60" aria-hidden="true"><path d="M5 48 C35 48 43 20 75 20 M66 13 L77 20 L67 28" fill="none" stroke="#83a6d7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="pin-caption"><b>把参考留在眼前。</b><span>对照异常位置、复现步骤和会议结论，少一次窗口切换。</span></div>
+    </div>
+    <footer class="scene-footer"><span>示意内容：悬浮异常记录</span><span>全部为虚构演示数据</span></footer>
+  </section>
+  <script>
+    const requestedMode = new URLSearchParams(window.location.search).get('mode');
+    const activeMode = ['annotate', 'ocr', 'pin'].includes(requestedMode) ? requestedMode : 'annotate';
+    document.getElementById(activeMode).classList.add('active');
+
+    const requestedLang = new URLSearchParams(window.location.search).get('lang');
+    const activeLang = requestedLang === 'en' ? 'en' : 'zh';
+    document.documentElement.lang = activeLang === 'en' ? 'en' : 'zh-CN';
+    document.body.dataset.lang = activeLang;
+    if (activeLang === 'en') {
+      const copy = {
+        '01 / 标注': '01 / Annotate',
+        '02 / 文字识别': '02 / OCR',
+        '03 / 贴图': '03 / Pin reference',
+        '把异常和修改意见，直接画在图上。': 'Draw issues and change requests directly on the image.',
+        '会议记录里的文字，也能继续使用。': 'Turn meeting notes into usable text.',
+        '边排查，边看着参考。': 'Keep a reference beside the investigation.',
+        '工作场景示意 · 非应用截图': 'Work scene mockup · Not a LibreShot app screenshot',
+        '异常工作台': 'Incident workspace',
+        '线上发布 · 版本 2.4.1': 'Release · v2.4.1',
+        '线上发布 · 异常排查': 'Release incident review',
+        '发布检查': 'Release checks',
+        '异常列表': 'Incidents',
+        '会议记录': 'Meeting notes',
+        '设计反馈': 'Design feedback',
+        '演示项目 · 仅供说明': 'Demo project · For illustration',
+        '演示项目': 'Demo project',
+        '把截图、日志和处理意见放在同一处。': 'Keep screenshots, logs, and decisions together.',
+        '查看本周变更 →': "View this week's changes →",
+        '需要关注 · P1': 'Needs attention · P1',
+        '移动端发布后出现空白区域': 'Blank area after mobile release',
+        '发现时间': 'Found',
+        '今天 10:32': 'Today 10:32',
+        '影响范围': 'Impact',
+        '首页 · iOS 17': 'Home · iOS 17',
+        '负责人': 'Owner',
+        '林晓 / 前端组': 'Lin / Frontend',
+        '打开排查记录': 'Open incident log',
+        '最近检查': 'Recent checks',
+        '截图对比发现间距变化': 'Visual diff found spacing change',
+        '设计评审': 'Design review',
+        '接口返回字段缺失': 'Missing response field',
+        '发布监控': 'Release monitor',
+        '测试环境已恢复': 'Staging environment restored',
+        '值班记录': 'On-call log',
+        '异常项': 'Issue',
+        '状态': 'Status',
+        '下一步': 'Next step',
+        '按钮点击无响应': 'Button click does nothing',
+        '待复现': 'To reproduce',
+        '周宁': 'Zhou',
+        '补充录屏与日志': 'Add recording and logs',
+        '空状态文案过期': 'Outdated empty-state copy',
+        '已修复': 'Fixed',
+        '陈雨': 'Chen',
+        '等待设计确认': 'Await design sign-off',
+        '提示：截图标注可直接指出异常位置，OCR 可把会议白板和日志中的文字整理出来。': 'Tip: annotate the issue; OCR can turn whiteboard and log text into notes.',
+        '异常卡片标题需要更醒目。': 'Make the incident title easier to spot.',
+        '方便值班同学快速定位': 'Help on-call staff locate it quickly',
+        '把最近检查和处理状态放在一起。': 'Keep recent checks beside the status.',
+        '减少窗口之间的来回切换': 'Reduce window switching',
+        '示意内容：线上发布异常的截图标注': 'Example: annotate a release issue',
+        '示意内容：会议记录文字提取': 'Example: extract meeting notes',
+        '示意内容：悬浮异常记录': 'Example: pin an incident reference',
+        '全部为虚构演示数据': 'All data is fictional',
+        '会议记录截图 · 圈选文字区域': 'Meeting notes screenshot · Select the text',
+        '圈选图片中的文字，提取后可复制到任务、文档或消息中。': 'Select text in an image, then copy it into a task, document, or message.',
+        '周会记录 · 发布异常跟进': 'Weekly sync · Release incident follow-up',
+        '本周处理事项': 'This week\'s actions',
+        '复现首页空白区域，记录系统版本。': 'Reproduce the blank area and record the system version.',
+        '补齐按钮点击失败时的提示文案。': 'Add a message for failed button clicks.',
+        '发布前请设计和测试共同确认。': 'Design and QA sign off before release.',
+        '文字提取示例': 'Text extraction example',
+        '示意文本': 'Example text',
+        '此处展示预设文字，非现场 OCR 结果': 'Preset text for illustration, not a live OCR result',
+        '边排查，边看着参考。': 'Keep a reference beside the investigation.',
+        '检查结果与设计反馈': 'Check results and design feedback',
+        '处理进度': 'Progress',
+        '待补充复现录屏': 'Reproduction recording needed',
+        '异常记录 / 会议结论': 'Incident log / Meeting decision',
+        '对照参考': 'Reference',
+        '设计反馈清单': 'Design feedback checklist',
+        '把复现步骤和截图放在同一条记录里。': 'Keep reproduction steps and screenshots in one record.',
+        '空白区域': 'Blank area',
+        '按钮提示': 'Button message',
+        '需补文案': 'Copy needed',
+        '发布确认': 'Release sign-off',
+        '待同步': 'To sync',
+        '把参考留在眼前。': 'Keep the reference in view.',
+        '对照异常位置、复现步骤和会议结论，少一次窗口切换。': 'Compare the issue, reproduction steps, and meeting decision without switching windows.'
+      };
+      const entries = Object.entries(copy).sort((a, b) => b[0].length - a[0].length);
+      const walk = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          let value = node.nodeValue;
+          for (const [zh, en] of entries) value = value.split(zh).join(en);
+          node.nodeValue = value;
+        } else node.childNodes.forEach(walk);
+      };
+      walk(document.body);
+    }
+  </script>
+</body>
+</html>

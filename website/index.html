@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f9f5">
+  <meta name="description" content="LibreShot，免费开源的原生 macOS 截图与标注工具。区域截图、长截图、OCR 与原位贴图，把重点表达清楚。">
+  <title>LibreShot — 截下重点，表达清楚。</title>
+  <link rel="icon" type="image/png" href="assets/app-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M5 5h14v14"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/></symbol>
+      <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4 1-4-2-6-2m14 5v-3.9a3.4 3.4 0 0 0-.9-2.7c3-.3 6.2-1.5 6.2-6.8a5.3 5.3 0 0 0-1.4-3.7 5 5 0 0 0-.1-3.7s-1.1-.4-3.8 1.4a13 13 0 0 0-7 0C7.3.8 6.2 1.2 6.2 1.2a5 5 0 0 0-.1 3.7 5.3 5.3 0 0 0-1.4 3.7c0 5.3 3.2 6.5 6.2 6.8a3.4 3.4 0 0 0-.9 2.7V22" transform="translate(-1 0) scale(.96)"/></symbol>
+      <symbol id="i-crop" viewBox="0 0 24 24"><path d="M4 8V4h4m8 0h4v4m0 8v4h-4m-8 0H4v-4M8 8h8v8H8z"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="m16 3 5 5-4 2-1 6-3-1-7 7m7-7-5-5 6-1 2-6Z"/></symbol>
+      <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 7V4h16v3M12 4v16m-4 0h8"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/></symbol>
+      <symbol id="i-mosaic" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 5 7 7-7 7"/></symbol>
+      <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.4 2c-.1 2-1.4 3.6-3.3 3.7-.2-1.8 1.4-3.5 3.3-3.7ZM19.5 16c-.5 1.3-1 2.4-1.8 3.6-.8 1.1-1.8 2.4-3.1 2.4-1.2 0-1.5-.8-3.1-.8-1.5 0-1.9.8-3.1.8-1.3 0-2.3-1.1-3.1-2.3C3 16.3 2.4 11.8 3.8 9.5c1-1.7 2.7-2.6 4.3-2.6 1.3 0 2.1.8 3.3.8 1.2 0 1.9-.8 3.3-.8 1.4 0 2.8.8 3.7 1.8-3.2 1.8-2.7 6.2 1.1 7.3Z" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    </defs>
+  </svg>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#" aria-label="LibreShot 首页"><img src="assets/app-icon.png" width="38" height="38" alt=""><span>LibreShot</span></a>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="#features">功能</a><a href="#workflow">使用方式</a><a href="#faq">常见问题</a>
+      </nav>
+      <div class="header-actions"><button class="language-toggle" id="language-toggle" type="button" aria-label="切换为 English" aria-pressed="false">EN</button><a class="header-download" href="https://github.com/songpl-AI/LibreShot/releases/latest">免费下载 <svg class="icon"><use href="#i-down"/></svg></a></div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <a class="release-pill" href="https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.19"><span class="status-dot"></span> v1.3.19 已发布 <span class="pill-divider"></span> 来看看新变化 <svg class="icon"><use href="#i-chevron"/></svg></a>
+        <h1 id="hero-title">截下重点，<br><span class="blue-heading">表达清楚。<svg class="heading-stroke" viewBox="0 0 390 20" aria-hidden="true"><path d="M3 13C105 2 247 1 385 10"/></svg></span></h1>
+        <p class="hero-description">你的想法，值得被看见。<br>用 LibreShot 截图、标注、提取文字，<br class="desktop-break">把屏幕上的内容变成清楚的表达。</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://github.com/songpl-AI/LibreShot/releases/latest"><svg class="icon"><use href="#i-apple"/></svg> 免费下载 macOS 版 <svg class="icon button-arrow"><use href="#i-down"/></svg></a>
+          <a class="github-link" href="https://github.com/songpl-AI/LibreShot"><svg class="icon"><use href="#i-github"/></svg> GitHub <svg class="icon external-arrow"><use href="#i-arrow"/></svg></a>
+        </div>
+        <p class="requirements">macOS 13+ <span>·</span> Apple Silicon & Intel</p>
+        <div class="hero-values"><span><svg class="icon"><use href="#i-check"/></svg> 免费开源</span><span><svg class="icon"><use href="#i-check"/></svg> 原生 macOS</span><span><svg class="icon"><use href="#i-check"/></svg> 本机处理</span></div>
+      </div>
+      <div class="hero-visual">
+        <div class="gallery-bottom"><div class="gallery-tabs" role="tablist" aria-label="LibreShot 工作场景示意"><button id="tab-annotate" type="button" class="gallery-tab active" role="tab" aria-selected="true" aria-controls="panel-annotate" data-mode="annotate"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg> 标注</button><button id="tab-ocr" type="button" class="gallery-tab" role="tab" aria-selected="false" aria-controls="panel-ocr" tabindex="-1" data-mode="ocr"><svg class="icon" aria-hidden="true"><use href="#i-text"/></svg> OCR</button><button id="tab-pin" type="button" class="gallery-tab" role="tab" aria-selected="false" aria-controls="panel-pin" tabindex="-1" data-mode="pin"><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg> 贴图</button></div><span class="gallery-label">工作场景示意 · 非应用截图</span></div>
+        <div class="screenshot-gallery">
+          <div id="panel-annotate" class="gallery-panel" role="tabpanel" aria-labelledby="tab-annotate" data-mode="annotate">
+            <button class="screenshot-open" type="button" data-screenshot="annotate" aria-label="放大查看 LibreShot 标注示意">
+              <img class="gallery-image" src="assets/demo-annotate.jpg" alt="工作场景标注示意：在办公页面中框出异常并加上箭头说明">
+              <span class="image-expand"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> 点击放大</span>
+            </button>
+          </div>
+          <div id="panel-ocr" class="gallery-panel" role="tabpanel" aria-labelledby="tab-ocr" data-mode="ocr" hidden>
+            <button class="screenshot-open" type="button" data-screenshot="ocr" aria-label="放大查看 LibreShot OCR 示意">
+              <img class="gallery-image" src="assets/demo-ocr.jpg" alt="工作场景 OCR 示意：将会议记录提取为可用文字">
+              <span class="image-expand"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> 点击放大</span>
+            </button>
+          </div>
+          <div id="panel-pin" class="gallery-panel" role="tabpanel" aria-labelledby="tab-pin" data-mode="pin" hidden>
+            <button class="screenshot-open" type="button" data-screenshot="pin" aria-label="放大查看 LibreShot 贴图示意">
+              <img class="gallery-image" src="assets/demo-pin.jpg" alt="工作场景贴图示意：将异常记录留在工作页面旁">
+              <span class="image-expand"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> 点击放大</span>
+            </button>
+          </div>
+        </div>
+        <p id="gallery-caption" class="gallery-caption">框出办公页面中的异常位置，再用箭头补上处理意见。</p>
+      </div>
+    </section>
+    <div class="shortcut-strip container"><span class="shortcut-intro">灵感出现时，随手一截。</span><span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>X</kbd> 区域截图</span><span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>A</kbd> 全屏截图</span><a href="https://github.com/songpl-AI/LibreShot/blob/v1.3.19/docs/usage.md">按你的习惯，自由设置 <svg class="icon"><use href="#i-arrow"/></svg></a></div>
+    <section id="features" class="features container" aria-labelledby="features-title">
+      <div class="section-heading"><div><p class="eyebrow">小工具，顺手的大用处</p><h2 id="features-title">从截下来，到说清楚。</h2></div><p>记录一个想法，说明一个问题，<br>或留住一张值得分享的画面。</p></div>
+      <div class="feature-grid">
+        <article class="feature-card"><button class="feature-art feature-photo annotate-photo" type="button" data-screenshot="annotate" aria-label="放大查看标注界面示意"><img src="assets/demo-annotate.jpg" loading="lazy" alt="办公异常标注示意，非实际应用界面"><span class="feature-photo-label"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> 标注示意</span></button><div class="feature-body"><span class="feature-index">01 / 标注</span><h3>你的重点，一眼就懂。</h3><p>箭头、文字、序号与圆角矩形，把说明画在图上。马赛克与模糊，让敏感内容有处可藏。</p></div></article>
+        <article class="feature-card"><button class="feature-art feature-photo ocr-photo" type="button" data-screenshot="ocr" aria-label="放大查看 OCR 界面示意"><img src="assets/demo-ocr.jpg" loading="lazy" alt="会议记录文字提取示意，非实际 OCR 窗口"><span class="feature-photo-label"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> OCR 示意</span></button><div class="feature-body"><span class="feature-index">02 / 识别与翻译</span><h3>图片里的字，也能用。</h3><p>本机 OCR 提取文字，再复制或翻译。支持将译文放回原图位置。翻译功能需 macOS 26+。</p></div></article>
+        <article class="feature-card"><button class="feature-art feature-photo pin-photo" type="button" data-screenshot="pin" aria-label="放大查看贴图浮窗示意"><img src="assets/demo-pin.jpg" loading="lazy" alt="异常记录对照参考示意，非实际贴图浮窗"><span class="feature-photo-label"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg> 贴图示意</span></button><div class="feature-body"><span class="feature-index">03 / 原位贴图</span><h3>好参考，留在眼前。</h3><p>把截图贴在原位置，滚轮缩放、调整透明度。右键原地编辑，边看边改，少一次来回切换。</p></div></article>
+      </div>
+      <div class="extra-features"><span><svg class="icon"><use href="#i-crop"/></svg> 区域、全屏与滚动长截图</span><span><svg class="icon"><use href="#i-copy"/></svg> 复制、保存与另存为</span><span><svg class="icon"><use href="#i-check"/></svg> 工具属性与快捷键可定制</span></div>
+    </section>
+    <section id="workflow" class="workflow" aria-labelledby="workflow-title"><div class="container workflow-inner"><div class="workflow-heading"><p class="eyebrow">让表达少一点步骤</p><h2 id="workflow-title">截一下。画两笔。<br>分享出去。</h2><p>从屏幕到剪贴板，<br>把注意力留给你正在做的事。</p><a class="text-link" href="https://github.com/songpl-AI/LibreShot/blob/v1.3.19/docs/usage.md">查看完整使用指南 <svg class="icon"><use href="#i-arrow"/></svg></a></div><ol class="workflow-steps"><li><span class="step-number">1</span><div><h3>框选你想记录的内容</h3><p>按 <kbd>⌘</kbd><kbd>⇧</kbd><kbd>X</kbd> 启动区域截图，也可从菜单栏选择全屏或长截图。</p></div></li><li><span class="step-number">2</span><div><h3>加一点标注，说明重点</h3><p>箭头指向问题，序号梳理步骤，文字补上想法。颜色、粗细和字号按工具记忆。</p></div></li><li><span class="step-number">3</span><div><h3>完成，随手粘贴</h3><p>按回车完成并复制到剪贴板。想留存？<kbd>⌘</kbd><kbd>S</kbd> 手动保存，或开启自动保存。</p></div></li></ol></div></section>
+    <section id="install" class="install container" aria-labelledby="install-title"><div class="section-heading"><div><p class="eyebrow">准备好你的第一张截图</p><h2 id="install-title">几步安装，就能开始。</h2></div><a class="text-link" href="https://github.com/songpl-AI/LibreShot/blob/v1.3.19/docs/installation.md">安装与权限指南 <svg class="icon"><use href="#i-arrow"/></svg></a></div><div class="install-steps"><article><span class="install-number">01</span><h3>下载，拖入应用程序</h3><p>打开下载的 DMG，将 LibreShot 拖入“应用程序”。升级前先退出旧版。</p></article><article><span class="install-number">02</span><h3>允许屏幕录制</h3><p>首次截图按提示授权。使用双击 Option 启动截图时，还需输入监控权限。</p></article><article><span class="install-number">03</span><h3>开始第一张截图</h3><p>从菜单栏启动，或按 ⌘⇧X。框选、标注，然后把你的想法分享出去。</p></article></div><p class="install-note">当前安装包采用 ad-hoc 签名，未经过 Apple 公证。若 macOS 阻止打开，请按<a href="https://github.com/songpl-AI/LibreShot/blob/v1.3.19/docs/installation.md">安装指南</a>处理。</p></section>
+    <section id="faq" class="faq container" aria-labelledby="faq-title"><div class="faq-heading"><p class="eyebrow">你可能还想知道</p><h2 id="faq-title">一些小问题。</h2><p>还有别的问题或新想法？<br>欢迎来 GitHub 聊聊。</p><a class="text-link" href="https://github.com/songpl-AI/LibreShot/issues">反馈问题与建议 <svg class="icon"><use href="#i-arrow"/></svg></a></div><div class="faq-list"><details open><summary>支持哪些 Mac？<span class="faq-plus" aria-hidden="true"></span></summary><p>支持 macOS 13 及以上、Apple Silicon 与 Intel。翻译功能需要 macOS 26 及以上；复杂底纹、表格和特殊字体的原图翻译需要人工核对。</p></details><details><summary>截图和识别文字会上传吗？<span class="faq-plus" aria-hidden="true"></span></summary><p>截图、OCR 与翻译文本在本机处理。首次下载翻译语言包与检查更新需要联网；语言包安装后可离线翻译。</p></details><details><summary>截图完成后，会自动保存吗？<span class="faq-plus" aria-hidden="true"></span></summary><p>新用户默认仅复制到剪贴板。可在设置中开启自动保存，或用 ⌘S 手动保存、⌘⇧S 另存为。升级会保留原来的设置。</p></details><details><summary>真的免费吗？可以参与开发吗？<span class="faq-plus" aria-hidden="true"></span></summary><p>LibreShot 免费使用，源代码以 MIT 许可证开放。欢迎提交 Issue 或 Pull Request，也可以通过 GitHub Sponsors 支持项目维护。</p></details></div></section>
+    <section class="closing container"><div class="closing-icon"><img src="assets/app-icon.png" width="68" height="68" alt="LibreShot 图标"></div><div><p class="eyebrow">为清楚的表达，留一把小剪刀。</p><h2>下一张截图，用 LibreShot。</h2></div><a class="button button-primary" href="https://github.com/songpl-AI/LibreShot/releases/latest"><svg class="icon"><use href="#i-apple"/></svg> 免费下载 <svg class="icon"><use href="#i-down"/></svg></a></section>
+  </main>
+  <footer class="site-footer container"><div><a class="brand footer-brand" href="#"><img src="assets/app-icon.png" width="28" height="28" alt=""><span>LibreShot</span></a><span class="footer-note">以 MIT 开源，为你的 Mac 而做。</span></div><nav aria-label="页脚导航"><a href="https://github.com/songpl-AI/LibreShot">GitHub</a><a href="https://github.com/songpl-AI/LibreShot/releases">更新日志</a><a href="https://github.com/sponsors/songpl-AI">支持项目 <span aria-hidden="true">↗</span></a></nav><span class="copyright">© 2026 Allen</span></footer>
+  <dialog class="screenshot-dialog" aria-labelledby="screenshot-title" aria-describedby="screenshot-description">
+    <div class="dialog-header"><h2 id="screenshot-title">标注 · 工作场景示意</h2><button class="dialog-close" type="button" aria-label="关闭截图" autofocus><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <div class="dialog-image-wrap"><img id="screenshot-full" src="assets/demo-annotate.jpg" alt=""></div>
+    <p id="screenshot-description">工作场景示意 · 非应用截图，页面内容为虚构数据。</p>
+  </dialog>
+  <span class="sr-only" id="gallery-status" role="status" aria-live="polite"></span>
+</body>
+</html>

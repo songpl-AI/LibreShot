@@ -7,6 +7,7 @@ task_flags=(-parse-as-library)
 if [[ "${LIBRESHOT_OPTIMIZE:-0}" == 1 ]]; then task_flags+=(-O); fi
 xcrun swiftc "${task_flags[@]}" \
   LibreShot/LibreShot/CaptureService.swift \
+  LibreShot/LibreShot/Core/LongCapture/*.swift \
   LibreShot/LibreShot/CaptureService+Annotation.swift \
   LibreShot/LibreShot/Core/ImageEditorWindowController.swift \
   LibreShot/Editor/Annotation.swift \

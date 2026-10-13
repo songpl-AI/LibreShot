@@ -9,6 +9,7 @@ struct ToolbarRegressionChecks {
     static func main() async throws {
         checkEscapeCancellation()
         checkAutomaticAnnotationSelection()
+        checkCapturePreviewPreservation()
         try await checkOCRAndTranslation()
         if #available(macOS 26.0, *) { await checkTranslationLifecycle() }
         try await ImageTranslationChecks.run()
@@ -17,6 +18,14 @@ struct ToolbarRegressionChecks {
         precondition(displayConfiguration.width == 3024 && displayConfiguration.height == 1964)
         precondition(!displayConfiguration.scalesToFit && !displayConfiguration.capturesAudio)
         print("PASS: screen capture excludes cursor while retaining physical resolution")
+
+        let sourceRect = CGRect(x: 120, y: 80, width: 640, height: 360)
+        let regionConfiguration = CaptureService.displayConfiguration(width: 1280, height: 720, sourceRect: sourceRect)
+        precondition(regionConfiguration.sourceRect == sourceRect,
+                     "Direct region capture must preserve the display-local source rectangle")
+        precondition(regionConfiguration.width == 1280 && regionConfiguration.height == 720,
+                     "Direct region capture must use the requested physical output dimensions")
+        print("PASS: direct region capture preserves sourceRect and physical output dimensions")
 
         precondition(CaptureServiceError.permissionDenied.localizedDescription.contains("屏幕录制权限"),
                      "Screen capture permission failures must explain how to authorize LibreShot")
@@ -330,6 +339,49 @@ struct ToolbarRegressionChecks {
                        size: CGSize(width: compact.size.width + 32, height: compact.size.height + 32), path: output + "/toolbar-wrapped.png")
             print("PASS: rendered native SwiftUI settings and toolbar previews")
         }
+    }
+
+    @MainActor
+    static func checkCapturePreviewPreservation() {
+        let suite = "LibreShot.CapturePreviewChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = OverlayViewModel(settings: SettingsService(defaults: defaults))
+        model.state = .editing
+        model.selectionRect = CGRect(x: 0, y: 0, width: 100, height: 60)
+        let context = CGContext(data: nil, width: 200, height: 120, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        model.updatePreviewImage(context.makeImage(), scale: 2)
+        precondition(!model.captureRequiresExistingPreview,
+                     "An ordinary region can use the direct sourceRect experiment")
+        model.annotations = [Annotation(type: .rectangle, color: .red, startPoint: .zero, endPoint: CGPoint(x: 40, y: 40))]
+        precondition(!model.captureRequiresExistingPreview,
+                     "Vector annotations can be composited onto the direct region")
+        for effect in [AnnotationType.mosaic, .blur] {
+            model.annotations = [Annotation(type: effect, color: .red, startPoint: .zero, endPoint: CGPoint(x: 40, y: 40))]
+            precondition(model.captureRequiresExistingPreview,
+                         "Effect exports must preserve the frozen preview")
+        }
+        model.annotations = []
+        model.currentAnnotation = Annotation(type: .mosaic, color: .red, startPoint: .zero, endPoint: CGPoint(x: 40, y: 40))
+        precondition(model.captureRequiresExistingPreview)
+        model.currentAnnotation = nil
+        if #available(macOS 26.0, *) {
+            model.confirmImageTranslation()
+            precondition(model.translationSource != nil && model.captureRequiresExistingPreview,
+                         "Entering inline translation must preserve the original frozen source")
+            model.translatedSelection = context.makeImage()
+            model.translationCanExport = true
+            precondition(model.captureRequiresExistingPreview)
+            model.toggleTranslationPreview()
+            precondition(model.captureRequiresExistingPreview,
+                         "Showing the original translation must still preserve the frozen source")
+            model.clearImageTranslation()
+        }
+        model.reset()
+        precondition(!model.captureRequiresExistingPreview,
+                     "A new capture must not inherit the previous modified-preview requirement")
+        print("PASS: direct capture preserves frozen pixels for mosaic, blur and inline translation while ordinary/vector captures remain eligible")
     }
 
     @MainActor

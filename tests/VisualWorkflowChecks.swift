@@ -74,6 +74,11 @@ struct VisualWorkflowChecks {
             precondition(captures == 0, "Do not export incomplete or overflowing translations")
             let comparisonPoint = CGPoint(x: 100, y: 30)
             precondition(!model.canToggleTranslationPreview(from: comparisonPoint, to: comparisonPoint), "Incomplete translation cannot be compared")
+            let translation = model.imageTranslationModel!
+            translation.loadRegions([OCRTextRegion(id: 1, text: "Fixture", bounds: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.5), confidence: 1)])
+            translation.updateTranslation("Fixture", id: 1)
+            await translation.render()
+            precondition(translation.canExport)
             model.translatedSelection = solidImage(width: 200, height: 120, color: .systemBlue)
             model.translationCanExport = true
             precondition(!model.canToggleTranslationPreview(from: CGPoint(x: 10, y: 10), to: CGPoint(x: 10, y: 10)))

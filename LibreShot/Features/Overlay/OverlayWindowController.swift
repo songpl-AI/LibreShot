@@ -14,8 +14,17 @@ class OverlayWindowController: NSWindowController {
     private var longCaptureStartTask: Task<Void, Never>?
     private var longCaptureSubscriptions: Set<AnyCancellable> = []
     private var longCaptureActionInFlight = false
+    // Every show() owns one generation. Async start/finish/cancel callbacks
+    // must prove that they still belong to the visible session before they
+    // touch the window or release the controller.
+    private var captureGeneration = UUID()
     private var previewErrorHandler: ((Error) -> Void)?
     private var previewRequestID = UUID()
+    private var previewTask: Task<Void, Never>?
+    // Captured before finishOverlaySession() resets the view model. The
+    // application callback runs synchronously after cleanup and reads this
+    // value to decide whether a direct sourceRect capture is safe.
+    private var captureRequiresExistingPreviewForCallback = false
     
     private func pushCrosshairCursor() {
         if !cursorPushed {
@@ -51,17 +60,20 @@ class OverlayWindowController: NSWindowController {
         
         self.init(window: window)
         
-        // Setup Content View Controller once
+        attachContentViewIfNeeded()
+    }
+
+    private func attachContentViewIfNeeded() {
+        guard let window, window.contentViewController == nil else { return }
         let overlayView = OverlayView(viewModel: self.viewModel)
-        // Use a subclass or configuration to avoid auto-layout constraints on the root view if possible
-        // Or simply add the view directly to contentView without constraints if using pure frame layout
-        
-        let hostingController = NSViewController()
+        let hostingController = NSHostingController(rootView: overlayView)
+        hostingController.sizingOptions = [.minSize, .intrinsicContentSize, .maxSize]
+        // Keep the controller type for callers that inspect its root model, but
+        // use the first-click-aware host for the actual full-screen canvas.
         let drawingHost = DrawingHostingView(rootView: AnyView(overlayView))
         drawingHost.sizingOptions = []
         drawingHost.autoresizingMask = [.width, .height]
         hostingController.view = drawingHost
-        
         window.contentViewController = hostingController
     }
 
@@ -82,6 +94,13 @@ class OverlayWindowController: NSWindowController {
         onCancel: @escaping () -> Void
     ) {
         guard let overlayWindow = window as? OverlayWindow else { return }
+        guard longCaptureSession == nil, longCaptureStartTask == nil else {
+            print("Capture session already active, ignoring show request")
+            return
+        }
+        attachContentViewIfNeeded()
+        previewTask?.cancel()
+        captureRequiresExistingPreviewForCallback = false
         currentCaptureMode = captureMode
         previewErrorHandler = onPreviewError
         let requestID = UUID()
@@ -89,6 +108,8 @@ class OverlayWindowController: NSWindowController {
         
         // 1. Reset State
         cleanupLongCaptureState()
+        let generation = UUID()
+        captureGeneration = generation
         viewModel.reset()
         viewModel.captureMode = captureMode
         viewModel.longCaptureStatusText = captureMode == .longScreenshot ? "框选目标区域，松开后直接滚动" : "拖动选择截图区域"
@@ -100,11 +121,16 @@ class OverlayWindowController: NSWindowController {
         }
         
         viewModel.onCapture = { [weak self] rect, annotations, action, image in
-            self?.finishOverlaySession()
+            guard let self else { return }
+            // The caller reads the display ID while submitting the final image.
+            self.captureRequiresExistingPreviewForCallback = self.viewModel.captureRequiresExistingPreview
+            self.finishOverlaySession(preservingTargetScreen: true)
             onCapture(rect, annotations, action, image)
+            self.targetScreen = nil
         }
         viewModel.onLongCaptureStart = { [weak self] rect in
-            self?.startLongCapture(with: rect, onFinish: onLongCapture, onError: onLongCaptureError, onCancel: onCancel)
+            self?.startLongCapture(with: rect, generation: generation,
+                                   onFinish: onLongCapture, onError: onLongCaptureError, onCancel: onCancel)
         }
         viewModel.onCancel = cancelAction
         
@@ -143,18 +169,23 @@ class OverlayWindowController: NSWindowController {
         // or trigger window server composition changes that affect the capture.
         // overlayWindow.orderFront(nil) 
         
-        Task { [weak self] in
+        let previewImageLoader = self.previewImageLoader
+        let requestedDisplayID = getCurrentDisplayID()
+        previewTask = Task { [weak self] in
             guard let self else { return }
+            defer { if self.previewRequestID == requestID { self.previewTask = nil } }
             do {
                 // Wait a tiny bit for any previous events to settle
-                try? await Task.sleep(nanoseconds: 10 * 1_000_000)
+                try await Task.sleep(nanoseconds: 10 * 1_000_000)
+                guard self.previewRequestID == requestID else { return }
                 
                 let image: NSImage
                 if let previewImageLoader {
-                    image = try await previewImageLoader(getCurrentDisplayID())
+                    image = try await previewImageLoader(requestedDisplayID)
                 } else {
-                    image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                    image = try await previewCaptureService.captureDisplayImage(displayID: requestedDisplayID)
                 }
+                try Task.checkCancellation()
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 
                 // Calculate scale factor from the captured image (Pixels) vs Screen Frame (Points)
@@ -186,6 +217,13 @@ class OverlayWindowController: NSWindowController {
         guard let screen = targetScreen else { return nil }
         return screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
+
+    /// Whether the just-submitted capture must use the frozen preview image.
+    /// This remains separate from the existing four-argument callback so
+    /// existing test and editor clients keep their callback API unchanged.
+    func captureRequiresExistingPreview() -> Bool {
+        captureRequiresExistingPreviewForCallback
+    }
     
     private func makeLongCaptureRegion(from rect: CGRect) -> LongCaptureRegion? {
         guard let screen = targetScreen, let displayID = getCurrentDisplayID() else { return nil }
@@ -202,34 +240,53 @@ class OverlayWindowController: NSWindowController {
     
     private func startLongCapture(
         with rect: CGRect,
+        generation: UUID,
         onFinish: ((NSImage) -> Void)?,
         onError: ((Error) -> Void)?,
         onCancel: @escaping () -> Void
     ) {
+        guard captureGeneration == generation, longCaptureSession == nil else { return }
         guard let overlayWindow = window as? OverlayWindow,
               let region = makeLongCaptureRegion(from: rect) else {
             return
         }
         
-        let session = LongCaptureSession(region: region)
+        let session: LongCaptureSession
+        do {
+            guard let preview = viewModel.previewImage,
+                  let initialImage = LongCaptureInitialFrameSource.selection(from: preview, region: region) else {
+                throw LongCaptureError.noStableFrame
+            }
+            session = try LongCaptureSession(region: region, initialImage: initialImage)
+        } catch {
+            finishOverlaySession()
+            onCancel()
+            onError?(error)
+            return
+        }
         longCaptureSession = session
         longCaptureActionInFlight = false
-        bindLongCaptureSession(session)
+        bindLongCaptureSession(session, generation: generation)
         updateLongCaptureStatus(progress: session.progress, status: session.status)
         longCaptureGuideOverlay?.close()
         longCaptureGuideOverlay = LongCaptureGuideOverlay(
             viewModel: viewModel,
             region: region,
             onFinish: { [weak self] in
-                self?.finishLongCapture(onFinish: onFinish, onError: onError, onCancel: onCancel)
+                self?.finishLongCapture(generation: generation, onFinish: onFinish, onError: onError, onCancel: onCancel)
             },
             onCancel: { [weak self] in
-                self?.cancelOverlayFlow(onCancel: onCancel)
+                self?.cancelOverlayFlow(generation: generation, onCancel: onCancel)
             }
         )
         longCaptureGuideOverlay?.show()
         overlayWindow.orderOut(nil)
-        installLongCaptureKeyMonitors(onFinish: onFinish, onError: onError, onCancel: onCancel)
+        // Only the detached selected baseline is needed by the live capture.
+        // Release the full-display preview before the SCK surfaces are created.
+        viewModel.updatePreviewImage(nil)
+        overlayWindow.contentViewController = nil
+        overlayWindow.contentView = nil
+        installLongCaptureKeyMonitors(generation: generation, onFinish: onFinish, onError: onError, onCancel: onCancel)
         popCrosshairCursor()
         reactivatePreviousApplication()
         
@@ -239,6 +296,7 @@ class OverlayWindowController: NSWindowController {
                 try await session.start()
             } catch {
                 await MainActor.run {
+                    guard self.captureGeneration == generation, self.longCaptureSession === session else { return }
                     self.finishOverlaySession()
                     onCancel()
                     onError?(error)
@@ -248,11 +306,14 @@ class OverlayWindowController: NSWindowController {
     }
     
     private func finishLongCapture(
+        generation: UUID,
         onFinish: ((NSImage) -> Void)?,
         onError: ((Error) -> Void)?,
         onCancel: @escaping () -> Void
     ) {
-        guard let session = longCaptureSession, !longCaptureActionInFlight else { return }
+        guard let session = longCaptureSession,
+              captureGeneration == generation,
+              !longCaptureActionInFlight else { return }
         longCaptureActionInFlight = true
         viewModel.longCaptureStatusText = "正在生成长截图"
         window?.ignoresMouseEvents = false
@@ -265,12 +326,14 @@ class OverlayWindowController: NSWindowController {
             do {
                 let image = try await session.finish()
                 await MainActor.run {
+                    guard self.captureGeneration == generation, self.longCaptureSession === session else { return }
                     NSApp.activate(ignoringOtherApps: true)
                     self.finishOverlaySession()
                     onFinish?(image)
                 }
             } catch {
                 await MainActor.run {
+                    guard self.captureGeneration == generation, self.longCaptureSession === session else { return }
                     self.finishOverlaySession()
                     onCancel()
                     onError?(error)
@@ -279,14 +342,19 @@ class OverlayWindowController: NSWindowController {
         }
     }
     
-    private func cancelOverlayFlow(onCancel: @escaping () -> Void) {
+    private func cancelOverlayFlow(generation: UUID? = nil, onCancel: @escaping () -> Void) {
+        if let generation, captureGeneration != generation { return }
         guard !longCaptureActionInFlight else { return }
         if let session = longCaptureSession {
+            let sessionGeneration = captureGeneration
             longCaptureActionInFlight = true
             Task { [weak self] in
                 await session.cancel()
                 await MainActor.run {
-                    self?.finishOverlaySession()
+                    guard let self,
+                          self.captureGeneration == sessionGeneration,
+                          self.longCaptureSession === session else { return }
+                    self.finishOverlaySession()
                     onCancel()
                 }
             }
@@ -297,13 +365,16 @@ class OverlayWindowController: NSWindowController {
         onCancel()
     }
     
-    private func bindLongCaptureSession(_ session: LongCaptureSession) {
+    private func bindLongCaptureSession(_ session: LongCaptureSession, generation: UUID) {
         longCaptureSubscriptions.removeAll()
         session.$progress
             .combineLatest(session.$status)
             .receive(on: RunLoop.main)
             .sink { [weak self] progress, status in
-                self?.updateLongCaptureStatus(progress: progress, status: status)
+                guard let self,
+                      self.captureGeneration == generation,
+                      self.longCaptureSession === session else { return }
+                self.updateLongCaptureStatus(progress: progress, status: status)
             }
             .store(in: &longCaptureSubscriptions)
     }
@@ -333,15 +404,72 @@ class OverlayWindowController: NSWindowController {
         }
     }
     
-    private func finishOverlaySession() {
+    override func close() {
+        guard longCaptureSession != nil || longCaptureStartTask != nil else {
+            finishOverlaySession()
+            super.close()
+            return
+        }
+
+        // NSWindowController.close() is synchronous, while ScreenCaptureKit
+        // teardown is async. Keep the controller alive until the stream has
+        // stopped and its output queue has drained.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.cancelAndWait()
+            self.closeWindowAfterCleanup()
+        }
+    }
+
+    private func closeWindowAfterCleanup() {
+        super.close()
+    }
+
+    /// Cancel the active long-capture stream and wait until ScreenCaptureKit
+    /// has stopped delivering frames before releasing the session.
+    @MainActor
+    func cancelAndWait() async {
+        let generation = captureGeneration
+        // Invalidate callbacks before awaiting teardown. A cancelled start or
+        // finish task may otherwise arrive on the main actor during this wait
+        // and clear a replacement session.
+        captureGeneration = UUID()
+        let startTask = longCaptureStartTask
+        let session = longCaptureSession
+        startTask?.cancel()
+        if let startTask { await startTask.value }
+        if let session { await session.cancel() }
+        if let session {
+            guard longCaptureSession === session else { return }
+        } else {
+            guard longCaptureSession == nil else { return }
+        }
+        guard captureGeneration != generation else { return }
+        finishOverlaySession()
+    }
+
+    private func finishOverlaySession(preservingTargetScreen: Bool = false) {
+        captureGeneration = UUID()
         previewRequestID = UUID()
+        previewTask?.cancel()
+        previewTask = nil
         #if DEBUG
         let hadLongSession = longCaptureSession != nil
         #endif
         cleanupLongCaptureState()
         popCrosshairCursor()
         window?.orderOut(nil)
+        window?.contentViewController = nil
+        window?.contentView = nil
+        (window as? OverlayWindow)?.onEscapeKey = nil
         viewModel.reset()
+        viewModel.onCapture = nil
+        viewModel.onCancel = nil
+        viewModel.onLongCaptureStart = nil
+        previewErrorHandler = nil
+        previewImageLoader = nil
+        if !preservingTargetScreen { targetScreen = nil }
+        currentCaptureMode = .normal
         #if DEBUG
         if hadLongSession { MemoryTrace.markAfterRelease("long_session_released") }
         #endif
@@ -349,11 +477,13 @@ class OverlayWindowController: NSWindowController {
 
     private func failPreview(_ error: Error) {
         // A blank screenSaver-level window would cover the system authorization prompt.
+        let errorHandler = previewErrorHandler
         finishOverlaySession()
-        previewErrorHandler?(error)
+        errorHandler?(error)
     }
     
     private func installLongCaptureKeyMonitors(
+        generation: UUID,
         onFinish: ((NSImage) -> Void)?,
         onError: ((Error) -> Void)?,
         onCancel: @escaping () -> Void
@@ -361,10 +491,10 @@ class OverlayWindowController: NSWindowController {
         removeLongCaptureKeyMonitors()
         _ = HotkeyService.shared.registerLongCaptureHotkeys(
             onFinish: { [weak self] in
-                self?.finishLongCapture(onFinish: onFinish, onError: onError, onCancel: onCancel)
+                self?.finishLongCapture(generation: generation, onFinish: onFinish, onError: onError, onCancel: onCancel)
             },
             onCancel: { [weak self] in
-                self?.cancelOverlayFlow(onCancel: onCancel)
+                self?.cancelOverlayFlow(generation: generation, onCancel: onCancel)
             }
         )
     }
@@ -380,7 +510,7 @@ class OverlayWindowController: NSWindowController {
             cancelOverlayFlow(onCancel: onCancel)
             return true
         case 36, 76:
-            finishLongCapture(onFinish: onFinish, onError: onError, onCancel: onCancel)
+            finishLongCapture(generation: captureGeneration, onFinish: onFinish, onError: onError, onCancel: onCancel)
             return true
         default:
             return false
@@ -417,8 +547,22 @@ class OverlayWindowController: NSWindowController {
     
     // Public method to reset capture session (for re-triggering while active)
     func resetCapture() {
+        // Long capture detaches the main SwiftUI tree while ScreenCaptureKit
+        // owns an active stream. Reusing that controller for a normal region
+        // capture would recreate an empty screenSaver-level window and leave
+        // the old stream running. The app-level shortcut gate also ignores
+        // this input; keep this method safe for any remaining callers.
+        guard currentCaptureMode == .normal,
+              longCaptureSession == nil,
+              longCaptureStartTask == nil else {
+            print("Long capture is active, ignoring reset request")
+            return
+        }
+        attachContentViewIfNeeded()
         let requestID = UUID()
         previewRequestID = requestID
+        previewTask?.cancel()
+        captureRequiresExistingPreviewForCallback = false
         // 1. Reset View Model (clears selection, annotations, preview)
         cleanupLongCaptureState()
         viewModel.reset()
@@ -451,15 +595,20 @@ class OverlayWindowController: NSWindowController {
         // For reset, we are already active, so menus are likely already closed.
         // So we can just capture.
         
-        Task { [weak self] in
+        let previewImageLoader = self.previewImageLoader
+        let requestedDisplayID = getCurrentDisplayID()
+        previewTask = Task { [weak self] in
             guard let self else { return }
+            defer { if self.previewRequestID == requestID { self.previewTask = nil } }
             do {
+                try Task.checkCancellation()
                 let image: NSImage
                 if let previewImageLoader {
-                    image = try await previewImageLoader(getCurrentDisplayID())
+                    image = try await previewImageLoader(requestedDisplayID)
                 } else {
-                    image = try await previewCaptureService.captureDisplayImage(displayID: getCurrentDisplayID())
+                    image = try await previewCaptureService.captureDisplayImage(displayID: requestedDisplayID)
                 }
+                try Task.checkCancellation()
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 
                 // Calculate scale factor from the captured image (Pixels) vs Screen Frame (Points)

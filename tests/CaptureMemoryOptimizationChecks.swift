@@ -28,7 +28,7 @@ struct CaptureMemoryOptimizationChecks {
             try data.write(to: url)
         }
         check(await startFailureCompletesCaptureOnce(), "stream start failure completes capture once")
-        check(await firstFrameWinsOverLateFailure(), "first captured frame wins over a late start error")
+        check(await firstFrameWinsOverLateFailure(), "settled first-frame result ignores duplicate completion errors")
 
         let mainScreen = NSScreen.main!
         let screen = mainScreen.frame
@@ -135,12 +135,11 @@ private struct SyntheticStreamError: Error {}
 @MainActor
 private func startFailureCompletesCaptureOnce() async -> Bool {
     do {
-        _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NSImage, Error>) in
-            let pending = CaptureContinuation(continuation)
-            pending.fail(SyntheticStreamError())
-            precondition(pending.take() == nil)
-            pending.fail(SyntheticStreamError())
-        }
+        let pending = CaptureRequestState<NSImage>()
+        pending.fail(SyntheticStreamError())
+        precondition(!pending.claimFrame())
+        pending.fail(SyntheticStreamError())
+        _ = try await pending.waitForResult()
         return false
     } catch is SyntheticStreamError {
         return true
@@ -152,11 +151,11 @@ private func startFailureCompletesCaptureOnce() async -> Bool {
 @MainActor
 private func firstFrameWinsOverLateFailure() async -> Bool {
     do {
-        let image = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NSImage, Error>) in
-            let pending = CaptureContinuation(continuation)
-            pending.take()?.resume(returning: NSImage(size: NSSize(width: 1, height: 1)))
-            pending.fail(SyntheticStreamError())
-        }
+        let pending = CaptureRequestState<NSImage>()
+        precondition(pending.claimFrame())
+        pending.succeed(NSImage(size: NSSize(width: 1, height: 1)))
+        pending.fail(SyntheticStreamError())
+        let image = try await pending.waitForResult()
         return image.size.width == 1
     } catch {
         return false

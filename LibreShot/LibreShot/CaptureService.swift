@@ -6,6 +6,7 @@ import Vision
 import Combine
 import ImageIO
 import UniformTypeIdentifiers
+import OSLog
 
 enum CaptureServiceError: LocalizedError {
     case noDisplay
@@ -125,13 +126,10 @@ class CaptureService {
         return displayID(at: NSEvent.mouseLocation, displays: displays, fallback: CGMainDisplayID())
     }
     
-    let context = CIContext()
     private let exportColorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-    private var stream: SCStream?
-    private var streamOutput: CaptureStreamOutput?
     private let outputQueue = DispatchQueue(label: "com.libreshot.capture")
-    private var isStopping = false
-    private var currentScale: CGFloat = 1.0
+    private let lifecycleGate = StreamLifecycleGate()
+    private let diagnosticTrace = LongCaptureTrace()
     
     private let settings: SettingsService
     private let pasteboard: NSPasteboard
@@ -267,6 +265,11 @@ class CaptureService {
 
     nonisolated private static func writePNGData(_ pngData: Data, to directory: URL, scoped: Bool,
                                                  using fileWriter: @Sendable (Data, URL) throws -> Void) throws -> URL {
+        let trace = LongCaptureTrace()
+        let writeStart = trace.startTime()
+        var outcome = "failed"
+        trace.event("event=save-write-start pngBytes=\(pngData.count)")
+        defer { trace.event("event=save-write-ended outcome=\(outcome) pngBytes=\(pngData.count) elapsedMs=\(trace.elapsed(since: writeStart))") }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
@@ -287,28 +290,44 @@ class CaptureService {
         }
 
         try fileWriter(pngData, url)
+        outcome = "success"
         return url
     }
 
     func copyToClipboard(_ image: NSImage) {
+        let copyStart = diagnosticTrace.startTime()
+        diagnosticTrace.event("event=copy-start logicalSize=\(image.size.width)x\(image.size.height)")
+        defer { diagnosticTrace.event("event=copy-ended elapsedMs=\(diagnosticTrace.elapsed(since: copyStart))") }
         writeToClipboard(image, pngData: pngData(from: image))
     }
 
     private func writeToClipboard(_ image: NSImage, pngData: Data?) {
+        let clipboardStart = diagnosticTrace.startTime()
+        diagnosticTrace.event("event=clipboard-start pngBytes=\(pngData?.count ?? 0) logicalSize=\(image.size.width)x\(image.size.height)")
+        defer { diagnosticTrace.event("event=clipboard-ended elapsedMs=\(diagnosticTrace.elapsed(since: clipboardStart))") }
         pasteboard.clearContents()
         
         guard let pngData else {
+            diagnosticTrace.event("event=clipboard-fallback-image")
             pasteboard.writeObjects([image])
             return
         }
         
+        diagnosticTrace.event("event=clipboard-png-start bytes=\(pngData.count)")
         pasteboard.setData(pngData, forType: .png)
+        diagnosticTrace.event("event=clipboard-png-ended bytes=\(pngData.count)")
         
         // Decode the normalized PNG so both formats have the same pixels and DPI.
+        diagnosticTrace.event("event=clipboard-tiff-start pngBytes=\(pngData.count)")
         if let normalizedBitmap = NSBitmapImageRep(data: pngData),
            let tiffData = encodedData(from: normalizedBitmap, type: .tiff) {
+            diagnosticTrace.event("event=clipboard-tiff-write-start bytes=\(tiffData.count) pixels=\(normalizedBitmap.pixelsWide)x\(normalizedBitmap.pixelsHigh)")
             pasteboard.setData(tiffData, forType: .tiff)
+            diagnosticTrace.event("event=clipboard-tiff-write-ended bytes=\(tiffData.count)")
+        } else {
+            diagnosticTrace.event("event=clipboard-tiff-unavailable")
         }
+        diagnosticTrace.event("event=clipboard-tiff-ended")
         // Both representations already belong to the same pasteboard item.
         // Writing NSImage again adds a second item and another decoded image.
     }
@@ -374,12 +393,31 @@ class CaptureService {
         return NSImage(cgImage: detachedImage, size: finalSize)
     }
     
-    // Updated to accept optional displayID. If nil, captures main display.
-    func captureDisplayImage(displayID: CGDirectDisplayID? = nil) async throws -> NSImage {
-        isStopping = false
+    // Updated to accept optional displayID. If sourceRect is supplied, capture
+    // only that display-local rectangle instead of creating a full-screen frame.
+    func captureDisplayImage(displayID: CGDirectDisplayID? = nil, sourceRect: CGRect? = nil) async throws -> NSImage {
+        // Register cancellation before either async permission/content loading
+        // or gate acquisition. Each request owns its own result and stream.
+        let request = CaptureRequestState<CGImage>()
+        return try await withTaskCancellationHandler {
+            try await lifecycleGate.withLock {
+                try Task.checkCancellation()
+                return try await captureDisplayImageUnlocked(displayID: displayID,
+                                                             sourceRect: sourceRect, request: request)
+            }
+        } onCancel: {
+            request.fail(CancellationError())
+        }
+    }
+
+    private func captureDisplayImageUnlocked(displayID: CGDirectDisplayID?, sourceRect: CGRect?,
+                                             request: CaptureRequestState<CGImage>) async throws -> NSImage {
+        try Task.checkCancellation()
         let content = try await ScreenCaptureAccess.content {
             try await SCShareableContent.current
         }
+        try Task.checkCancellation()
+        try request.checkFailure()
         
         let display: SCDisplay
         if let targetID = displayID {
@@ -399,6 +437,7 @@ class CaptureService {
         var scale: CGFloat = 1.0
         var physicalWidth: Int = display.width
         var physicalHeight: Int = display.height
+        var displayBounds = CGRect(x: 0, y: 0, width: CGFloat(display.width), height: CGFloat(display.height))
         
         if let screen = NSScreen.screens.first(where: {
             ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == display.displayID
@@ -408,111 +447,131 @@ class CaptureService {
             // This fixes issues where SCDisplay might report logical or scaled sizes
             physicalWidth = Int(screen.frame.width * scale)
             physicalHeight = Int(screen.frame.height * scale)
+            displayBounds = CGRect(origin: .zero, size: screen.frame.size)
         }
-        self.currentScale = scale
-        
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        let configuration = Self.displayConfiguration(width: physicalWidth, height: physicalHeight)
 
-        do {
-            return try await withCheckedThrowingContinuation { continuation in
-                let pending = CaptureContinuation(continuation)
-                let output = CaptureStreamOutput { [weak self, pending] sampleBuffer in
-                    self?.handleSampleBuffer(sampleBuffer, pending: pending)
-                }
-                self.streamOutput = output
-                let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
-                self.stream = stream
-                do {
-                    try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: self.outputQueue)
-                    stream.startCapture { error in
-                        if let error { pending.fail(error) }
-                    }
-                } catch {
-                    pending.fail(error)
-                }
+        let effectiveSourceRect: CGRect?
+        if let sourceRect {
+            let normalized = sourceRect.standardized
+            let clipped = normalized.intersection(displayBounds)
+            guard !clipped.isNull, !clipped.isEmpty else {
+                throw CaptureServiceError.captureFailed
             }
-        } catch {
-            stopStream()
-            throw error
+            effectiveSourceRect = clipped
+            physicalWidth = max(1, Int((clipped.width * scale).rounded()))
+            physicalHeight = max(1, Int((clipped.height * scale).rounded()))
+        } else {
+            effectiveSourceRect = nil
         }
+
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let configuration = Self.displayConfiguration(width: physicalWidth, height: physicalHeight, sourceRect: effectiveSourceRect)
+
+        let output = CaptureStreamOutput { sampleBuffer in
+            Self.handleSampleBuffer(sampleBuffer, request: request)
+        }
+        let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
+        let image = try await SingleFrameCaptureLifecycle.capture(request: request, start: {
+            try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: self.outputQueue)
+            try await stream.startCapture()
+        }, stop: {
+            // This always runs after the start operation has returned, including
+            // when a first frame or cancellation arrived during startup.
+            try? await stream.stopCapture()
+            try? stream.removeStreamOutput(output, type: .screen)
+        })
+        let size = NSSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
+        return NSImage(cgImage: image, size: size)
     }
 
-    static func displayConfiguration(width: Int, height: Int) -> SCStreamConfiguration {
+    /// Builds the common ScreenCaptureKit configuration.
+    ///
+    /// The SDK default queue depth is eight frames.  Keep that default unless
+    /// `LIBRESHOT_STREAM_QUEUE_DEPTH` is explicitly set to 1, 2, or 8 so we
+    /// can run a bounded A/B memory experiment without changing the shipped
+    /// capture behavior.  Invalid values are ignored deliberately.
+    static func displayConfiguration(width: Int, height: Int, sourceRect: CGRect? = nil) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
         // Preserve physical resolution without automatic scaling.
         configuration.width = width
         configuration.height = height
+        if let sourceRect {
+            configuration.sourceRect = sourceRect
+        }
         configuration.scalesToFit = false
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         // Exclude the system cursor from both frozen previews and final screenshots.
         // The live overlay cursor remains visible for selection and annotation.
         configuration.showsCursor = false
         configuration.capturesAudio = false
+        if let queueDepth = streamQueueDepthOverride {
+            configuration.queueDepth = queueDepth
+        }
         return configuration
     }
 
-    private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer, pending: CaptureContinuation) {
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        
-        // Safety check for invalid buffer
-        if CVPixelBufferGetWidth(imageBuffer) == 0 || CVPixelBufferGetHeight(imageBuffer) == 0 {
+    /// Optional test-only override for ScreenCaptureKit's frame queue.
+    ///
+    /// The environment is read when a configuration is created, which keeps
+    /// the default app behavior unchanged and lets a running test process be
+    /// relaunched with a different depth between samples.
+    private static var streamQueueDepthOverride: Int? {
+        guard let rawValue = ProcessInfo.processInfo.environment["LIBRESHOT_STREAM_QUEUE_DEPTH"],
+              let value = Int(rawValue),
+              [1, 2, 8].contains(value) else {
+            return nil
+        }
+        return value
+    }
+
+    nonisolated static func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer, request: CaptureRequestState<CGImage>) {
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let rawStatus = attachments.first?[.status] as? Int,
+              SCFrameStatus(rawValue: rawStatus) == .complete,
+              let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+              CVPixelBufferGetWidth(imageBuffer) > 0, CVPixelBufferGetHeight(imageBuffer) > 0,
+              request.claimFrame() else { return }
+
+        // Claim before copying: queued frames after the first one allocate no
+        // additional full-screen buffers, even while startCapture is finishing.
+        guard let image = CaptureFrameImage.copy(from: imageBuffer) else {
+            request.fail(CaptureServiceError.imageConversionFailed)
             return
         }
-        
-        guard let continuation = pending.take() else { return }
-        
-        // Convert to NSImage
-        CVPixelBufferLockBaseAddress(imageBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(imageBuffer, .readOnly) }
-        
-        let context = self.context
-        
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            
-            // Convert on the output queue or a background task, not main actor if possible,
-            // but continuation.resume is thread-safe.
-            // We are inside Task, so we are async.
-            
-            let ciImage = CIImage(cvImageBuffer: imageBuffer)
-            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
-                continuation.resume(throwing: CaptureServiceError.imageConversionFailed)
-                stopStream()
-                return
-            }
-
-            // Use the captured scale to set the correct logical size (Points)
-            let scale = self.currentScale
-            let size = NSSize(width: ciImage.extent.width / scale, height: ciImage.extent.height / scale)
-            let nsImage = NSImage(cgImage: cgImage, size: size)
-            continuation.resume(returning: nsImage)
-            stopStream()
-        }
+        request.succeed(image)
     }
 
-    private func stopStream() {
-        if isStopping { return }
-        isStopping = true
-        let stream = self.stream
-        let output = self.streamOutput
-        Task { [weak self] in
-            if let stream {
-                try? await stream.stopCapture()
-                if let output {
-                    try? stream.removeStreamOutput(output, type: .screen)
-                }
-            }
-            self?.stream = nil
-            self?.streamOutput = nil
-            self?.isStopping = false
-        }
+    /// Preserves the normalization performed by annotation compositing while
+    /// avoiding its second full-image draw for a certified unannotated document.
+    func normalizedUnannotatedImage(_ image: NSImage) -> NSImage {
+        guard let bitmap = bitmapRep(from: image, opaque: false), let pixels = bitmap.cgImage else { return image }
+        return NSImage(cgImage: pixels, size: image.size)
     }
 
-    func bitmapRep(from image: NSImage, opaque: Bool = false) -> NSBitmapImageRep? {
+    func bitmapRep(from image: NSImage, opaque: Bool = false, reuseExportPixels: Bool = false) -> NSBitmapImageRep? {
+        let bitmapStart = diagnosticTrace.startTime()
+        var outcome = "source-unavailable"
+        diagnosticTrace.event("event=bitmap-normalize-start logicalSize=\(image.size.width)x\(image.size.height)")
+        defer { diagnosticTrace.event("event=bitmap-normalize-ended outcome=\(outcome) elapsedMs=\(diagnosticTrace.elapsed(since: bitmapStart))") }
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
+        diagnosticTrace.event("event=bitmap-normalize-source pixels=\(cgImage.width)x\(cgImage.height)")
+        // PNG styling may already produce this exact export format. Preserve its
+        // pixels instead of allocating and drawing another full-size bitmap.
+        // Other callers and images requiring color/decode/alpha conversion keep
+        // the existing normalization path.
+        if reuseExportPixels, !opaque,
+           cgImage.colorSpace?.name == CGColorSpace.sRGB,
+           cgImage.bitsPerComponent == 8, cgImage.bitsPerPixel == 32,
+           cgImage.alphaInfo == .premultipliedLast, cgImage.decode == nil,
+           !cgImage.bitmapInfo.contains(.floatComponents) {
+            let bitmap = NSBitmapImageRep(cgImage: cgImage)
+            bitmap.size = image.size
+            outcome = "reused-export-pixels"
+            return bitmap
+        }
+        outcome = "context-failed"
         
         let alphaInfo: CGImageAlphaInfo = opaque ? .noneSkipLast : .premultipliedLast
         guard let bitmapContext = CGContext(
@@ -538,15 +597,23 @@ class CaptureService {
         
         bitmapContext.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
         
+        outcome = "image-failed"
         guard let normalizedImage = bitmapContext.makeImage() else {
             return nil
         }
         
         let bitmapRep = NSBitmapImageRep(cgImage: normalizedImage)
         bitmapRep.size = image.size
+        outcome = "success"
         return bitmapRep
     }
     
+    /// Compatibility entry point for exporters that already hold a styled image.
+    /// The optional-argument overload below remains the settings-aware path.
+    func styledImage(_ image: NSImage) -> NSImage {
+        styledImage(image, useRoundedCorners: nil)
+    }
+
     /// Apply the final outline after annotation compositing, in physical pixels.
     func styledImage(_ image: NSImage, useRoundedCorners: Bool? = nil) -> NSImage {
         guard (useRoundedCorners ?? settings.useRoundedCorners),
@@ -566,20 +633,35 @@ class CaptureService {
     }
 
     func pngData(from image: NSImage) -> Data? {
-        guard let bitmap = bitmapRep(from: styledImage(image)) else { return nil }
-        return encodedData(from: bitmap, type: .png)
+        let pngStart = diagnosticTrace.startTime()
+        var outcome = "normalize-failed"
+        var encodedBytes = 0
+        diagnosticTrace.event("event=png-start logicalSize=\(image.size.width)x\(image.size.height)")
+        defer { diagnosticTrace.event("event=png-ended outcome=\(outcome) bytes=\(encodedBytes) elapsedMs=\(diagnosticTrace.elapsed(since: pngStart))") }
+        guard let bitmap = bitmapRep(from: styledImage(image), reuseExportPixels: true) else { return nil }
+        let data = encodedData(from: bitmap, type: .png)
+        encodedBytes = data?.count ?? 0
+        outcome = data == nil ? "encode-failed" : "success"
+        return data
     }
 
     /// File-backed output avoids growing large in-memory encoder buffers on each
     /// copy. The private temporary file is unlinked once its mapped data is ready;
     /// consumers own the data normally, including after it reaches the pasteboard.
     private func encodedData(from bitmap: NSBitmapImageRep, type: UTType) -> Data? {
+        let encodeStart = diagnosticTrace.startTime()
+        var outcome = "source-unavailable"
+        var encodedBytes = 0
+        diagnosticTrace.event("event=encode-start format=\(type.identifier) pixels=\(bitmap.pixelsWide)x\(bitmap.pixelsHigh)")
+        defer { diagnosticTrace.event("event=encode-ended format=\(type.identifier) outcome=\(outcome) pixels=\(bitmap.pixelsWide)x\(bitmap.pixelsHigh) bytes=\(encodedBytes) elapsedMs=\(diagnosticTrace.elapsed(since: encodeStart))") }
         guard let image = bitmap.cgImage, bitmap.size.width > 0, bitmap.size.height > 0 else { return nil }
+        outcome = "file-create-failed"
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("libreshot-encode-\(UUID().uuidString)")
         guard FileManager.default.createFile(atPath: url.path, contents: nil,
                                              attributes: [.posixPermissions: 0o600]) else { return nil }
         defer { try? FileManager.default.removeItem(at: url) }
+        outcome = "destination-failed"
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
             return nil
         }
@@ -591,28 +673,143 @@ class CaptureService {
             properties[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5] // Lossless LZW.
         }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        outcome = "finalize-failed"
         guard CGImageDestinationFinalize(destination) else { return nil }
-        return try? Data(contentsOf: url, options: .mappedIfSafe)
+        let data = try? Data(contentsOf: url, options: .mappedIfSafe)
+        encodedBytes = data?.count ?? 0
+        outcome = data == nil ? "file-read-failed" : "success"
+        return data
     }
 }
 
-final class CaptureContinuation: @unchecked Sendable {
+/// A request can be cancelled or receive its first frame before its waiter is
+/// installed. Cache that terminal result and atomically claim only one frame.
+/// Claiming a frame does not consume the waiter: cancellation can still settle
+/// the request while pixel copying is in progress.
+nonisolated final class CaptureRequestState<Value>: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<NSImage, Error>?
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var result: Result<Value, Error>?
+    private var frameClaimed = false
 
-    init(_ continuation: CheckedContinuation<NSImage, Error>) {
-        self.continuation = continuation
-    }
+    nonisolated init() {}
 
-    func take() -> CheckedContinuation<NSImage, Error>? {
+    nonisolated func claimFrame() -> Bool {
         lock.withLock {
-            defer { continuation = nil }
-            return continuation
+            guard result == nil, !frameClaimed else { return false }
+            frameClaimed = true
+            return true
         }
     }
 
-    func fail(_ error: Error) {
-        take()?.resume(throwing: error)
+    nonisolated func checkFailure() throws {
+        let error: Error? = lock.withLock {
+            if case .failure(let error) = result { return error }
+            return nil
+        }
+        if let error { throw error }
+    }
+
+    nonisolated func waitForResult() async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            let cached: Result<Value, Error>? = lock.withLock {
+                if let result { return result }
+                precondition(self.continuation == nil, "A capture request has only one pending waiter")
+                self.continuation = continuation
+                return nil as Result<Value, Error>?
+            }
+            if let cached { continuation.resume(with: cached) }
+        }
+    }
+
+    nonisolated func fail(_ error: Error) {
+        complete(.failure(error))
+    }
+
+    nonisolated func succeed(_ value: Value) {
+        complete(.success(value))
+    }
+
+    nonisolated private func complete(_ result: Result<Value, Error>) {
+        let waiter = lock.withLock {
+            guard self.result == nil else { return nil as CheckedContinuation<Value, Error>? }
+            self.result = result
+            defer { continuation = nil }
+            return continuation
+        }
+        waiter?.resume(with: result)
+    }
+}
+
+/// The callback only completes request state. This owner waits for startup to
+/// return before waiting for its cached result and performing one teardown.
+nonisolated enum SingleFrameCaptureLifecycle {
+    nonisolated static func capture<Value>(request: CaptureRequestState<Value>,
+                                           start: () async throws -> Void,
+                                           stop: () async -> Void) async throws -> Value {
+        var startAttempted = false
+        do {
+            try Task.checkCancellation()
+            try request.checkFailure()
+            startAttempted = true
+            try await start()
+            try Task.checkCancellation()
+            let value = try await request.waitForResult()
+            await stop()
+            return value
+        } catch {
+            if startAttempted { await stop() }
+            throw error
+        }
+    }
+}
+
+/// ScreenCaptureKit is configured for BGRA. Copying its native pixels preserves
+/// their color profile and alpha without starting CoreImage/Metal for a screenshot.
+nonisolated enum CaptureFrameImage {
+    nonisolated static func copy(from buffer: CVPixelBuffer, pixelRect: CGRect? = nil) -> CGImage? {
+        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA,
+              !CVPixelBufferIsPlanar(buffer),
+              CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        let sourceStride = CVPixelBufferGetBytesPerRow(buffer)
+        guard width > 0, height > 0, width <= Int.max / 4,
+              sourceStride >= width * 4, height <= Int.max / sourceStride,
+              let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        if let pixelRect {
+            guard pixelRect.minX.isFinite, pixelRect.minY.isFinite,
+                  pixelRect.width.isFinite, pixelRect.height.isFinite else { return nil }
+        }
+        let rect = (pixelRect ?? bounds).integral.intersection(bounds)
+        guard !rect.isNull, !rect.isEmpty else { return nil }
+        let outputWidth = Int(rect.width), outputHeight = Int(rect.height)
+        let outputStride = outputWidth * 4
+        guard outputHeight <= Int.max / outputStride else { return nil }
+        var pixels = Data(count: outputStride * outputHeight)
+        pixels.withUnsafeMutableBytes { destination in
+            guard let address = destination.baseAddress else { return }
+            for row in 0..<outputHeight {
+                memcpy(address.advanced(by: row * outputStride),
+                       base.advanced(by: (Int(rect.minY) + row) * sourceStride + Int(rect.minX) * 4),
+                       outputStride)
+            }
+        }
+        let attachments = CVBufferCopyAttachments(buffer, .shouldPropagate)
+        let colorSpace: CGColorSpace
+        if let tagged = CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil),
+           CFGetTypeID(tagged) == CGColorSpace.typeID {
+            colorSpace = tagged as! CGColorSpace
+        } else {
+            colorSpace = attachments.flatMap { CVImageBufferCreateColorSpaceFromAttachments($0)?.takeRetainedValue() }
+                ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        }
+        guard let provider = CGDataProvider(data: pixels as CFData) else { return nil }
+        return CGImage(width: outputWidth, height: outputHeight, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: outputStride, space: colorSpace,
+                       bitmapInfo: [.byteOrder32Little, CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)],
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 }
 
@@ -631,684 +828,45 @@ final class CaptureStreamOutput: NSObject, SCStreamOutput {
     }
 }
 
-struct LongCaptureRegion {
-    let selectionRect: CGRect
-    let screenRect: CGRect
-    let screenFrame: CGRect
-    let displayID: CGDirectDisplayID
-}
+/// Serializes async ScreenCaptureKit lifecycle operations. `startCapture()` and
+/// `stopCapture()` may both suspend, so a boolean flag alone cannot prevent a
+/// stop requested during startup from racing the stream creation.
+actor StreamLifecycleGate {
+    private var locked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
 
-struct LongCaptureProgress {
-    let acceptedFrameCount: Int
-    let appendedPixelHeight: Int
-    var warning: String? = nil
-}
-
-enum LongCaptureStatus: Equatable {
-    case idle
-    case capturing
-    case paused
-    case finishing
-    case completed
-    case cancelled
-    case failed(String)
-}
-
-enum LongCaptureError: LocalizedError {
-    case noStableFrame
-    case rendererFailed
-    case incompleteCapture
-    
-    var errorDescription: String? {
-        switch self {
-        case .noStableFrame:
-            return "未采集到有效的滚动帧，请重试"
-        case .rendererFailed:
-            return "长截图拼接失败"
-        case .incompleteCapture:
-            return "有滚动画面未能接上，本次未生成完整长截图。请重新框选可滚动内容，缓慢向下滚动，保留至少三分之一的重叠区域。"
+    func acquire() async {
+        if !locked {
+            locked = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
         }
     }
-}
 
-struct LongCaptureFrame {
-    let image: CGImage
-    let timestamp: CFTimeInterval
-}
+    func release() {
+        if waiters.isEmpty {
+            locked = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
 
-struct LongCaptureAppendResult {
-    let accepted: Bool
-    let appendedPixelHeight: Int
-}
-
-final class LongCaptureSession: ObservableObject {
-    @Published private(set) var status: LongCaptureStatus = .idle
-    @Published private(set) var progress = LongCaptureProgress(acceptedFrameCount: 0, appendedPixelHeight: 0)
-    
-    private let region: LongCaptureRegion
-    private let captureService = LongCaptureStreamService()
-    private let frames = LongCaptureFrameAccumulator()
-    private var isStarted = false
-    #if DEBUG
-    private var lastReportedFrameCount = 0
-    #endif
-    
-    init(region: LongCaptureRegion) {
-        self.region = region
-    }
-    
-    func start() async throws {
-        guard !isStarted else { return }
-        #if DEBUG
-        MemoryTrace.mark("long_stream_starting")
-        #endif
-        isStarted = true
-        await MainActor.run {
-            self.status = .capturing
-        }
-        try await captureService.start(region: region) { [weak self] frame in
-            self?.handle(frame: frame)
-        }
-        #if DEBUG
-        MemoryTrace.mark("long_stream_started")
-        #endif
-    }
-    
-    func pause() async {
-        captureService.pause()
-        await MainActor.run {
-            self.status = .paused
-        }
-    }
-    
-    func resume() async {
-        captureService.resume()
-        await MainActor.run {
-            self.status = .capturing
-        }
-    }
-    
-    func finish() async throws -> NSImage {
-        #if DEBUG
-        MemoryTrace.mark("long_finish_started")
-        #endif
-        await MainActor.run {
-            self.status = .finishing
-        }
-        await captureService.stop()
-        #if DEBUG
-        MemoryTrace.mark("long_stream_stopped")
-        #endif
-        let image: NSImage
+    func withLock<Value>(_ operation: () async throws -> Value) async throws -> Value {
+        await acquire()
         do {
-            image = try frames.renderFinalImage()
+            let value = try await operation()
+            release()
+            return value
         } catch {
-            await MainActor.run { self.status = .failed(error.localizedDescription) }
+            release()
             throw error
         }
-        #if DEBUG
-        MemoryTrace.mark("long_image_rendered")
-        #endif
-        if image.size.width > 0 {
-            image.size = NSSize(width: region.selectionRect.width,
-                                height: image.size.height * region.selectionRect.width / image.size.width)
-        }
-        await MainActor.run {
-            self.status = .completed
-        }
-        #if DEBUG
-        MemoryTrace.mark("long_finish_completed")
-        #endif
-        return image
-    }
-    
-    func cancel() async {
-        await captureService.stop()
-        await MainActor.run {
-            self.status = .cancelled
-        }
-    }
-    
-    private func handle(frame: LongCaptureFrame) {
-        guard captureService.isRunning else { return }
-        guard let progress = frames.process(frame: frame) else { return }
-        #if DEBUG
-        if progress.acceptedFrameCount > lastReportedFrameCount {
-            lastReportedFrameCount = progress.acceptedFrameCount
-            if progress.acceptedFrameCount == 1 { MemoryTrace.mark("long_first_frame") }
-            if progress.acceptedFrameCount == 10 { MemoryTrace.mark("long_tenth_frame") }
-        }
-        #endif
-        Task { @MainActor [weak self] in
-            guard let self, self.status == .capturing else { return }
-            self.progress = progress
-        }
-    }
-}
-
-/// Owns the accepted-frame baseline and completion validation on the capture queue.
-/// An unmatched final frame must not turn into a successful one-screen "long" image.
-final class LongCaptureFrameAccumulator {
-    private let deduplicator = LongCaptureFrameDeduplicator()
-    private let stitcher = LongCaptureStitcher()
-    private var hasUnmatchedFrame = false
-
-    func process(frame: LongCaptureFrame) -> LongCaptureProgress? {
-        switch deduplicator.process(frame: frame) {
-        case .ignore:
-            // Returning to the last accepted position clears the retry warning.
-            guard hasUnmatchedFrame else { return nil }
-            hasUnmatchedFrame = false
-        case .accept:
-            let result = stitcher.append(frame: frame)
-            hasUnmatchedFrame = !result.accepted
-            // Revisiting captured content must not move the forward matching baseline.
-            if result.accepted, result.appendedPixelHeight > 0 { deduplicator.markAccepted(frame) }
-        }
-        return LongCaptureProgress(acceptedFrameCount: stitcher.acceptedFrameCount,
-                                   appendedPixelHeight: stitcher.totalPixelHeight,
-                                   warning: hasUnmatchedFrame ? "当前画面未接上，请回滚到上次位置，再小幅向下滚动。" : nil)
-    }
-
-    func renderFinalImage() throws -> NSImage {
-        guard !hasUnmatchedFrame else { throw LongCaptureError.incompleteCapture }
-        guard let image = stitcher.renderFinalImage() else { throw LongCaptureError.noStableFrame }
-        return image
-    }
-}
-
-enum LongCaptureFrameDecision {
-    case ignore
-    case accept(LongCaptureFrame)
-}
-
-final class LongCaptureFrameDeduplicator {
-    private var acceptedImage: CGImage?
-
-    func process(frame: LongCaptureFrame) -> LongCaptureFrameDecision {
-        // Repeated Finder rows may differ only in a few number glyphs. A thumbnail
-        // tolerance can discard real motion and leave the next frame without overlap.
-        if let acceptedImage, Self.samePixels(acceptedImage, frame.image) { return .ignore }
-        return .accept(frame)
-    }
-
-    /// Failed matches remain retryable and never become the deduplication baseline.
-    func markAccepted(_ frame: LongCaptureFrame) {
-        acceptedImage = frame.image
-    }
-
-    private static func samePixels(_ a: CGImage, _ b: CGImage) -> Bool {
-        guard a.width == b.width, a.height == b.height,
-              a.bitsPerComponent == b.bitsPerComponent, a.bitsPerPixel == b.bitsPerPixel,
-              a.bitmapInfo == b.bitmapInfo, a.decode == nil, b.decode == nil,
-              let ac = a.colorSpace, let bc = b.colorSpace, CFEqual(ac, bc),
-              let ad = a.dataProvider?.data, let bd = b.dataProvider?.data,
-              let ap = CFDataGetBytePtr(ad), let bp = CFDataGetBytePtr(bd) else { return false }
-        let rowBytes = (a.width * a.bitsPerPixel + 7) / 8
-        guard rowBytes > 0, a.bytesPerRow >= rowBytes, b.bytesPerRow >= rowBytes,
-              CFDataGetLength(ad) >= (a.height - 1) * a.bytesPerRow + rowBytes,
-              CFDataGetLength(bd) >= (b.height - 1) * b.bytesPerRow + rowBytes else { return false }
-        // Padding is not image content and may differ between capture buffers.
-        for y in 0..<a.height {
-            if memcmp(ap + y * a.bytesPerRow, bp + y * b.bytesPerRow, rowBytes) != 0 { return false }
-        }
-        return true
-    }
-}
-
-final class LongCaptureStitcher {
-    private let overlapMatcher = LongCaptureOverlapMatcher()
-    private var segments: [LongCaptureSegment] = []
-    private var previousImage: CGImage?
-    private var footerImage: CGImage?
-    private var fixedFooterHeight: Int?
-    private var initialFrameHeight = 0
-    private(set) var totalPixelHeight = 0
-    private(set) var acceptedFrameCount = 0
-    
-    func append(frame: LongCaptureFrame) -> LongCaptureAppendResult {
-        if segments.isEmpty {
-            guard let first = Self.detachedImage(frame.image) else {
-                return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-            }
-            totalPixelHeight = frame.image.height
-            initialFrameHeight = frame.image.height
-            acceptedFrameCount = 1
-            segments = [LongCaptureSegment(image: first, yOffset: 0)]
-            previousImage = frame.image
-            return LongCaptureAppendResult(accepted: true, appendedPixelHeight: frame.image.height)
-        }
-
-        guard let previousImage else {
-            return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-        }
-        let forward = overlapMatcher.match(previous: previousImage, current: frame.image)
-        let reverse = overlapMatcher.match(previous: frame.image, current: previousImage)
-        // Do not guess direction in repeating content with two equally plausible seams.
-        if let forward, let reverse, abs(forward.confidence - reverse.confidence) < 0.025 {
-            return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-        }
-        if let reverse, reverse.confidence > (forward?.confidence ?? -.infinity) {
-            let distance = frame.image.height - reverse.overlapHeight
-            guard distance <= totalPixelHeight - initialFrameHeight else {
-                return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-            }
-            return LongCaptureAppendResult(accepted: true, appendedPixelHeight: 0)
-        }
-        guard let match = forward else {
-            return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-        }
-
-        let appendStartY = match.overlapHeight
-        let appendHeight = frame.image.height - appendStartY
-        guard appendHeight >= 1 else {
-            return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-        }
-
-        let footerHeight = fixedFooterHeight ?? match.footerHeight
-        let cropRect = CGRect(x: 0, y: appendStartY - footerHeight, width: frame.image.width, height: appendHeight)
-        guard let crop = frame.image.cropping(to: cropRect.integral),
-              let appendedImage = Self.detachedImage(crop) else {
-            return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-        }
-
-        // Prepare every fragment before committing the new matching baseline.
-        // A failed allocation must leave the previously accepted document intact.
-        var nextFooter: CGImage?
-        var trimmedFirst: CGImage?
-        if footerHeight > 0 {
-            guard let crop = frame.image.cropping(to: CGRect(x: 0, y: frame.image.height - footerHeight,
-                                                            width: frame.image.width, height: footerHeight)),
-                  let footer = Self.detachedImage(crop) else {
-                return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-            }
-            nextFooter = footer
-            if footerImage == nil, let first = segments.first {
-                guard let crop = first.image.cropping(to: CGRect(x: 0, y: 0, width: first.image.width,
-                                                                 height: first.image.height - footerHeight)),
-                      let trimmed = Self.detachedImage(crop) else {
-                    return LongCaptureAppendResult(accepted: false, appendedPixelHeight: 0)
-                }
-                trimmedFirst = trimmed
-            }
-        }
-        if let trimmedFirst { segments[0] = LongCaptureSegment(image: trimmedFirst, yOffset: 0) }
-        footerImage = nextFooter
-        fixedFooterHeight = footerHeight
-        segments.append(LongCaptureSegment(image: appendedImage, yOffset: totalPixelHeight - footerHeight))
-        self.previousImage = frame.image
-        totalPixelHeight += appendHeight
-        acceptedFrameCount += 1
-        return LongCaptureAppendResult(accepted: true, appendedPixelHeight: appendHeight)
-    }
-
-    /// CGImage crops retain their original backing store. Materialize only the pixels
-    /// needed by the document, using the same sRGB format as the final renderer.
-    private static func detachedImage(_ image: CGImage) -> CGImage? {
-        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(data: nil, width: image.width, height: image.height,
-                                      bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.interpolationQuality = .none
-        context.setBlendMode(.copy)
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        return context.makeImage()
-    }
-
-    func renderFinalImage() -> NSImage? {
-        guard let firstSegment = segments.first else { return nil }
-        let width = firstSegment.image.width
-        guard width > 0, totalPixelHeight > 0 else { return nil }
-        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
-            return nil
-        }
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: totalPixelHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return nil
-        }
-        
-        for segment in segments {
-            let drawRect = CGRect(
-                x: 0,
-                y: totalPixelHeight - segment.yOffset - segment.image.height,
-                width: segment.image.width,
-                height: segment.image.height
-            )
-            context.draw(segment.image, in: drawRect)
-        }
-        
-        if let footerImage {
-            context.draw(footerImage, in: CGRect(x: 0, y: 0, width: width, height: footerImage.height))
-        }
-        guard let cgImage = context.makeImage() else { return nil }
-        let logicalSize = NSSize(width: width, height: totalPixelHeight)
-        return NSImage(cgImage: cgImage, size: logicalSize)
-    }
-}
-
-private struct LongCaptureSegment {
-    let image: CGImage
-    let yOffset: Int
-}
-
-struct LongCaptureOverlapMatch {
-    let overlapHeight: Int
-    let confidence: Double
-    var footerHeight: Int = 0
-}
-
-
-/// Search vertical translations in original pixel rows. Only the horizontal axis is sampled:
-/// reducing height aliases small scrolls and can select a different repeated text row.
-final class LongCaptureOverlapMatcher {
-    private let sampleWidth = 240
-
-    func match(previous: CGImage, current: CGImage) -> LongCaptureOverlapMatch? {
-        guard previous.width == current.width, previous.height == current.height else { return nil }
-        let width = min(sampleWidth, current.width), height = current.height
-        guard height >= 32,
-              let a = LongCaptureImageSampling.scale(image: previous, to: CGSize(width: width, height: height)),
-              let b = LongCaptureImageSampling.scale(image: current, to: CGSize(width: width, height: height)),
-              let ap = LongCaptureImageSampling.grayscalePixels(from: a),
-              let bp = LongCaptureImageSampling.grayscalePixels(from: b) else { return nil }
-
-        // Ignore static sidebars when locating the scrolling content.
-        let columns = (0..<width).filter { x in
-            var difference = 0.0
-            for y in 0..<height {
-                difference += abs(Double(ap[y * width + x]) - Double(bp[y * width + x]))
-            }
-            return difference / Double(height) > 1.0
-        }
-        guard columns.count >= 8 else { return nil }
-        let rows = (0..<height).filter { y in
-            columns.reduce(0.0) { $0 + abs(Double(ap[y * width + $1]) - Double(bp[y * width + $1])) }
-                / Double(columns.count) > 1.0
-        }
-        guard let top = rows.first, let last = rows.last, last - top >= 24 else { return nil }
-        let bottom = last + 1
-        let minOverlap = max(24, (bottom - top) / 4)
-        let contrastA = Self.contrast(ap, width: width), contrastB = Self.contrast(bp, width: width)
-        let candidates = (1...(bottom - top - minOverlap)).map { shift in
-            (shift: shift, error: Self.error(contrastA, contrastB, width: width, top: top, bottom: bottom,
-                                            columns: columns, shift: shift, exhaustive: false))
-        }.filter { $0.error < 0.20 }.sorted { $0.error < $1.error }
-        // Validate multiple candidates using every row, including competing repeated periods.
-        // Too many equally plausible candidates are ambiguous, not evidence to guess a seam.
-        guard let coarseBest = candidates.first else { return nil }
-        let contenders = candidates.filter { $0.error < coarseBest.error + 0.05 }
-        guard contenders.count <= 64 else { return nil }
-        let verified = contenders.map { candidate in
-            (shift: candidate.shift, error: Self.error(contrastA, contrastB, width: width, top: top, bottom: bottom,
-                                                       columns: columns, shift: candidate.shift, exhaustive: true))
-        }.sorted { $0.error < $1.error }
-        guard let best = verified.first, best.error < 0.08 else { return nil }
-        if let second = verified.first(where: { abs($0.shift - best.shift) > 2 }),
-           second.error - best.error < 0.025 { return nil }
-
-        let footer = Self.fixedFooterHeight(ap, bp, width: width, height: height, unchangedFrom: bottom)
-        guard best.shift + footer < height else { return nil }
-        return LongCaptureOverlapMatch(overlapHeight: height - best.shift,
-                                       confidence: 1 - best.error, footerHeight: footer)
-    }
-
-    private static func fixedFooterHeight(_ a: [UInt8], _ b: [UInt8], width: Int,
-                                          height: Int, unchangedFrom bottom: Int) -> Int {
-        guard bottom < height else { return 0 }
-        // A fixed bar needs both a stable suffix and an actual horizontal boundary.
-        // Blank spacing after the last text row is not a footer, regardless of its height.
-        for y in bottom..<height {
-            var boundaryColumns = 0
-            var unchanged = 0.0
-            for x in 0..<width {
-                if abs(Int(a[y * width + x]) - Int(a[(y - 1) * width + x])) > 3 { boundaryColumns += 1 }
-                unchanged += abs(Double(a[y * width + x]) - Double(b[y * width + x]))
-            }
-            if boundaryColumns > width / 2, unchanged / Double(width) < 0.5 {
-                return height - y
-            }
-        }
-        return 0
-    }
-
-    private static func contrast(_ pixels: [UInt8], width: Int) -> [Double] {
-        var result = [Double](repeating: 0, count: pixels.count)
-        for y in 0..<(pixels.count / width) {
-            let row = y * width
-            let samples = stride(from: 0, to: width, by: max(1, width / 24)).map { pixels[row + $0] }.sorted()
-            let background = Double(samples[samples.count / 2])
-            for x in 0..<width { result[row + x] = Double(pixels[row + x]) - background }
-        }
-        return result
-    }
-
-    private static func error(_ a: [Double], _ b: [Double], width: Int, top: Int, bottom: Int,
-                              columns: [Int], shift: Int, exhaustive: Bool) -> Double {
-        var difference = 0.0, energy = 0.0
-        let rowStep = exhaustive ? 1 : max(1, (bottom - top - shift) / 64)
-        let colStep = max(1, columns.count / (exhaustive ? 120 : 32))
-        for y in stride(from: top, to: bottom - shift, by: rowStep) {
-            let ay = (y + shift) * width, by = y * width
-            for i in stride(from: 0, to: columns.count, by: colStep) {
-                let x = columns[i]
-                let av = a[ay + x], bv = b[by + x]
-                difference += abs(av - bv)
-                energy += max(abs(av), abs(bv))
-            }
-        }
-        return energy > 1000 ? difference / energy : .infinity
     }
 }
 
 // Frame state is confined to outputQueue; start/stop own stream lifecycle and drain that queue before teardown.
-private final class LongCaptureStreamService: @unchecked Sendable {
-    private let context = CIContext()
-    private let outputQueue = DispatchQueue(label: "com.libreshot.long-capture")
-    private var stream: SCStream?
-    private var streamOutput: CaptureStreamOutput?
-    private var region: LongCaptureRegion?
-    private var onFrame: ((LongCaptureFrame) -> Void)?
-    private var minimumFrameInterval: CFTimeInterval = 0.10
-    private(set) var isRunning = false
-    private var isPaused = false
-    private var settleWork: DispatchWorkItem?
-    private var pendingFrame: LongCaptureFrame?
-    #if DEBUG
-    private var processedFrameCount = 0
-    #endif
-    
-    func start(region: LongCaptureRegion, onFrame: @escaping (LongCaptureFrame) -> Void) async throws {
-        let content = try await ScreenCaptureAccess.content {
-            try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        }
-        guard let display = content.displays.first(where: { $0.displayID == region.displayID }) else {
-            throw CaptureServiceError.noDisplay
-        }
-        
-        try Task.checkCancellation()
-        self.region = region
-        self.onFrame = onFrame
-        self.isPaused = false
-        
-        let excludedApplications: [SCRunningApplication]
-        if let bundleIdentifier = Bundle.main.bundleIdentifier {
-            excludedApplications = content.applications.filter { $0.bundleIdentifier == bundleIdentifier }
-        } else {
-            excludedApplications = []
-        }
-        let filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
-        let pixelSize = await MainActor.run { () -> CGSize in
-            let screen = NSScreen.screens.first {
-                ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == region.displayID
-            }
-            let scale = screen?.backingScaleFactor ?? 1
-            return CGSize(width: region.screenFrame.width * scale, height: region.screenFrame.height * scale)
-        }
-        let configuration = CaptureService.displayConfiguration(width: Int(pixelSize.width), height: Int(pixelSize.height))
-        configuration.minimumFrameInterval = CMTime(seconds: minimumFrameInterval, preferredTimescale: 600)
-        
-        let output = CaptureStreamOutput { [weak self] sampleBuffer in
-            self?.handle(sampleBuffer: sampleBuffer)
-        }
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
-        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: outputQueue)
-        self.streamOutput = output
-        self.stream = stream
-        outputQueue.sync { self.isRunning = true }
-        do {
-            try await stream.startCapture()
-            try Task.checkCancellation()
-        } catch {
-            await stop()
-            throw error
-        }
-    }
-    
-    func pause() {
-        outputQueue.async { self.isPaused = true; self.settleWork?.cancel() }
-    }
-    
-    func resume() {
-        outputQueue.async {
-            self.isPaused = false
-        }
-    }
-    
-    func stop() async {
-        guard let stream else {
-            outputQueue.sync { self.isRunning = false }
-            return
-        }
-        try? await stream.stopCapture()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            outputQueue.async {
-                self.settleWork?.cancel()
-                self.settleWork = nil
-                if !self.isPaused, let frame = self.pendingFrame {
-                    self.onFrame?(LongCaptureFrame(image: frame.image, timestamp: frame.timestamp + 0.2))
-                }
-                self.pendingFrame = nil
-                self.isRunning = false
-                continuation.resume()
-            }
-        }
-        if let streamOutput {
-            try? stream.removeStreamOutput(streamOutput, type: .screen)
-        }
-        self.stream = nil
-        self.streamOutput = nil
-        self.onFrame = nil
-        self.region = nil
-    }
-    
-    private func handle(sampleBuffer: CMSampleBuffer) {
-        guard isRunning, !isPaused, let region, let onFrame else { return }
-        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let rawStatus = attachments.first?[.status] as? Int,
-              SCFrameStatus(rawValue: rawStatus) == .complete,
-              let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
-        
-        let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        guard let fullImage = context.createCGImage(ciImage, from: ciImage.extent),
-              let croppedImage = LongCaptureImageSampling.crop(image: fullImage, screenRect: region.screenRect, screenFrame: region.screenFrame) else {
-            return
-        }
-        
-        let frame = LongCaptureFrame(image: croppedImage, timestamp: timestamp)
-        pendingFrame = frame
-        settleWork?.cancel()
-        onFrame(frame)
-        #if DEBUG
-        processedFrameCount += 1
-        if processedFrameCount == 10 { MemoryTrace.mark("long_10_frames_processed") }
-        if processedFrameCount == 100 { MemoryTrace.mark("long_100_frames_processed") }
-        #endif
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.isRunning, !self.isPaused, let frame = self.pendingFrame else { return }
-            self.onFrame?(LongCaptureFrame(image: frame.image, timestamp: frame.timestamp + 0.2))
-        }
-        settleWork = work
-        outputQueue.asyncAfter(deadline: .now() + 0.2, execute: work)
-    }
-}
-
-enum LongCaptureImageSampling {
-    static func crop(image: CGImage, screenRect: CGRect, screenFrame: CGRect) -> CGImage? {
-        let scaleX = CGFloat(image.width) / screenFrame.width
-        let scaleY = CGFloat(image.height) / screenFrame.height
-        let x = (screenRect.origin.x - screenFrame.origin.x) * scaleX
-        let relativeY = screenRect.origin.y - screenFrame.origin.y
-        let y = (screenFrame.height - relativeY - screenRect.height) * scaleY
-        let cropRect = CGRect(
-            x: x,
-            y: y,
-            width: screenRect.width * scaleX,
-            height: screenRect.height * scaleY
-        )
-        let imageRect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-        let finalRect = cropRect.integral.intersection(imageRect)
-        guard !finalRect.isNull, !finalRect.isEmpty else { return nil }
-        guard let crop = image.cropping(to: finalRect),
-              let context = CGContext(data: nil, width: crop.width, height: crop.height,
-                                      bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: crop.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
-            return nil
-        }
-        context.interpolationQuality = .none
-        context.setBlendMode(.copy)
-        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
-        return context.makeImage()
-    }
-    
-    static func scale(image: CGImage, to size: CGSize) -> CGImage? {
-        let width = max(Int(size.width.rounded()), 1)
-        let height = max(Int(size.height.rounded()), 1)
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else {
-            return nil
-        }
-        context.interpolationQuality = .medium
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
-    }
-    
-    static func grayscalePixels(from image: CGImage) -> [UInt8]? {
-        let width = image.width
-        let height = image.height
-        guard width > 0, height > 0 else { return nil }
-        var pixels = [UInt8](repeating: 0, count: width * height)
-        guard let context = CGContext(
-            data: &pixels,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else {
-            return nil
-        }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return pixels
-    }
-}
-
 // MARK: - Sound Service
 class SoundService {
     static let shared = SoundService()

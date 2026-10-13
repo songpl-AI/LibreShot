@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="440" viewBox="0 0 720 440" fill="none">
+  <defs>
+    <linearGradient id="sky" x1="360" y1="0" x2="360" y2="295" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F4E9"/>
+      <stop offset="1" stop-color="#E7EFE2"/>
+    </linearGradient>
+    <linearGradient id="lake" x1="432" y1="244" x2="414" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C9E6D5"/>
+      <stop offset="1" stop-color="#A7D7CC"/>
+    </linearGradient>
+    <linearGradient id="valley" x1="720" y1="146" x2="277" y2="377" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#597969"/>
+      <stop offset="1" stop-color="#345F50"/>
+    </linearGradient>
+    <clipPath id="frame">
+      <path fill="#fff" d="M0 0h720v440H0z"/>
+    </clipPath>
+    <symbol id="pine" viewBox="0 0 48 128">
+      <path d="M22 99h4v29h-4z" fill="currentColor"/>
+      <path d="m24 0 15 38H32l13 29H34l14 32H0l14-32H3l13-29H9L24 0Z" fill="currentColor"/>
+    </symbol>
+  </defs>
+  <g clip-path="url(#frame)">
+    <path fill="url(#sky)" d="M0 0h720v440H0z"/>
+    <circle cx="505" cy="88" r="42" fill="#F5DA93"/>
+    <circle cx="505" cy="88" r="53" stroke="#F5DA93" stroke-opacity=".18" stroke-width="10"/>
+    <path d="M42 108c25-9 49-7 72 0M582 140c25-8 43-7 61 0" stroke="#FFFDF6" stroke-width="5" stroke-linecap="round"/>
+    <path d="m-36 240 94-111 60 56 78-87 104 116 66-49 83 79 76-78 62 63 45-35 132 130H-36V240Z" fill="#CCD8CA"/>
+    <path d="m107 202 89-104 104 116-64-23-36-34-32 26-28-6-33 25Z" fill="#EAF0E3"/>
+    <path d="m418 219 107-107 65 77 74-70 92 134v64H405l13-98Z" fill="#9BB7A4"/>
+    <path d="m489 148 36-36 65 77-34-14-29-35-18 13-20-5Z" fill="#DFE9D8"/>
+    <path d="M-37 214c45-23 76-74 123-62 31 8 63 54 86 76 29 28 43 46 76 49 45 4 76-31 108-43 39-15 65 27 95 30 60 5 67-57 105-62 55-7 96 49 145 44 28-3 37-16 57-13v151H-37V214Z" fill="#779682"/>
+    <path d="M720 178c-33 19-62 32-86 60-22 25-38 39-73 44-34 5-62-8-91-13-48-9-56 21-103 26-44 6-69-15-103-12l-42 104h498V178Z" fill="url(#valley)"/>
+    <path d="M529 293c-51-2-78 15-121 15-28 0-47-12-77-12-41 1-46 19-53 39-8 22-29 43-59 50-37 9-60 18-53 55h430l-41-37c-44-14-67-36-46-51 22-16 70-20 84-31 10-9-35-27-64-28Z" fill="url(#lake)"/>
+    <path d="M382 324h63m-41 23h79m-154 27h62m51 29h61m-195 18h57" stroke="#ECF5E5" stroke-opacity=".65" stroke-width="3" stroke-linecap="round"/>
+    <path d="M0 257c38-6 66-22 96-5 31 17 47 59 90 70 35 9 72-7 108 8-6 19-26 27-59 39-18 7-44 27-30 47 8 11 22 17 37 24H0V257Z" fill="#527663"/>
+    <path d="M0 334c31-13 67-18 104-11 36 7 51 26 93 20 18-3 42-2 49 10-28 12-59 29-71 47-7 10-6 24 11 40H0V334Z" fill="#315A4B"/>
+    <path d="M720 314c-32-8-63 6-82 27-29 32-54 26-80 35-23 8-42 16-39 26 27 10 63 18 78 38h123V314Z" fill="#294F46"/>
+    <path d="M720 381c-48-12-89 0-105 24-16 0-33 5-37 14 22 5 38 11 44 21h98v-59Z" fill="#203F3A"/>
+    <g color="#274C42">
+      <use href="#pine" x="19" y="177" width="45" height="120"/>
+      <use href="#pine" x="56" y="206" width="34" height="91"/>
+      <use href="#pine" x="90" y="237" width="26" height="69"/>
+      <use href="#pine" x="147" y="291" width="21" height="56"/>
+    </g>
+    <g color="#244C42">
+      <use href="#pine" x="631" y="180" width="39" height="104"/>
+      <use href="#pine" x="676" y="156" width="52" height="139"/>
+      <use href="#pine" x="607" y="214" width="26" height="69"/>
+      <use href="#pine" x="579" y="237" width="19" height="51"/>
+    </g>
+    <g color="#203F36">
+      <use href="#pine" x="-15" y="241" width="67" height="179"/>
+      <use href="#pine" x="49" y="297" width="44" height="117"/>
+      <use href="#pine" x="101" y="329" width="33" height="88"/>
+    </g>
+    <path d="M240 366c8-5 17-5 26-1M188 391c7-6 13-8 22-8M559 397c10-5 17-6 29-6" stroke="#E9E7C9" stroke-opacity=".55" stroke-width="2" stroke-linecap="round"/>
+    <path d="m106 110 5-3 5 3m8-7 5-3 5 3" stroke="#638370" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

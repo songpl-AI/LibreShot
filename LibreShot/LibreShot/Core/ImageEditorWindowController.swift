@@ -1,16 +1,114 @@
 import AppKit
 import SwiftUI
 
+enum ImageEditorImageOrigin {
+    case generic
+    case longCaptureDocument
+}
+
+/// Certifies the single immutable bitmap handed off by the long-capture path.
+/// Geometry and format checks supplement the explicit origin; they do not infer it.
+@MainActor
+struct ImageEditorExportBacking {
+    let pixels: CGImage
+    let logicalSize: NSSize
+
+    init?(image: NSImage, preview: CGImage?, origin: ImageEditorImageOrigin) {
+        guard origin == .longCaptureDocument, image.representations.count == 1,
+              image.size.width.isFinite, image.size.height.isFinite,
+              image.size.width > 0, image.size.height > 0, let preview,
+              Self.isCanonical(preview),
+              [CGFloat(1), CGFloat(2)].contains(where: {
+                  image.size.width * $0 == CGFloat(preview.width) &&
+                  image.size.height * $0 == CGFloat(preview.height)
+              }),
+              image.cgImage(forProposedRect: nil, context: nil, hints: nil) === preview else { return nil }
+        pixels = preview
+        logicalSize = image.size
+    }
+
+    fileprivate static func isCanonical(_ image: CGImage) -> Bool {
+        image.colorSpace?.name == CGColorSpace.sRGB &&
+        image.bitsPerComponent == 8 && image.bitsPerPixel == 32 &&
+        image.bitmapInfo.rawValue == CGImageAlphaInfo.premultipliedLast.rawValue &&
+        image.decode == nil && image.renderingIntent == .defaultIntent
+    }
+}
+
+/// Identifies an unchanged long-capture document without promising that AppKit
+/// preserves its pixels when wrapping a fractional logical size.
+@MainActor
+struct ImageEditorLongCaptureSource {
+    let pixels: CGImage
+    let logicalSize: NSSize
+
+    init?(image: NSImage, preview: CGImage?, origin: ImageEditorImageOrigin) {
+        guard origin == .longCaptureDocument, image.representations.count == 1,
+              image.size.width.isFinite, image.size.height.isFinite,
+              image.size.width > 0, image.size.height > 0, let preview,
+              ImageEditorExportBacking.isCanonical(preview),
+              image.cgImage(forProposedRect: nil, context: nil, hints: nil) === preview else { return nil }
+        pixels = preview
+        logicalSize = image.size
+    }
+}
+
+/// Shared by the window and headless pixel/memory checks without creating UI.
+@MainActor
+enum ImageEditorExportRenderer {
+    private static let trace = LongCaptureTrace()
+
+    static func render(image: NSImage, model: OverlayViewModel, base: CGImage? = nil,
+                       action: CaptureAction? = nil, backing: ImageEditorExportBacking? = nil,
+                       source: ImageEditorLongCaptureSource? = nil,
+                       service: CaptureService) -> NSImage {
+        model.commitTextInput()
+        let selected = base ?? model.imageForExport()
+        let background = selected.map { NSImage(cgImage: $0, size: image.size) } ?? image
+        if let backing,
+           isOriginalExport(image: image, model: model, selected: selected, action: action,
+                            pixels: backing.pixels, logicalSize: backing.logicalSize),
+           background.cgImage(forProposedRect: nil, context: nil, hints: nil) === backing.pixels {
+            trace.event("event=editor-export-route route=reuse-pixels")
+            return background
+        }
+        if let source,
+           isOriginalExport(image: image, model: model, selected: selected, action: action,
+                            pixels: source.pixels, logicalSize: source.logicalSize) {
+            // Keep AppKit representation selection and the original 8-bit
+            // normalization; only the following empty annotation draw is skipped.
+            trace.event("event=editor-export-route route=normalize-once")
+            return service.normalizedUnannotatedImage(background)
+        }
+        trace.event("event=editor-export-route route=composite")
+        return service.composite(image: background, annotations: model.annotations)
+    }
+
+    private static func isOriginalExport(image: NSImage, model: OverlayViewModel, selected: CGImage?,
+                                         action: CaptureAction?, pixels: CGImage, logicalSize: NSSize) -> Bool {
+        guard let action, [.save, .saveAs, .copy, .saveAndCopy].contains(action) else { return false }
+        return image.size == logicalSize && model.captureMode == .imageEditor &&
+            model.selectionRect == CGRect(origin: .zero, size: logicalSize) &&
+            model.annotations.isEmpty && !model.isEditingText && !model.hasDrawingGesture &&
+            model.translationSource == nil && model.translatedSelection == nil &&
+            model.previewImage === pixels && selected === pixels && image.representations.count == 1 &&
+            image.cgImage(forProposedRect: nil, context: nil, hints: nil) === pixels
+    }
+}
+
 /// An image document uses image points throughout; NSScrollView handles viewport transforms.
 @MainActor
 final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
     let model: OverlayViewModel
     private var image: NSImage?
+    private var exportBacking: ImageEditorExportBacking?
+    private var exportSource: ImageEditorLongCaptureSource?
     private var actionInFlight = false
     var onClose: (() -> Void)?
     var onAction: ((NSImage, CaptureAction) async throws -> Void)?
 
-    init(image: NSImage, settings: SettingsService = .shared, screen: NSScreen? = nil) {
+    init(image: NSImage, settings: SettingsService = .shared, screen: NSScreen? = nil,
+         origin: ImageEditorImageOrigin = .generic) {
         self.image = image
         model = OverlayViewModel(settings: settings)
         model.captureMode = .imageEditor
@@ -18,6 +116,8 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         model.selectionRect = CGRect(origin: .zero, size: image.size)
         model.applyInitialTool()
         let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        exportBacking = ImageEditorExportBacking(image: image, preview: cg, origin: origin)
+        exportSource = ImageEditorLongCaptureSource(image: image, preview: cg, origin: origin)
         model.updatePreviewImage(cg, scale: CGFloat(cg?.width ?? 1) / max(image.size.width, 1))
         let visible = (screen ?? NSScreen.main)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
         let size = CGSize(width: min(max(560, image.size.width + 48), min(1100, visible.width * 0.9)),
@@ -45,11 +145,10 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func renderedImage(base: CGImage? = nil) -> NSImage {
+    func renderedImage(base: CGImage? = nil, action: CaptureAction? = nil) -> NSImage {
         guard let image else { return NSImage() }
-        model.commitTextInput()
-        let background = (base ?? model.imageForExport()).map { NSImage(cgImage: $0, size: image.size) } ?? image
-        return CaptureService.shared.composite(image: background, annotations: model.annotations)
+        return ImageEditorExportRenderer.render(image: image, model: model, base: base,
+                                                action: action, backing: exportBacking, source: exportSource, service: .shared)
     }
 
     func editableImageSource() -> (image: NSImage, annotations: [Annotation])? {
@@ -61,7 +160,7 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
     private func perform(_ action: CaptureAction, base: CGImage?) {
         guard !actionInFlight, model.canExportSelection, let onAction else { return }
         actionInFlight = true
-        let output = renderedImage(base: base)
+        let output = renderedImage(base: base, action: action)
         Task { [weak self] in
             guard let self else { return }
             defer { self.actionInFlight = false }
@@ -85,6 +184,8 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         model.onCancel = nil
         model.reset()
         image = nil
+        exportBacking = nil
+        exportSource = nil
         onAction = nil
         window?.contentView = nil
         let completion = onClose
@@ -115,8 +216,8 @@ struct ImageEditorView: View {
                     ToolPropertyBarView(viewModel: model, availableWidth: geometry.size.width - 24)
                         .padding(.top, 8)
                 }
-                if #available(macOS 26.0, *), let source = model.translationSource {
-                    InlineImageTranslationView(viewModel: model, image: source)
+                if #available(macOS 26.0, *), let translation = model.imageTranslationModel {
+                    InlineImageTranslationView(viewModel: model, model: translation)
                         .id(model.translationSessionID).frame(width: min(430, geometry.size.width - 24))
                 }
                 HStack(spacing: 8) {
