@@ -48,6 +48,26 @@ struct LongCaptureRedrawChecks {
         checkOutput(document, expected: fixture(offset: 0, height: 552),
                     "one-pixel final redraw exports the previously connected 552px document exactly")
 
+        // Real failure diagnostics: a thin repaint spans 86px horizontally,
+        // so the old single 64px bounding box rejected it before checking anchors.
+        let thinDocument = LongCaptureFrameAccumulator()
+        let thinBase = fixture(offset: 72)
+        _ = send(thinDocument, fixture(offset: 0), at: 0)
+        _ = send(thinDocument, thinBase, at: 1)
+        let thinPoints = (0..<12).map { (110 + $0 * 7, 200 + $0 % 2) } + [(195, 201)]
+        let thinRedraw = repaint(thinBase, points: thinPoints)
+        let thinProgress = send(thinDocument, thinRedraw, at: 2)
+        check(thinProgress?.warning == nil && thinProgress?.acceptedFrameCount == 2 && thinProgress?.appendedPixelHeight == 552,
+              "13-pixel thin repaint spanning 86px keeps a uniquely anchored frontier connected")
+        checkOutput(thinDocument, expected: fixture(offset: 0, height: 552),
+                    "thin repaint exports the complete original document without missing rows")
+
+        let resumed = send(thinDocument, fixture(offset: 144), at: 3)
+        check(resumed?.warning == nil && resumed?.acceptedFrameCount == 3 && resumed?.appendedPixelHeight == 624,
+              "scroll after a wide local repaint continues from the original committed frontier")
+        checkOutput(thinDocument, expected: fixture(offset: 0, height: 624),
+                    "continued capture retains every row exactly once after the thin repaint")
+
         // Diagnostics expose only matcher decisions and bounded scores, so a
         // failed real capture can be classified without retaining frame pixels.
         let diagnosticStitcher = LongCaptureStitcher()
@@ -275,8 +295,13 @@ struct LongCaptureRedrawChecks {
         let rich = fixture(offset: 0)
         rejectRedraw(rich, repaint(rich, points: Array(rectangle(x: 100, y: 200, width: 17, height: 16).prefix(257))),
                      "257 changed pixels exceeding the localized redraw budget")
-        rejectRedraw(rich, repaint(rich, points: [(100, 200), (165, 200)]),
-                     "two changes spanning a 66px box")
+        let periodicWidePatch = fixture(offset: 0, pattern: "periodic")
+        rejectRedraw(periodicWidePatch, repaint(periodicWidePatch, points: [(100, 200), (165, 200)]),
+                     "a wider local repaint on periodic content has no unique zero-position proof")
+        rejectRedraw(rich, repaint(rich, points: [(100, 200), (228, 200)]),
+                     "a repaint spanning 129px still exceeds the bounded local region")
+        rejectRedraw(sidebarFrame(pointY: 200), repaint(sidebarFrame(pointY: 200), points: [(320, 200), (405, 201)]),
+                     "a wide repaint in a blank pane cannot borrow anchors from a fixed sidebar")
         rejectRedraw(rich, brighten(rich), "a one-level brightness change across the whole viewport")
         let rows = fixture(offset: 0, pattern: "rows")
         let changedNumbers = [50, 150, 250, 350, 450].flatMap { rectangle(x: 170, y: $0, width: 2, height: 5) }

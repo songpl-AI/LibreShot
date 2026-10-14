@@ -14,7 +14,8 @@ final class LongCaptureOverlapMatcher {
     }
 
     /// Evaluated only after motion matching fails. Original-resolution differences
-    /// must be local or a one-level flat-color quantization change; a thumbnail
+    /// must be local or a one-level flat-color quantization change; wider local
+    /// changes additionally require a unique zero-position proof. A thumbnail
     /// can hide the changing numbers in rows. Color quantization keeps alpha,
     /// the original/target color pair, and alpha unchanged. A tall narrow flat
     /// patch additionally requires a unique original-resolution zero position.
@@ -93,10 +94,11 @@ final class LongCaptureOverlapMatcher {
                 changedColumns[x] = true
                 left = min(left, x); right = max(right, x)
                 top = min(top, y); bottom = max(bottom, y)
-                // The legacy local paths remain bounded. A taller flat-color
+                // Local differences remain bounded to 256 pixels and 64 rows.
+                // Widths above the legacy 64px box need unique zero-position proof. A taller flat-color
                 // patch gets no permission here: it must separately prove a
                 // filled narrow rectangle and a unique zero-position body below.
-                guard quantizedColor || (bottom - top < 64 && changedPixels <= 256 && right - left < 64) else {
+                guard quantizedColor || (bottom - top < 64 && changedPixels <= 256 && right - left < 128) else {
                     recordChanges("nonuniform-or-local-budget-exceeded")
                     return false
                 }
@@ -105,7 +107,10 @@ final class LongCaptureOverlapMatcher {
 
         recordChanges("unsupported-change-pair")
         guard changedPixels > 0,
-              quantizedColor || (maximumDelta > 1 && changedPixels <= 256 && right - left < 64) else { return false }
+              quantizedColor || (maximumDelta > 1 && changedPixels <= 256 && right - left < 128) else { return false }
+        // A thin, sparse repaint may span several text glyphs horizontally.
+        // Wider local changes get a stricter position proof, never just more tolerance.
+        let wideLocalPatch = !quantizedColor && right - left >= 64
         let tallFlatPatch = bottom - top >= 64
         if tallFlatPatch {
             let patchWidth = right - left + 1, patchHeight = bottom - top + 1
@@ -146,7 +151,8 @@ final class LongCaptureOverlapMatcher {
         lastStationaryDiagnostics.anchorBands = anchors
         lastStationaryDiagnostics.outcome = "insufficient-unchanged-body-anchors"
         guard anchors.filter({ $0 >= 8 }).count >= 3 else { return false }
-        if tallFlatPatch {
+        if tallFlatPatch || wideLocalPatch {
+            lastStationaryDiagnostics.uniqueZeroRequired = true
             // The supporting columns must belong to the changed body itself;
             // even a rich adjacent fixed sidebar is not a position witness.
             // Distinct original pixel-row signatures must select zero uniquely,
@@ -154,7 +160,7 @@ final class LongCaptureOverlapMatcher {
             let unique = Self.hasUniqueZeroPosition(ap, bp, height: a.height,
                                                    aStride: a.bytesPerRow, bStride: b.bytesPerRow,
                                                    pixelBytes: pixelBytes, columns: columns)
-            lastStationaryDiagnostics.outcome = unique ? "stationary-tall-flat-patch" : "nonunique-or-insufficient-zero-structure"
+            lastStationaryDiagnostics.outcome = unique ? (wideLocalPatch ? "stationary-wide-local-redraw" : "stationary-tall-flat-patch") : "nonunique-or-insufficient-zero-structure"
             return unique
         }
         lastStationaryDiagnostics.outcome = quantizedColor ? "stationary-flat-color" : "stationary-local-redraw"
