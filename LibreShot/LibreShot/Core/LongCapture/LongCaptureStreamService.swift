@@ -52,7 +52,11 @@ final class LongCaptureStreamService: @unchecked Sendable {
         guard outputQueue.sync(execute: { !isRunning }) else { return }
 
         let content = try await ScreenCaptureAccess.content {
-            try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            // Resolve our application even while the frozen overlay is ordered
+            // out and the guides are entering the window server. Restricting
+            // metadata to visible windows can omit the app from the exclusion.
+            // The display filter still captures only its actual visible pixels.
+            try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         }
         guard let display = content.displays.first(where: { $0.displayID == region.displayID }) else {
             throw CaptureServiceError.noDisplay
@@ -66,6 +70,7 @@ final class LongCaptureStreamService: @unchecked Sendable {
         } else {
             excludedApplications = []
         }
+        diagnosticTrace.event("event=stream-filter-own-application excludedCount=\(excludedApplications.count)")
         let filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
         let pixelSize = await MainActor.run { () -> CGSize in
             let screen = NSScreen.screens.first {
