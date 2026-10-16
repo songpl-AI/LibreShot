@@ -14,6 +14,7 @@ xcrun swiftc "${task_flags[@]}" \
   LibreShot/Editor/EditorToolbarView.swift \
   LibreShot/Features/Overlay/OverlayViewModel.swift \
   LibreShot/Features/Overlay/OverlayView.swift \
+  LibreShot/Features/Overlay/SelectionLoupe.swift \
   LibreShot/LibreShot/Core/InlineTextEditor.swift \
   LibreShot/LibreShot/Core/OverlayWindow.swift \
   LibreShot/LibreShot/Core/OCR/OCRService.swift \

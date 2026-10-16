@@ -13,6 +13,7 @@
 		9FE4E2A42F36E4A300F19710 /* EditorToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2A22F36E4A300F19710 /* EditorToolbarView.swift */; };
 		9FE4E2A52F36E4A300F19710 /* Annotation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2A12F36E4A300F19710 /* Annotation.swift */; };
 		9FE4E2B52F3722E600F19710 /* PinnedImageWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2B32F3722E600F19710 /* PinnedImageWindowController.swift */; };
+		9FE4E2C12F38000100F19710 /* SelectionLoupe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2C02F38000100F19710 /* SelectionLoupe.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +24,7 @@
 		9FE4E2A12F36E4A300F19710 /* Annotation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Annotation.swift; sourceTree = "<group>"; };
 		9FE4E2A22F36E4A300F19710 /* EditorToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorToolbarView.swift; sourceTree = "<group>"; };
 		9FE4E2B32F3722E600F19710 /* PinnedImageWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedImageWindowController.swift; sourceTree = "<group>"; };
+		9FE4E2C02F38000100F19710 /* SelectionLoupe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionLoupe.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -69,6 +71,7 @@
 				9FE4E2972F36E28D00F19710 /* OverlayView.swift */,
 				9FE4E2982F36E28D00F19710 /* OverlayViewModel.swift */,
 				9FE4E2992F36E28D00F19710 /* OverlayWindowController.swift */,
+				9FE4E2C02F38000100F19710 /* SelectionLoupe.swift */,
 			);
 			path = Overlay;
 			sourceTree = "<group>";
@@ -196,6 +199,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9FE4E29C2F36E28D00F19710 /* OverlayView.swift in Sources */,
+				9FE4E2C12F38000100F19710 /* SelectionLoupe.swift in Sources */,
 				9FE4E29D2F36E28D00F19710 /* OverlayViewModel.swift in Sources */,
 				9FE4E2B52F3722E600F19710 /* PinnedImageWindowController.swift in Sources */,
 				9FE4E2A42F36E4A300F19710 /* EditorToolbarView.swift in Sources */,
@@ -335,7 +339,7 @@
 				CODE_SIGN_ENTITLEMENTS = LibreShot/LibreShot.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 59;
+				CURRENT_PROJECT_VERSION = 63;
 				DEVELOPMENT_TEAM = D7KMU9UKYH;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -368,7 +372,7 @@
 				CODE_SIGN_ENTITLEMENTS = LibreShot/LibreShot.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 59;
+				CURRENT_PROJECT_VERSION = 63;
 				DEVELOPMENT_TEAM = D7KMU9UKYH;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;

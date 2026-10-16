@@ -125,6 +125,11 @@ class OverlayViewModel: ObservableObject {
     @Published var isMovingSelection: Bool = false
     @Published var previewImage: CGImage? { didSet { scheduleEffectPreview() } }
     @Published var previewScale: CGFloat = 1.0 { didSet { scheduleEffectPreview() } }
+    @Published private(set) var selectionLoupe: SelectionLoupeReading?
+    @Published private(set) var selectionLoupeShowsRGB = false
+    @Published private(set) var selectionLoupeCopied = false
+    private var selectionLoupeShiftDown = false
+    private var selectionLoupeCopyToken = UUID()
     @Published var captureMode: CaptureMode = .normal
     @Published var longCaptureStatusText: String = "拖动选择滚动区域"
     @Published private(set) var translationSource: NSImage?
@@ -217,6 +222,44 @@ class OverlayViewModel: ObservableObject {
         case .saveAs: confirmSaveAs()
         default: break
         }
+    }
+
+    func updateSelectionLoupe(at point: CGPoint?) {
+        guard let point, state == .idle || state == .selecting, captureMode != .imageEditor,
+              let image = previewImage else {
+            selectionLoupe = nil
+            return
+        }
+        selectionLoupe = SelectionLoupeSampler.sample(image: image, scale: previewScale, point: point)
+    }
+
+    func performSelectionLoupeShortcut(_ event: NSEvent) -> Bool {
+        guard state == .idle || state == .selecting, captureMode != .imageEditor else { return false }
+        if event.type == .flagsChanged {
+            let shift = event.modifierFlags.contains(.shift)
+            if shift, !selectionLoupeShiftDown { selectionLoupeShowsRGB.toggle() }
+            selectionLoupeShiftDown = shift
+            return false
+        }
+        guard event.type == .keyDown, event.keyCode == 8, event.modifierFlags.contains(.command),
+              event.modifierFlags.intersection([.shift, .option, .control]).isEmpty, !event.isARepeat else { return false }
+        return copySelectionLoupeColor()
+    }
+
+    @discardableResult
+    func copySelectionLoupeColor(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard let reading = selectionLoupe else { return false }
+        let text = selectionLoupeShowsRGB ? reading.copyRGBText : reading.copyText
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else { return false }
+        selectionLoupeCopied = true
+        let token = UUID()
+        selectionLoupeCopyToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self, self.selectionLoupeCopyToken == token else { return }
+            self.selectionLoupeCopied = false
+        }
+        return true
     }
 
     func performEditorShortcut(_ event: NSEvent, textResponder: Bool = false) -> Bool {
@@ -1053,6 +1096,10 @@ class OverlayViewModel: ObservableObject {
         textResizeOriginal = nil
         previewImage = nil
         previewScale = 1.0
+        selectionLoupe = nil
+        selectionLoupeShowsRGB = false
+        selectionLoupeCopied = false
+        selectionLoupeShiftDown = false
         captureMode = .normal
         longCaptureStatusText = "拖动选择滚动区域"
     }

@@ -30,6 +30,9 @@ class OverlayWindow: NSWindow {
     }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .flagsChanged {
+            _ = onEditorShortcut?(event, firstResponder is NSTextView)
+        }
         // Handle Escape before the first responder (including the inline text editor).
         if event.type == .keyDown, event.keyCode == 53, let onEscapeKey {
             if onEditorShortcut?(event, firstResponder is NSTextView) == true { return }
@@ -58,7 +61,8 @@ class OverlayWindow: NSWindow {
 extension OverlayWindow {
     func bindEditingActions(to model: OverlayViewModel) {
         onEditorShortcut = { [weak model] event, textResponder in
-            model?.performEditorShortcut(event, textResponder: textResponder) ?? false
+            if model?.performSelectionLoupeShortcut(event) == true { return true }
+            return model?.performEditorShortcut(event, textResponder: textResponder) ?? false
         }
         onConfirmKey = { [weak model] in
             guard let model, model.state == .editing, !model.isEditingText, !model.selectionRect.isEmpty else { return }

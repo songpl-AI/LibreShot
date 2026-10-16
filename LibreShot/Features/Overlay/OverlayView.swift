@@ -116,6 +116,15 @@ struct OverlayView: View {
                     SelectionGuidesView(point: point)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
+                if let reading = viewModel.selectionLoupe,
+                   viewModel.state == .idle || viewModel.state == .selecting {
+                    let origin = SelectionLoupeSampler.origin(anchor: guidePoint ?? CGPoint(x: CGFloat(reading.x), y: CGFloat(reading.y)),
+                                                              bounds: geometry.size)
+                    let size = SelectionLoupeSampler.stackSize
+                    SelectionLoupeView(reading: reading, showsRGB: viewModel.selectionLoupeShowsRGB,
+                                       copied: viewModel.selectionLoupeCopied)
+                        .position(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+                }
 
                 // Layer 3: Selection Border
                 if viewModel.selectionRect != .zero {
@@ -226,6 +235,9 @@ struct OverlayView: View {
                 case .ended: guidePoint = nil; NSCursor.arrow.set()
                 }
             }
+            .onChange(of: guidePoint) { viewModel.updateSelectionLoupe(at: $0) }
+            .onChange(of: viewModel.previewImage) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
+            .onChange(of: viewModel.state) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
             .coordinateSpace(name: "overlay")
             .contentShape(Rectangle())
             .gesture(
