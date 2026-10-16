@@ -13,7 +13,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
     /// New installations and reset use this order; saved orders keep their positions.
     static let defaultOrder: [ToolbarItem] = [
         .select, .pen, .rectangle, .ellipse, .arrow, .text, .number, .mosaic, .blur,
-        .longCapture, .ocr, .translate, .undo, .cancel, .complete, .pin, .save, .saveAs
+        .ocr, .translate, .undo, .pin, .save, .saveAs, .longCapture, .cancel, .complete
     ]
 
     var title: String {

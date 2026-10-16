@@ -2,9 +2,9 @@ import Cocoa
 import Combine
 import SwiftUI
 
-/// Join another app's fullscreen Space. Window level alone cannot cover that Space.
+/// Stay on the active space without asking macOS to animate into another app's fullscreen space.
 private let captureOverlayCollectionBehavior: NSWindow.CollectionBehavior = [
-    .canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications
+    .canJoinAllSpaces, .fullScreenAuxiliary
 ]
 
 class OverlayWindowController: NSWindowController {

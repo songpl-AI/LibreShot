@@ -12,13 +12,15 @@ struct ShortcutRecorder: View {
     var onClear: (() -> Void)? = nil
     var allowsUnmodified = false
     var recordingWidth: CGFloat = 140
+    var recordingHeight: CGFloat = 28
+    var textSize: CGFloat = 13
+    var embedsClearButton = false
     
     @State private var isRecording = false
     @State private var isHovering = false
     
     var body: some View {
         HStack(spacing: 4) {
-            // Main Recorder Area
             Button(action: {
                 if !isRecording {
                     startRecording()
@@ -31,34 +33,42 @@ struct ShortcutRecorder: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(isRecording ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: 1)
                         )
-                    
                     if isRecording {
                         Text("输入快捷键...")
-                            .font(.system(size: 13))
+                            .font(.system(size: textSize))
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    } else if keyCode != -1 {
+                        Text(currentShortcutString)
+                            .font(.system(size: textSize, weight: .medium, design: .monospaced))
+                            .lineLimit(1)
                     } else {
-                        if keyCode != -1 {
-                            Text(currentShortcutString)
-                                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        } else {
-                            Text("未设置")
-                                .font(.system(size: 13))
-                                .foregroundColor(.secondary)
+                        Text("未设置")
+                            .font(.system(size: textSize))
+                            .foregroundColor(.secondary)
+                    }
+                    if embedsClearButton, keyCode != -1, !isRecording {
+                        HStack {
+                            Spacer()
+                            Button(action: clearShortcut) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .imageScale(.small)
+                            }
+                            .buttonStyle(.plain)
+                            .help("清除快捷键")
+                            .padding(.trailing, 4)
                         }
                     }
                 }
-                .frame(width: recordingWidth, height: 28)
+                .frame(width: recordingWidth, height: recordingHeight)
             }
             .buttonStyle(.plain)
             .onHover { hover in
                 isHovering = hover
             }
-            
-            // Clear Button (only show if set and not recording)
-            if keyCode != -1 && !isRecording {
-                Button(action: {
-                    clearShortcut()
-                }) {
+            if !embedsClearButton, keyCode != -1, !isRecording {
+                Button(action: clearShortcut) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                         .imageScale(.medium)

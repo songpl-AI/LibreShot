@@ -1,6 +1,7 @@
 import SwiftUI
 import ServiceManagement
 import CoreGraphics
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var settings = SettingsService.shared
@@ -40,12 +41,13 @@ struct SettingsView: View {
 struct ToolbarSettingsView: View {
     @ObservedObject var settings: SettingsService
     @State private var shortcutRestoreError: String?
+    @State private var draggedToolbarItem: ToolbarItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("自定义截图工具栏")
                 .font(.headline)
-            Text("勾选、拖动排序，并在同一行设置快捷键。窄窗口会自动换行。")
+            Text("从左到右就是截图工具栏的顺序。左右拖动排序，在每张卡片上勾选和设置快捷键。")
                 .font(.callout)
                 .foregroundColor(.secondary)
             Text("新用户默认按 ⌘P 贴图；已有快捷键配置保留，可在“贴图到屏幕”一行设置。")
@@ -68,64 +70,15 @@ struct ToolbarSettingsView: View {
             Text("每次新截图使用此工具；隐藏默认工具时回到选择/移动。")
                 .font(.caption).foregroundColor(.secondary)
 
-            List {
-                ForEach(settings.toolbarConfiguration.orderedItems) { item in
-                    HStack(spacing: 10) {
-                        Image(systemName: "line.3.horizontal")
-                            .foregroundColor(.secondary)
-                            .accessibilityHidden(true)
-                        Toggle(isOn: Binding(
-                            get: { settings.toolbarConfiguration.isVisible(item) },
-                            set: { settings.setToolbarItem(item, visible: $0) }
-                        )) {
-                            Label {
-                                Text(item.title)
-                            } icon: {
-                                if item == .style {
-                                    ToolbarColorIcon().frame(width: 20)
-                                } else {
-                                    Group {
-                                        if item == .mosaic || item == .blur { EffectToolIcon(tool: item) }
-                                        else { Image(systemName: item.iconName) }
-                                    }.frame(width: 20)
-                                }
-                            }
-                        }
-                        .toggleStyle(.checkbox)
-                        .disabled(item.isRequired)
-                        .help(item.isRequired ? "始终显示，确保可以完成或取消截图" : item.title)
-                        Spacer()
-                        if item.isRequired {
-                            Text("始终显示").font(.caption).foregroundColor(.secondary)
-                        }
-                        if item == .cancel {
-                            Text("Esc").font(.system(.caption, design: .monospaced)).frame(width: 142)
-                        } else {
-                            ToolbarShortcutRecorder(settings: settings, item: item).frame(width: 142)
-                        }
-                        Button { move(item, upwards: true) } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .disabled(item == settings.toolbarConfiguration.orderedItems.first)
-                        .accessibilityLabel("上移\(item.title)")
-                        .help("上移\(item.title)")
-                        Button { move(item, upwards: false) } label: {
-                            Image(systemName: "chevron.down")
-                        }
-                        .disabled(item == settings.toolbarConfiguration.orderedItems.last)
-                        .accessibilityLabel("下移\(item.title)")
-                        .help("下移\(item.title)")
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(settings.toolbarConfiguration.orderedItems) { item in
+                        toolbarCard(item)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .padding(.vertical, 3)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityAction(named: Text("上移")) { move(item, upwards: true) }
-                    .accessibilityAction(named: Text("下移")) { move(item, upwards: false) }
                 }
-                .onMove(perform: settings.moveToolbarItems)
+                .padding(.vertical, 4)
             }
-            .listStyle(.bordered)
+            .frame(maxWidth: .infinity, minHeight: 132, maxHeight: 140)
 
             Text("从下一次截图开始生效。按 Esc 直接取消截图。\n再次点击当前工具可切回选择模式；拖动选区边框移动截图。")
                 .font(.caption)
@@ -152,9 +105,106 @@ struct ToolbarSettingsView: View {
         .padding()
     }
 
-    private func move(_ item: ToolbarItem, upwards: Bool) {
+    private func toolbarCard(_ item: ToolbarItem) -> some View {
+        let visible = settings.toolbarConfiguration.isVisible(item)
+        return VStack(spacing: 5) {
+            HStack {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                    .accessibilityHidden(true)
+                Spacer()
+                Toggle(isOn: Binding(
+                    get: { visible },
+                    set: { settings.setToolbarItem(item, visible: $0) }
+                )) { EmptyView() }
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .disabled(item.isRequired)
+                .help(item.isRequired ? "始终显示，确保可以完成或取消截图" : "显示\(item.title)")
+            }
+            Group {
+                if item == .style {
+                    ToolbarColorIcon().frame(width: 16, height: 16)
+                } else if item == .mosaic || item == .blur {
+                    EffectToolIcon(tool: item).frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: item.iconName).font(.system(size: 15))
+                }
+            }
+            .frame(height: 18)
+            Text(item.title)
+                .font(.system(size: 11))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+            if item == .cancel {
+                Text("Esc")
+                    .font(.system(size: 11, design: .monospaced))
+                    .frame(width: 88, height: 22)
+                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
+            } else {
+                ToolbarShortcutRecorder(settings: settings, item: item, recordingWidth: 88)
+            }
+            HStack(spacing: 0) {
+                Button { move(item, towardsStart: true) } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 10, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 18)
+                }
+                .disabled(item == settings.toolbarConfiguration.orderedItems.first)
+                .accessibilityLabel("左移\(item.title)")
+                .help("左移\(item.title)")
+                Divider().frame(height: 12)
+                Button { move(item, towardsStart: false) } label: {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 18)
+                }
+                .disabled(item == settings.toolbarConfiguration.orderedItems.last)
+                .accessibilityLabel("右移\(item.title)")
+                .help("右移\(item.title)")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
+        }
+        .padding(6)
+        .frame(width: 104)
+        .opacity(visible ? 1 : 0.45)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.18)))
+        .onDrag {
+            draggedToolbarItem = item
+            return NSItemProvider(object: item.rawValue as NSString)
+        }
+        .onDrop(of: [.text], delegate: ToolbarCardDropDelegate(target: item, settings: settings, dragged: $draggedToolbarItem))
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: Text("左移")) { move(item, towardsStart: true) }
+        .accessibilityAction(named: Text("右移")) { move(item, towardsStart: false) }
+    }
+
+    private func move(_ item: ToolbarItem, towardsStart: Bool) {
         guard let index = settings.toolbarConfiguration.orderedItems.firstIndex(of: item) else { return }
-        settings.moveToolbarItems(fromOffsets: IndexSet(integer: index), toOffset: upwards ? index - 1 : index + 2)
+        settings.moveToolbarItems(fromOffsets: IndexSet(integer: index), toOffset: towardsStart ? index - 1 : index + 2)
+    }
+}
+
+private struct ToolbarCardDropDelegate: DropDelegate {
+    let target: ToolbarItem
+    let settings: SettingsService
+    @Binding var dragged: ToolbarItem?
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged, dragged != target,
+              let from = settings.toolbarConfiguration.orderedItems.firstIndex(of: dragged),
+              let to = settings.toolbarConfiguration.orderedItems.firstIndex(of: target) else { return }
+        settings.moveToolbarItems(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragged = nil
+        return true
     }
 }
 
@@ -557,6 +607,7 @@ struct AboutSettingsView: View {
 private struct ToolbarShortcutRecorder: View {
     @ObservedObject var settings: SettingsService
     let item: ToolbarItem
+    var recordingWidth: CGFloat = 116
     @State private var error: String?
 
     var body: some View {
@@ -569,7 +620,10 @@ private struct ToolbarShortcutRecorder: View {
                 },
                 onClear: { error = settings.setEditorShortcut(nil, for: item) },
                 allowsUnmodified: true,
-                recordingWidth: 116
+                recordingWidth: recordingWidth,
+                recordingHeight: recordingWidth < 100 ? 22 : 28,
+                textSize: recordingWidth < 100 ? 11 : 13,
+                embedsClearButton: recordingWidth < 100
             )
             .accessibilityLabel("\(item.title)快捷键")
             if let error { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
