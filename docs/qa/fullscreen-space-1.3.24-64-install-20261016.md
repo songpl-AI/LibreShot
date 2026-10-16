@@ -13,4 +13,9 @@
 | 同包重启后遮罩与保存文件 | 待验 | 未做同包重启后的第二次保存 |
 | 其他 App 全屏时区域截图仍留在该空间 | 未复现，不标通过 | 源码遮罩行为检查通过。维护者在普通桌面截图时看到整屏抖动，并决定保留。尚未用真实全屏窗口确认 #39 |
 | 开始截图时的空间动画 | 维护者确认并保留 | 构建号 64 上开始截图，整屏抖一下。确认为系统空间动画，不是截图特效 |
-| 最终交付状态、发布/回退状态 | 准备发布 v1.3.26 | 复用构建号 64 原 DMG，不重新签名。安装后仍显示 1.3.24（64）。同包重启前后保存未单独记录。回退可用废纸篓中的构建号 63 副本 |
+| 最终交付状态、发布/回退状态 | 已发布 v1.3.26 | [Release](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.26)。重新下载的 DMG SHA-256 仍为 `43fa23a6f797e024f0e55e26fd46ac78ade8eb1654ffc609a9b59feab3767b9f`。资产：`LibreShot-1.3.24-64.dmg`、`SHA256SUMS`、`INSTALL-AND-PERMISSIONS.md`。构建源码 `f73f91e`。安装后显示 1.3.24（64）。同包重启前后保存未单独记录。回退可用废纸篓中的构建号 63 副本 |
+
+## 发布后的 Issue
+
+- [#39](https://github.com/songpl-AI/LibreShot/issues/39#issuecomment-6213922037) 已回复并保持开放。遮罩可以进入其他 App 的全屏空间，但本机尚未用真实全屏窗口确认区域截图恢复。
+- 仍开放：[#39](https://github.com/songpl-AI/LibreShot/issues/39)、[#36](https://github.com/songpl-AI/LibreShot/issues/36)、[#27](https://github.com/songpl-AI/LibreShot/issues/27)。
