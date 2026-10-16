@@ -89,7 +89,10 @@ class OverlayViewModel: ObservableObject {
     // Editor State
     @Published var selectedTool: AnnotationType? {
         willSet { if newValue != selectedTool { endToolPropertyAdjustment() } }
-        didSet { if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) } }
+        didSet {
+            if selectedTool != oldValue { AnnotationColorPanel.close() }
+            if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) }
+        }
     }
     @Published var toolPropertyDetailsExpanded = false
     @Published private(set) var toolPropertyInputCancellation = UUID()
@@ -746,7 +749,8 @@ class OverlayViewModel: ObservableObject {
     func handleSelectedShapeDrag(from start: CGPoint, to point: CGPoint, within bounds: CGRect) -> Bool {
         if shapeDrag == nil {
             guard state == .editing, !isEditingText, !isMovingSelection, !isResizingText, activeSelectionHandle == nil,
-                  let annotation = annotations.first(where: { $0.id == selectedAnnotationID }) else { return false }
+                  let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
+                  annotation.type != .pen else { return false }
             let rect = annotation.selectionBounds
             let handle = (selectedShapeRect == nil ? [] : SelectionHandle.allCases).filter {
                 let p = $0.position(in: rect)
@@ -825,7 +829,7 @@ class OverlayViewModel: ObservableObject {
     }
 
     private func selectExistingAnnotation(id: UUID) {
-        guard let annotation = annotations.first(where: { $0.id == id }) else { return }
+        guard let annotation = annotations.first(where: { $0.id == id }), annotation.type != .pen else { return }
         selectedAnnotationID = id
         selectedTool = visibleToolbarItems.contains(where: { $0.annotationType == annotation.type }) ? annotation.type : nil
         selectedColor = annotation.color
@@ -933,6 +937,8 @@ class OverlayViewModel: ObservableObject {
     func moveSelectedAnnotation(offset: CGSize) {
         guard let id = selectedAnnotationID, let index = annotations.firstIndex(where: { $0.id == id }) else { return }
         var annotation = annotations[index]
+        // A finished pen stroke stays where it was drawn.
+        if annotation.type == .pen { return }
         
         annotation.startPoint.x += offset.width
         annotation.startPoint.y += offset.height
@@ -950,8 +956,9 @@ class OverlayViewModel: ObservableObject {
         if let annotation = currentAnnotation {
             annotations.append(annotation)
             annotationUndo.append(.remove(annotation.id))
-            // Brush effects stay ready for overlapping strokes; use Select/Move to edit them.
-            selectedAnnotationID = annotation.isEffectBrush ? nil : annotation.id
+            // Pen ink and effect brushes stay ready for the next overlapping stroke.
+            // Select/Move can still edit effect brushes. A pen stroke cannot be selected or dragged.
+            selectedAnnotationID = (annotation.type == .pen || annotation.isEffectBrush) ? nil : annotation.id
         }
         currentAnnotation = nil
         pendingDrawing = nil
@@ -1264,8 +1271,8 @@ class OverlayViewModel: ObservableObject {
     
     // MARK: - Hit Testing
     private func hitTest(at point: CGPoint) -> UUID? {
-        // Iterate in reverse to select top-most
-        for annotation in annotations.reversed() {
+        // Iterate in reverse to select top-most. Pen strokes are committed ink.
+        for annotation in annotations.reversed() where annotation.type != .pen {
             if isPoint(point, in: annotation) {
                 return annotation.id
             }
@@ -1310,7 +1317,7 @@ class OverlayViewModel: ObservableObject {
         guard state == .editing || state == .longCaptureReady, !isEditingText else { return .crosshair }
         if let handle = selectedTextResizeHandle, abs(point.x - handle.x) <= 8, abs(point.y - handle.y) <= 8 { return .diagonalDown }
         if let rect = selectedShapeRect, let handle = nearest(rect, tolerance: 8) { return style(handle) }
-        if let a = annotations.first(where: { $0.id == selectedAnnotationID }) {
+        if let a = annotations.first(where: { $0.id == selectedAnnotationID }), a.type != .pen {
             if a.type == .arrow, [a.startPoint, a.endPoint].contains(where: { hypot(point.x - $0.x, point.y - $0.y) <= 8 }) { return .move }
             let hit = hitTest(at: point)
             if hit == a.id || (hit == nil && selectedMoveRect?.contains(point) == true) { return .move }

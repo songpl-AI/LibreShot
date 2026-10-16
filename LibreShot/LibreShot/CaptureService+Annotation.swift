@@ -169,8 +169,12 @@ extension CaptureService {
                           y: logicalSize.height * scaleY - annotation.startPoint.y * scaleY - size.height / 2)
                 : CGPoint(x: annotation.startPoint.x * scaleX,
                           y: logicalSize.height * scaleY - annotation.startPoint.y * scaleY - size.height)
-            layout.image().draw(in: CGRect(origin: origin, size: size), from: .zero,
-                                operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
+            let rasterScale = max(scaleX, scaleY)
+            let textImage = layout.image(scale: rasterScale)
+            // Glyphs are already rasterized at the export scale. Avoid filtering them again.
+            NSGraphicsContext.current?.imageInterpolation = .none
+            textImage.draw(in: CGRect(origin: origin, size: size), from: .zero,
+                           operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
         }
         
         NSGraphicsContext.restoreGraphicsState()

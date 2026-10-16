@@ -179,17 +179,18 @@ struct ToolPropertyBarView: View {
     let availableWidth: CGFloat
     @State private var numberColorRole: NumberColorRole = .fill
 
-    static let inset: CGFloat = 2
-    static let spacing: CGFloat = 3
+    static let inset: CGFloat = 4
+    static let spacing: CGFloat = 6
+    static let swatchSpacing: CGFloat = 4
+    static let rowHeight: CGFloat = 26
 
     enum Control: Hashable {
         case color, width, corner, font, numberStyle, effectMode, brush, block, blur, details, actions
         var width: CGFloat {
             switch self {
-            case .color: return 94
-            case .numberStyle: return 76
-            case .effectMode: return 92
-            case .details, .actions: return 22
+            case .color: return rowHeight * 4 + swatchSpacing * 3
+            case .numberStyle, .effectMode: return 128
+            case .details, .actions: return rowHeight
             default: return 128
             }
         }
@@ -227,8 +228,8 @@ struct ToolPropertyBarView: View {
         guard model.propertyTool != nil else { return .zero }
         let rows = rows(for: model, availableWidth: availableWidth)
         let rowWidth = rows.map { row in row.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, row.count - 1)) * spacing }.max() ?? 0
-        let detailHeight: CGFloat = model.propertyTool == .number && model.toolPropertyDetailsExpanded ? spacing + 47 : 0
-        return CGSize(width: min(availableWidth, rowWidth + inset * 2), height: inset * 2 + CGFloat(rows.count) * 22 + CGFloat(max(0, rows.count - 1)) * spacing + detailHeight)
+        let detailHeight: CGFloat = model.propertyTool == .number && model.toolPropertyDetailsExpanded ? spacing + 55 : 0
+        return CGSize(width: min(availableWidth, rowWidth + inset * 2), height: inset * 2 + CGFloat(rows.count) * rowHeight + CGFloat(max(0, rows.count - 1)) * spacing + detailHeight)
     }
 
     private struct ColorPreset {
@@ -247,7 +248,7 @@ struct ToolPropertyBarView: View {
             ForEach(rows.indices, id: \.self) { index in
                 HStack(spacing: Self.spacing) {
                     ForEach(rows[index], id: \.self) { item in
-                        control(item).frame(width: min(item.width, max(0, size.width - Self.inset * 2)), height: 22)
+                        control(item).frame(width: min(item.width, max(0, size.width - Self.inset * 2)), height: Self.rowHeight)
                     }
                 }
             }
@@ -277,12 +278,12 @@ struct ToolPropertyBarView: View {
         case .numberStyle:
             Picker("序号样式", selection: Binding(get: { viewModel.currentToolStyle.numberStyle }, set: { viewModel.setNumberStyle($0) })) {
                 ForEach(NumberAnnotationStyle.allCases) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented).controlSize(.mini).labelsHidden().accessibilityLabel("序号样式")
+            }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("序号样式")
         case .effectMode:
             if let tool = viewModel.propertyTool {
                 Picker("应用方式", selection: Binding(get: { viewModel.effectDrawingMode(for: tool) }, set: { viewModel.setEffectDrawingMode($0, for: tool) })) {
                     ForEach(EffectDrawingMode.allCases) { Text($0.title).tag($0) }
-                }.pickerStyle(.segmented).controlSize(.mini).labelsHidden().accessibilityLabel("应用方式")
+                }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("应用方式")
             }
         case .details:
             iconButton("slider.horizontal.3", label: viewModel.toolPropertyDetailsExpanded ? "收起详细颜色" : "更多颜色设置") {
@@ -295,7 +296,7 @@ struct ToolPropertyBarView: View {
 
     private func iconButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11)).frame(width: 22, height: 22).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: 13)).frame(width: Self.rowHeight, height: Self.rowHeight).contentShape(Rectangle())
         }.buttonStyle(.plain).help(label).accessibilityLabel(label)
     }
 
@@ -323,22 +324,22 @@ struct ToolPropertyBarView: View {
         else { viewModel.setColor(color) }
     }
     private func colorControls(role: NumberColorRole) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Self.swatchSpacing) {
             ForEach(Self.colorPresets, id: \.name) { preset in
                 Button { setColor(preset.color, role: role) } label: {
-                    Circle().fill(preset.color).frame(width: 14, height: 14)
+                    Circle().fill(preset.color).frame(width: 16, height: 16)
                         .overlay(Circle().stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
                         .overlay {
                             if AnnotationInk(color(for: role)) == AnnotationInk(preset.color) && !(viewModel.propertyTool == .number && role == .border && viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil) {
                                 Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.white)
                             }
                         }
-                        .frame(width: 22, height: 22).contentShape(Rectangle())
+                        .frame(width: Self.rowHeight, height: Self.rowHeight).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("\(viewModel.propertyTool == .number ? role.title : "颜色")\(preset.name)")
             }
             CompactPropertyColorWell(selection: Binding(get: { color(for: role) }, set: { setColor($0, role: role) }),
                 label: "\(viewModel.propertyTool == .number ? role.title : "")自定义颜色")
-                .frame(width: 22, height: 22)
+                .frame(width: Self.rowHeight, height: Self.rowHeight)
         }
     }
 
@@ -346,7 +347,7 @@ struct ToolPropertyBarView: View {
         VStack(alignment: .leading, spacing: 3) {
             Picker("颜色对象", selection: Binding(get: { activeNumberColorRole }, set: { numberColorRole = $0 })) {
                 ForEach(NumberColorRole.allCases.filter { $0 != .fill || viewModel.currentToolStyle.numberStyle == .filled }) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented).controlSize(.mini).labelsHidden().accessibilityLabel("颜色对象").frame(height: 22)
+            }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("颜色对象").frame(height: Self.rowHeight)
             HStack(spacing: 3) {
                 colorControls(role: activeNumberColorRole).frame(width: Control.color.width)
                 if activeNumberColorRole == .digit {
@@ -358,7 +359,7 @@ struct ToolPropertyBarView: View {
                         .foregroundStyle(viewModel.currentToolStyle.numberBorderInk == nil ? Color.accentColor : Color.secondary)
                         .help("无序号边框").accessibilityLabel("无序号边框")
                 }
-            }.frame(height: 22)
+            }.frame(height: Self.rowHeight)
         }
     }
 }
@@ -511,6 +512,14 @@ final class PropertyWheelView: NSView {
     }
 }
 
+/// The system color panel outlives one toolbar control. Close it when the capture
+/// session ends or the active tool changes, and put its window level back.
+enum AnnotationColorPanel {
+    static func close() {
+        CompactSwatchColorWell.closeRaisedPanels()
+    }
+}
+
 /// SwiftUI's color picker has a large intrinsic width on newer macOS versions.
 /// A compact palette icon retains native color selection and a full button hit area.
 struct CompactPropertyColorWell: NSViewRepresentable {
@@ -553,19 +562,30 @@ struct CompactPropertyColorWell: NSViewRepresentable {
 
 /// Give custom color selection a distinct icon, while preserving native panel behavior.
 private final class CompactSwatchColorWell: NSColorWell {
+    private static let raisedWells = NSHashTable<CompactSwatchColorWell>.weakObjects()
     private var previousPanelLevel: NSWindow.Level?
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 22, height: 22) }
+    static func closeRaisedPanels() {
+        for well in raisedWells.allObjects { well.deactivate() }
+        NSColorPanel.shared.orderOut(nil)
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 26, height: 26) }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        // Custom drawing has no native swatch hit region. Treat the whole icon as an opener.
+        // The whole icon is the hit target. A second click closes the panel it opened.
+        if isActive, NSColorPanel.shared.isVisible {
+            deactivate()
+            return
+        }
         activate(true)
     }
 
     override func activate(_ exclusive: Bool) {
         super.activate(exclusive)
+        Self.raisedWells.add(self)
         let panel = NSColorPanel.shared
         if previousPanelLevel == nil { previousPanelLevel = panel.level }
         // The capture overlay sits above ordinary floating panels.
@@ -575,11 +595,14 @@ private final class CompactSwatchColorWell: NSColorWell {
     }
 
     override func deactivate() {
+        let raisedPanel = previousPanelLevel != nil
         super.deactivate()
         if let previousPanelLevel {
             NSColorPanel.shared.level = previousPanelLevel
             self.previousPanelLevel = nil
         }
+        Self.raisedWells.remove(self)
+        if raisedPanel { NSColorPanel.shared.orderOut(nil) }
         needsDisplay = true
     }
 

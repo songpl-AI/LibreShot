@@ -303,10 +303,64 @@ final class AnnotationTextLayout {
                       height: max(ceil(manager.defaultLineHeight(for: font)), ceil(used.maxY)))
     }
 
-    func image() -> NSImage {
+    /// SwiftUI often draws an `NSImage` from a 1× representation, so committed
+    /// text looks soft beside the Retina text editor. Pass the destination
+    /// pixels-per-point and the same glyphs are rasterized at that scale.
+    func image() -> NSImage { pointImage() }
+
+    func image(scale: CGFloat) -> NSImage {
+        guard scale >= 1, let raster = rasterImage(scale: scale) else { return pointImage() }
+        return raster
+    }
+
+    func cgImage(scale: CGFloat) -> CGImage? {
+        guard scale >= 1, let raster = rasterRepresentation(scale: scale) else { return nil }
+        return raster.cgImage
+    }
+
+    private func pointImage() -> NSImage {
         NSImage(size: size, flipped: true) { [self] _ in
-            manager.drawGlyphs(forGlyphRange: manager.glyphRange(for: container), at: .zero)
+            drawGlyphs()
             return true
         }
+    }
+
+    private func rasterImage(scale: CGFloat) -> NSImage? {
+        guard let rep = rasterRepresentation(scale: scale), let cgImage = rep.cgImage else { return nil }
+        return NSImage(cgImage: cgImage, size: size)
+    }
+
+    private func rasterRepresentation(scale: CGFloat) -> NSBitmapImageRep? {
+        let pixelWidth = max(1, Int(ceil(size.width * scale)))
+        let pixelHeight = max(1, Int(ceil(size.height * scale)))
+        guard let cgContext = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        cgContext.clear(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        // Draw the same flipped point image into this pixel buffer. The handler then
+        // rasterizes glyphs at the destination scale and keeps the editor's baseline.
+        let graphics = NSGraphicsContext(cgContext: cgContext, flipped: false)
+        graphics.imageInterpolation = .none
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        pointImage().draw(
+            in: NSRect(x: 0, y: 0, width: CGFloat(pixelWidth), height: CGFloat(pixelHeight)),
+            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil
+        )
+        NSGraphicsContext.restoreGraphicsState()
+        guard let cgImage = cgContext.makeImage() else { return nil }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        rep.size = size
+        return rep
+    }
+
+    private func drawGlyphs() {
+        manager.drawGlyphs(forGlyphRange: manager.glyphRange(for: container), at: .zero)
     }
 }

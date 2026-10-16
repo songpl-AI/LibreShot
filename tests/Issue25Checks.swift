@@ -104,7 +104,11 @@ import SwiftUI
             annotation.text = "Existing text"
             boundary.annotations = [annotation]
             let target = type == .ellipse ? CGPoint(x: 425, y: 280) : annotation.startPoint
-            precondition(boundary.annotationID(at: target) == annotation.id, "Fixture must hit \(type)")
+            if type == .pen {
+                precondition(boundary.annotationID(at: target) == nil, "Pen ink is not selectable")
+            } else {
+                precondition(boundary.annotationID(at: target) == annotation.id, "Fixture must hit \(type)")
+            }
             precondition(!boundary.beginConfirmationClick(at: target))
             precondition(!boundary.confirmDoubleClick(at: target) && boundaryExports == 0)
         }

@@ -311,7 +311,7 @@ struct ToolPropertiesChecks {
             (view as? NSColorWell).map { [$0] } ?? view.subviews.flatMap(colorWells)
         }
         let wells = colorWells(hosting)
-        require(wells.count == 1 && wells[0].frame.size == CGSize(width: 22, height: 22), "Custom palette icon keeps the same button hit area as the presets")
+        require(wells.count == 1 && wells[0].frame.size == CGSize(width: 26, height: 26), "Custom palette icon keeps the same button hit area as the presets")
         let clickPoint = wells[0].convert(CGPoint(x: 11, y: 11), to: nil)
         let mouseUp = NSEvent.mouseEvent(with: .leftMouseUp, location: clickPoint, modifierFlags: [], timestamp: 0,
             windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0)!
@@ -320,6 +320,14 @@ struct ToolPropertiesChecks {
             windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!)
         settle()
         require(wells[0].isActive && NSColorPanel.shared.isVisible, "Mouse click on palette icon opens the color panel")
+        wells[0].mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown, location: clickPoint, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 4, clickCount: 1, pressure: 1)!)
+        settle()
+        require(!wells[0].isActive && !NSColorPanel.shared.isVisible, "Mouse click on the open palette icon closes the color panel")
+        wells[0].mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown, location: clickPoint, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 5, clickCount: 1, pressure: 1)!)
+        settle()
+        require(wells[0].isActive && NSColorPanel.shared.isVisible, "Mouse click opens the color panel again")
         NSColorPanel.shared.performClose(nil)
         settle()
         wells[0].mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown, location: clickPoint, modifierFlags: [], timestamp: 0,
@@ -332,6 +340,23 @@ struct ToolPropertiesChecks {
         require(NSColorPanel.shared.level.rawValue > window.level.rawValue, "Color panel appears above the production screenshot overlay")
         wells[0].deactivate()
         NSColorPanel.shared.orderOut(nil)
+        wells[0].activate(true)
+        settle()
+        model.selectTool(.arrow)
+        settle()
+        require(!NSColorPanel.shared.isVisible && colorWells(hosting).allSatisfy { !$0.isActive },
+                "Switching tools closes the color panel")
+        colorWells(hosting).first?.activate(true)
+        settle()
+        require(NSColorPanel.shared.isVisible, "Palette can reopen after a tool change")
+        model.selectTool(.rectangle)
+        settle()
+        require(!NSColorPanel.shared.isVisible, "Returning to the previous tool also closes the color panel")
+        colorWells(hosting).first?.activate(true)
+        settle()
+        AnnotationColorPanel.close()
+        require(!NSColorPanel.shared.isVisible && colorWells(hosting).allSatisfy { !$0.isActive },
+                "Ending the capture closes the color panel")
         let inputs = fields(hosting)
         require(inputs.count == 2, "Native compact rectangle exposes two exact value inputs")
         let input = inputs.first { $0.stringValue == "3" }!
@@ -391,11 +416,11 @@ struct ToolPropertiesChecks {
         model.selectTool(.arrow)
         require(settings.annotationStyle(for: .text).fontSize == 39 && model.currentToolStyle.lineWidth == 3, "Tool switch commits the outgoing gesture without changing the next tool")
         model.selectTool(.rectangle)
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 385, height: 26), "Rectangle controls reserve the tightened single-row bounds")
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 424, height: 34), "Rectangle controls reserve the single-row bounds")
         model.selectTool(.number)
         let compact = ToolPropertyBarView.size(for: model, availableWidth: 640)
         model.toolPropertyDetailsExpanded = true
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 50, "Detailed number colors reserve their own hit area")
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640).height == compact.height + 61, "Detailed number colors reserve their own hit area")
         for tool in [AnnotationType.rectangle, .ellipse, .arrow, .pen, .text, .number, .mosaic, .blur] {
             model.selectTool(tool)
             for width: CGFloat in [200, 400, 640] {

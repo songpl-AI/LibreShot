@@ -32,6 +32,21 @@ import SwiftUI
             }
             vm.annotations = [a]; vm.selectedAnnotationID = nil; vm.selectedTool = .text
             vm.clearAnnotationPress()
+            if type == .pen {
+                check(vm.cursorStyle(at:point) == .crosshair, "pen hover keeps the drawing cursor")
+                check(vm.annotationID(at:point) == nil, "pen stroke is not a selection target")
+                _ = vm.handleAnnotationPressChanged(from:point,to:point)
+                _ = vm.handleAnnotationPressEnded(from:point,to:point)
+                vm.clearAnnotationPress()
+                check(vm.selectedAnnotationID == nil && vm.annotations[0].points == a.points,
+                      "pen click does not select or move the stroke")
+                vm.selectedTool = nil
+                check(vm.cursorStyle(at:point) == .crosshair, "pen selection mode keeps the drawing cursor")
+                vm.selectedAnnotationID = a.id
+                check(!vm.handleSelectedShapeDrag(from:point, to:CGPoint(x:point.x + 30, y:point.y + 20), within:vm.selectionRect)
+                      && vm.annotations[0].points == a.points, "committed pen stroke cannot be dragged")
+                continue
+            }
             check(vm.cursorStyle(at:point) == .move, "\(type) hover shows hand before selection")
             check(vm.annotationID(at:point) == a.id, "\(type) hover matches production hit geometry")
             _ = vm.handleAnnotationPressChanged(from:point,to:point)

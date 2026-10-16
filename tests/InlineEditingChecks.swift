@@ -97,6 +97,83 @@ struct InlineEditingChecks {
             }
         }
         print("PASS: \(samples) native NSTextView/display glyph positions and export baselines across Chinese, English, multiline and fonts")
+
+        func ink(_ color: NSColor) -> CGFloat {
+            let rgb = color.usingColorSpace(.deviceRGB)!
+            return max(0, rgb.redComponent - max(rgb.greenComponent, rgb.blueComponent)) * rgb.alphaComponent
+        }
+        func upscaled(_ rep: NSBitmapImageRep, factor: Int) -> NSBitmapImageRep {
+            let width = rep.pixelsWide * factor, height = rep.pixelsHigh * factor
+            let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                     space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.interpolationQuality = .high
+            context.draw(rep.cgImage!, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return NSBitmapImageRep(cgImage: context.makeImage()!)
+        }
+        func risingEdgeWidth(_ rep: NSBitmapImageRep) -> Int {
+            var minX = rep.pixelsWide, minY = rep.pixelsHigh, maxX = 0, maxY = 0
+            for y in 0..<rep.pixelsHigh {
+                for x in 0..<rep.pixelsWide {
+                    guard ink(rep.colorAt(x: x, y: y)!) > 0.35 else { continue }
+                    minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+                }
+            }
+            precondition(maxX > minX, "glyph ink missing")
+            let y = (minY + maxY) / 2
+            var peak: CGFloat = 0
+            for x in 0..<rep.pixelsWide { peak = max(peak, ink(rep.colorAt(x: x, y: y)!)) }
+            let solid = max(0.45, peak * 0.72)
+            var partial = 0
+            for x in 0..<rep.pixelsWide {
+                let value = ink(rep.colorAt(x: x, y: y)!)
+                if value >= solid { return max(partial, 1) }
+                if value > solid * 0.15 { partial += 1 }
+            }
+            return partial
+        }
+        func whiteBitmap(pixelsWide: Int, pixelsHigh: Int) -> NSBitmapImageRep {
+            let context = CGContext(data: nil, width: pixelsWide, height: pixelsHigh, bitsPerComponent: 8, bytesPerRow: 0,
+                                     space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.setFillColor(NSColor.white.cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: pixelsWide, height: pixelsHigh))
+            return NSBitmapImageRep(cgImage: context.makeImage()!)
+        }
+
+        func logicalInk(_ image: NSImage, logicalWidth: CGFloat) -> CGRect {
+            let rep = bitmap(image)
+            let ink = bounds(rep)
+            let scale = CGFloat(rep.pixelsWide) / logicalWidth
+            return CGRect(x: ink.minX / scale, y: ink.minY / scale, width: ink.width / scale, height: ink.height / scale)
+        }
+        let sharpLayout = AnnotationTextLayout(text: "H", fontSize: 64, isNumber: false, color: .red)
+        let onePixel = bitmap(sharpLayout.image(scale: 1))
+        let sharp = bitmap(sharpLayout.image(scale: 2))
+        precondition(onePixel.pixelsWide <= Int(sharpLayout.size.width * 1.05) &&
+                     sharp.pixelsWide >= Int(sharpLayout.size.width * 2) &&
+                     sharp.pixelsHigh >= Int(sharpLayout.size.height * 2),
+                     "committed text must rasterize at the requested scale, not the screen cache")
+        let referenceInk = logicalInk(sharpLayout.image(), logicalWidth: sharpLayout.size.width)
+        let sharpInk = logicalInk(sharpLayout.image(scale: 2), logicalWidth: sharpLayout.size.width)
+        precondition(abs(sharpInk.minX - referenceInk.minX) <= 1 && abs(sharpInk.minY - referenceInk.minY) <= 1 &&
+                     abs(sharpInk.width - referenceInk.width) <= 1 && abs(sharpInk.height - referenceInk.height) <= 1,
+                     "2× glyphs must keep the editor image origin: \(sharpInk) != \(referenceInk)")
+        let soft = upscaled(onePixel, factor: 2)
+        let sharpEdge = risingEdgeWidth(sharp)
+        let softEdge = risingEdgeWidth(soft)
+        precondition(sharpEdge < softEdge,
+                     "2× glyphs must be sharper than an upscaled 1× bitmap: \(sharpEdge) vs \(softEdge)")
+        let white = whiteBitmap(pixelsWide: 1200, pixelsHigh: 1000)
+        white.size = CGSize(width: 600, height: 500)
+        let retinaBase = NSImage(size: white.size)
+        retinaBase.addRepresentation(white)
+        var committed = Annotation(type: .text, color: .red)
+        committed.text = "H"; committed.fontSize = 64; committed.startPoint = CGPoint(x: 40, y: 40)
+        let exportedSharp = bitmap(CaptureService.shared.composite(image: retinaBase, annotations: [committed]))
+        precondition(exportedSharp.pixelsWide == 1200, "retina export keeps physical pixels")
+        let exportedEdge = risingEdgeWidth(exportedSharp)
+        precondition(exportedEdge <= sharpEdge + 1,
+                     "retina export must keep the 2× glyph edge, not resample a 1× image: \(exportedEdge) vs \(sharpEdge)")
+        print("PASS: committed text rasterizes at 2× and retina export keeps that edge (\(sharpEdge) vs upscaled \(softEdge))")
         model.annotations = []; model.selectTool(.text); model.startTextInput(at: CGPoint(x: 40, y: 40))
         precondition(model.editingTextSize == AnnotationTextLayout(text: "", fontSize: model.inputFontSize, isNumber: false).size)
         model.editingTextContent = "新文字"; model.commitTextInput()

@@ -535,7 +535,7 @@ struct ToolbarRegressionChecks {
             vm.annotations = [a]
             return vm
         }
-        for target in AnnotationType.allCases {
+        for target in AnnotationType.allCases where target != .pen {
             let (a, point) = fixture(target)
             for tool in AnnotationType.allCases {
                 let vm = model(tool, a)
@@ -559,7 +559,8 @@ struct ToolbarRegressionChecks {
             if !vm.handleAnnotationPressEnded(from: point, to: end) { vm.endDrawing() }
             vm.clearAnnotationPress()
             precondition(vm.selectedTool == tool)
-            precondition(vm.selectedAnnotationID == ((tool == .text || tool == .number || vm.annotations.last?.isEffectBrush == true) ? nil : vm.annotations.last?.id),
+            let staysUnselected = tool == .text || tool == .number || tool == .pen || vm.annotations.last?.isEffectBrush == true
+            precondition(vm.selectedAnnotationID == (staysUnselected ? nil : vm.annotations.last?.id),
                          "A completed drawing is selected without changing the active tool")
             precondition(vm.annotations[0].startPoint == rect.startPoint)
             if tool == .text || tool == .number {
@@ -575,6 +576,21 @@ struct ToolbarRegressionChecks {
         _ = vm.handleAnnotationPressEnded(from: point, to: point)
         vm.clearAnnotationPress()
         precondition(vm.selectedTool == .pen && vm.annotations.count == 2, "Moving away and back is still drawing")
+        let (penStroke, penPoint) = fixture(.pen)
+        let crossing = model(.pen, penStroke)
+        let next = CGPoint(x: penPoint.x, y: penPoint.y + 50)
+        if !crossing.handleAnnotationPressChanged(from: penPoint, to: next) {
+            crossing.handleDrawingDrag(from: penPoint, to: next)
+        }
+        if !crossing.handleAnnotationPressEnded(from: penPoint, to: next) { crossing.endDrawing() }
+        crossing.clearAnnotationPress()
+        precondition(crossing.selectedAnnotationID == nil && crossing.annotations.count == 2
+                     && crossing.annotations[0].points == penStroke.points && crossing.annotations[1].type == .pen,
+                     "A second pen stroke starting on the first one draws instead of dragging")
+        crossing.selectedTool = nil
+        crossing.selectedAnnotationID = crossing.annotations[0].id
+        precondition(!crossing.handleSelectedShapeDrag(from: penPoint, to: CGPoint(x: penPoint.x + 25, y: penPoint.y + 15), within: crop))
+        precondition(crossing.annotations[0].points == penStroke.points, "A committed pen stroke cannot be dragged")
         precondition(!rect.containsSelectionPoint(CGPoint(x: 250, y: 220)), "Rectangle interior is not a stroke")
         let (ellipse, _) = fixture(.ellipse)
         precondition(!ellipse.containsSelectionPoint(CGPoint(x: 250, y: 225)))

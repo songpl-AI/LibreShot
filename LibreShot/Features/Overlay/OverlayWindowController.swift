@@ -284,6 +284,7 @@ class OverlayWindowController: NSWindowController {
         // Only the detached selected baseline is needed by the live capture.
         // Release the full-display preview before the SCK surfaces are created.
         viewModel.updatePreviewImage(nil)
+        AnnotationColorPanel.close()
         overlayWindow.contentViewController = nil
         overlayWindow.contentView = nil
         installLongCaptureKeyMonitors(generation: generation, onFinish: onFinish, onError: onError, onCancel: onCancel)
@@ -458,6 +459,7 @@ class OverlayWindowController: NSWindowController {
         #endif
         cleanupLongCaptureState()
         popCrosshairCursor()
+        AnnotationColorPanel.close()
         window?.orderOut(nil)
         window?.contentViewController = nil
         window?.contentView = nil

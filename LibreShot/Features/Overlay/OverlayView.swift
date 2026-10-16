@@ -6,6 +6,7 @@ struct OverlayView: View {
     var imageOpacity: Double = 1
     var onBlankCanvasDrag: ((CGSize, Bool) -> Void)? = nil
     @ObservedObject private var settings = SettingsService.shared
+    @Environment(\.displayScale) private var displayScale
     @State private var guidePoint: CGPoint?
     @State private var movingBlankCanvas = false
 
@@ -410,6 +411,15 @@ struct OverlayView: View {
         return CGPoint(x: clampedX, y: clampedY)
     }
 
+    /// SwiftUI scales a 1× `NSImage` up on Retina. Feed it pixels that already match the display.
+    private func textImage(_ layout: AnnotationTextLayout) -> Image {
+        let scale = max(displayScale, 1)
+        if let cgImage = layout.cgImage(scale: scale) {
+            return Image(decorative: cgImage, scale: scale, orientation: .up)
+        }
+        return Image(nsImage: layout.image())
+    }
+
     func drawAnnotation(context: GraphicsContext, annotation: Annotation, canvasSize: CGSize) {
         // Effects are rendered underneath the annotation canvas by the shared renderer.
         if annotation.type == .mosaic || annotation.type == .blur { return }
@@ -460,7 +470,7 @@ struct OverlayView: View {
                 ? CGPoint(x: annotation.startPoint.x - layout.size.width / 2,
                           y: annotation.startPoint.y - layout.size.height / 2)
                 : annotation.startPoint
-            context.draw(Image(nsImage: layout.image()), in: CGRect(origin: origin, size: layout.size))
+            context.draw(textImage(layout), in: CGRect(origin: origin, size: layout.size))
         }
     }
 
