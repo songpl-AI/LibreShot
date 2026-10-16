@@ -1,0 +1,7 @@
+I built LibreShot, a free, open-source screenshot app for Mac.
+
+Capture, number the steps, add arrows, and blur details before sharing.
+
+Mac users and developers: what would you improve?
+
+https://github.com/songpl-AI/LibreShot

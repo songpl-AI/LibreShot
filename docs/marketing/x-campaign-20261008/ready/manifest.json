@@ -1,0 +1,92 @@
+[
+  {
+    "stem": "01-launch-annotate",
+    "title": "首发：序号、模糊、箭头",
+    "day": "Day 0",
+    "text_characters": 226,
+    "duration_seconds": 25.5,
+    "bytes": 328718,
+    "sha256": "bef60792b4bc52083a7337ef979083f35ab706db8b0f74fada16f7a547f2ef45",
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 960,
+        "pix_fmt": "yuv420p",
+        "r_frame_rate": "30/1"
+      }
+    ]
+  },
+  {
+    "stem": "02-translate-in-place",
+    "title": "原图翻译与原文切换",
+    "day": "Day 2",
+    "text_characters": 237,
+    "duration_seconds": 19.6,
+    "bytes": 340304,
+    "sha256": "6bfed28d44419860017f939bf4124bab016edbd0a5f1643809ff153880b030a7",
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 960,
+        "pix_fmt": "yuv420p",
+        "r_frame_rate": "30/1"
+      }
+    ]
+  },
+  {
+    "stem": "03-ocr",
+    "title": "OCR：截图文字变成可复制文本",
+    "day": "Day 4",
+    "text_characters": 246,
+    "duration_seconds": 19.0,
+    "bytes": 224074,
+    "sha256": "44bddec955544e681533cc09f674bca2de9da96ff611e83119ef5fb907d09dd3",
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 960,
+        "pix_fmt": "yuv420p",
+        "r_frame_rate": "30/1"
+      }
+    ]
+  },
+  {
+    "stem": "04-customize",
+    "title": "隐藏按钮、调整顺序、自定义快捷键",
+    "day": "Day 7",
+    "text_characters": 238,
+    "duration_seconds": 25.0,
+    "bytes": 297597,
+    "sha256": "3dc9f90039f234be5b6d4b0e0ec59985e414fac6883084b825ba8e5726b74acb",
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 960,
+        "pix_fmt": "yuv420p",
+        "r_frame_rate": "30/1"
+      }
+    ]
+  },
+  {
+    "stem": "05-pin-reference",
+    "title": "贴图置顶：在其他页面上保留参考",
+    "day": "Day 10",
+    "text_characters": 214,
+    "duration_seconds": 15.5,
+    "bytes": 142236,
+    "sha256": "0779e769c6cd64f3b13743cf70177010d15b7bc08fe38572f58e4b3b04fc6710",
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 960,
+        "pix_fmt": "yuv420p",
+        "r_frame_rate": "30/1"
+      }
+    ]
+  }
+]

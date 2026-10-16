@@ -1,0 +1,7 @@
+Stop retyping text from screenshots.
+
+Select an area, run OCR, and copy the text with LibreShot. Chinese and English recognition runs locally on your Mac.
+
+Free and open source. What would you use this for?
+
+https://github.com/songpl-AI/LibreShot

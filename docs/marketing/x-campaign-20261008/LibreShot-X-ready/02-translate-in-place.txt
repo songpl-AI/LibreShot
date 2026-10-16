@@ -1,0 +1,7 @@
+Text in a screenshot, translated right where it was.
+
+LibreShot lets you compare the translation with the original.
+
+Free and open source. Translation needs macOS 26+ and downloaded language packs.
+
+https://github.com/songpl-AI/LibreShot

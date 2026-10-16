@@ -1,0 +1,7 @@
+Keep a screenshot in sight while you work.
+
+LibreShot can pin a capture above other windows, so a reference stays close while you switch tasks.
+
+Free and open source for Mac.
+
+https://github.com/songpl-AI/LibreShot

@@ -1,0 +1,7 @@
+Make LibreShot work your way.
+
+Show or hide toolbar buttons, reorder your tools, and choose your own screenshot shortcut.
+
+Free, open source, and native to macOS. Which tools belong in your toolbar?
+
+https://github.com/songpl-AI/LibreShot

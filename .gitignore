@@ -3,3 +3,16 @@ LibreShot/.DS_Store
 .DS_Store
 LibreShot/LibreShot.xcodeproj/project.xcworkspace/xcuserdata/allen.xcuserdatad/UserInterfaceState.xcuserstate
 /dist/
+
+# Local recordings and editing intermediates may contain desktop information.
+/docs/marketing/x-campaign-20261008/raw/
+/docs/marketing/x-campaign-20261008/work/
+/docs/marketing/x-demo-20261008/*
+!/docs/marketing/x-demo-20261008/README.md
+!/docs/marketing/x-demo-20261008/edit_demo.py
+!/docs/marketing/x-demo-20261008/sample.html
+!/docs/marketing/x-demo-20261008/LibreShot-X-demo-v1.mp4
+!/docs/marketing/x-demo-20261008/LibreShot-X-cover.png
+!/docs/marketing/x-demo-20261008/original.png
+!/docs/marketing/x-demo-20261008/translated.png
+!/docs/marketing/x-demo-20261008/annotated.png

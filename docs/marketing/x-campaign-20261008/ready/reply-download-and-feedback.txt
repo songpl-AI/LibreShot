@@ -1,0 +1,3 @@
+Download and setup: https://github.com/songpl-AI/LibreShot
+
+Found a bug? Please include your macOS version, LibreShot version, and steps to reproduce it: https://github.com/songpl-AI/LibreShot/issues
