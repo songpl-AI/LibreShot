@@ -71,6 +71,9 @@ final class LongCaptureStreamService: @unchecked Sendable {
             excludedApplications = []
         }
         diagnosticTrace.event("event=stream-filter-own-application excludedCount=\(excludedApplications.count)")
+        // Guides remain visible to remote desktops. Never start a stream that
+        // could record them because our application was absent from metadata.
+        guard !excludedApplications.isEmpty else { throw CaptureServiceError.captureFailed }
         let filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
         let pixelSize = await MainActor.run { () -> CGSize in
             let screen = NSScreen.screens.first {

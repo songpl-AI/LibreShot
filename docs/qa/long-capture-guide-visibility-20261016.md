@@ -13,8 +13,15 @@
 
 ## 待确认与修复边界
 
-已询问维护者是在 Mac 本机屏幕前操作，还是通过 UU 等远程桌面，尚未收到答复。当前候选方向为：远程显示过滤、切换显示器/全屏 Space 后可见性、采集期间窗口提前清理。前两项需要结合实际操作环境；小选区生命周期观察暂不支持第三项。
+维护者已明确回复“通过远程桌面操作”。当前候选方向为：远程显示过滤、切换显示器/全屏 Space 后可见性、采集期间窗口提前清理。前两项需要结合实际操作环境；小选区生命周期观察暂不支持第三项。
 
 Apple [NSWindow.SharingType 文档](https://developer.apple.com/documentation/appkit/nswindow/sharingtype-swift.enum) 当前将 none 描述为 macOS 不再使用的 legacy 常量；[sharingType 属性](https://developer.apple.com/documentation/appkit/nswindow/sharingtype-swift.property) 描述的是其他进程读取窗口内容的级别。因此不能仅以这个属性断言所有系统或远程捕获实现必然隐藏窗口。
 
 尚未修改生产代码，尚未构建新包，不能声称问题已修复。结束本轮公开采集并关闭公开 fixture，保留当前正式安装副本。若确认远程路径，下一步针对共享策略做单变量对照，同时验证长截图流仍通过自身应用过滤排除辅助 UI。
+
+
+## 远程兼容修正候选
+
+维护者确认远程操作后，重新使用生产安装 build 55 启动公开选区，再运行 `swiftc tests/LongCaptureGuideVisibilityChecks.swift -o dist/long-capture-visibility-20261016/check-window-visibility` 编译的集成探针；9 个窗口全部 sharing=0，检查退出 1。该检查直接读取生产应用的 WindowServer 元数据；它检验共享策略，UU 客户端实际可见性须由维护者单独确认，不能用探针替代。
+
+三种辅助窗口改用 readOnly，允许远程桌面读取边框、外围暗层和采集提示。长截图流继续使用自己的应用过滤；如果元数据中缺少自身应用，不启动采集并返回现有捕获错误，避免退回未过滤流。未改拼接算法、阈值、图像预算或内存优化。候选 1.3.24 build 56，安装与专项结果另记；当前远程客户端可见性尚未确认。

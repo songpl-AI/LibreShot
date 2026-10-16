@@ -729,7 +729,9 @@ private final class LongCaptureGuideOverlay {
         window.hasShadow = false
         window.level = .screenSaver
         window.ignoresMouseEvents = true
-        window.sharingType = .none
+        // SCK excludes our application from the long-capture stream. Keep the
+        // guide UI readable so remote desktops can display it to the user.
+        window.sharingType = .readOnly
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         return window
     }
@@ -759,7 +761,9 @@ private final class LongCaptureGuideOverlay {
         window.hasShadow = true
         window.level = .screenSaver
         window.ignoresMouseEvents = true
-        window.sharingType = .none
+        // SCK excludes our application from the long-capture stream. Keep the
+        // guide UI readable so remote desktops can display it to the user.
+        window.sharingType = .readOnly
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         return window
     }
@@ -777,7 +781,9 @@ private final class LongCaptureGuideOverlay {
         window.isOpaque = false
         window.hasShadow = false
         window.level = .screenSaver
-        window.sharingType = .none
+        // SCK excludes our application from the long-capture stream. Keep the
+        // guide UI readable so remote desktops can display it to the user.
+        window.sharingType = .readOnly
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.contentViewController = NSHostingController(
             rootView: LongCaptureFloatingStatusView(
