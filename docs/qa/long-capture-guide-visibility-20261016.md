@@ -25,3 +25,8 @@ Apple [NSWindow.SharingType 文档](https://developer.apple.com/documentation/ap
 维护者确认远程操作后，重新使用生产安装 build 55 启动公开选区，再运行 `swiftc tests/LongCaptureGuideVisibilityChecks.swift -o dist/long-capture-visibility-20261016/check-window-visibility` 编译的集成探针；9 个窗口全部 sharing=0，检查退出 1。该检查直接读取生产应用的 WindowServer 元数据；它检验共享策略，UU 客户端实际可见性须由维护者单独确认，不能用探针替代。
 
 三种辅助窗口改用 readOnly，允许远程桌面读取边框、外围暗层和采集提示。长截图流继续使用自己的应用过滤；如果元数据中缺少自身应用，不启动采集并返回现有捕获错误，避免退回未过滤流。未改拼接算法、阈值、图像预算或内存优化。候选 1.3.24 build 56，安装与专项结果另记；当前远程客户端可见性尚未确认。
+
+
+## 最终确认
+
+build 56 已安装，同包重启前后区域截图与保存通过，公开长图成功导出 990×5620；新包 9 个辅助窗口 sharing=1，自身应用排除数量 1，输出未见辅助 UI。维护者通过远程桌面完成联合验收并明确回复“Option 正常，边框和提示都能看到”，确认本次提示与边框消失的兼容性问题修正有效。完整记录见[build 56 安装验收](long-remote-1.3.24-56-install-20261016.md)。此结论不扩大到所有原 Codex 间歇“未接上”情形；未发布。
