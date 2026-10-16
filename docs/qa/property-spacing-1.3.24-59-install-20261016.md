@@ -13,4 +13,12 @@
 | 属性栏色点与字号不再重叠 | 通过 | 维护者查看构建号 59 后确认间隔好很多，色点不再压住「字号」 |
 | 输入监控状态、Option 原有开关及实体触发 | 未在本包复测 | 构建号 56 曾通过；不把旧包结果当作本包通过 |
 | 长截图远程边框 | 包含源码，本包未复测 | 构建号 56 由维护者在远程桌面确认；构建号 59 含该改动 |
-| 最终交付状态、发布/回退状态 | 准备发布 v1.3.24 | 复用原 DMG，不重新签名。回退可用废纸篓中的构建号 58 副本 |
+| 最终交付状态、发布/回退状态 | 已发布 v1.3.24 | [Release](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.24)。重新下载的 DMG SHA-256 仍为 `7207df7f2a913331ecf1323535d7f7b42bec059638c0140fc1e8b3a79c4f4eb3`，与原包一致。资产：`LibreShot-1.3.24-59.dmg`、`SHA256SUMS`、`INSTALL-AND-PERMISSIONS.md`。标签指向 `c0d83a5`，构建源码为 `8cc4011`。回退可用废纸篓中的构建号 58 副本 |
+
+## 发布后的 Issue
+
+- [#41](https://github.com/songpl-AI/LibreShot/issues/41#issuecomment-6212571444) 已回复并关闭。
+- [#38](https://github.com/songpl-AI/LibreShot/issues/38#issuecomment-6212572274) 已回复并关闭。该行为来自 v1.3.23。
+- [#40](https://github.com/songpl-AI/LibreShot/issues/40#issuecomment-6212573096) 已回复画笔、调色板和属性栏；其余意见保持开放。
+- [#33](https://github.com/songpl-AI/LibreShot/issues/33)、[#34](https://github.com/songpl-AI/LibreShot/issues/34) 早前已在 v1.3.19 回复，本次关闭。
+- 仍开放：[#40](https://github.com/songpl-AI/LibreShot/issues/40)、[#39](https://github.com/songpl-AI/LibreShot/issues/39)、[#37](https://github.com/songpl-AI/LibreShot/issues/37)、[#36](https://github.com/songpl-AI/LibreShot/issues/36)、[#35](https://github.com/songpl-AI/LibreShot/issues/35)、[#32](https://github.com/songpl-AI/LibreShot/issues/32)、[#27](https://github.com/songpl-AI/LibreShot/issues/27)、[#20](https://github.com/songpl-AI/LibreShot/issues/20)。#32 的滚轮已在 v1.3.19 完成，右上角关闭按钮仍未做，所以保持开放。
