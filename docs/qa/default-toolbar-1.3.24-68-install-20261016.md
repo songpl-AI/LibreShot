@@ -10,4 +10,9 @@
 | 屏幕录制记录处理方式及精确路径 | 待验 | 新 ad-hoc 身份可能使旧授权失效；尚未用本包实际截图 |
 | 新安装的工具栏顺序 | 源码通过，本机未清设置复测 | 出厂顺序检查通过。本机已有保存的顺序，这次安装没有改掉它。维护者确认可以按此包发布 |
 | 绿色按钮全屏后区域截图 | 本机通过 | 构建号 65 上维护者确认快捷键可以打开区域截图。构建号 68 含同一窗口行为。报告人的系统未复测 |
-| 最终交付状态、发布/回退状态 | 准备发布 v1.3.27 | 复用构建号 68 原 DMG，不重新签名。安装后仍显示 1.3.24（68）。同包重启前后保存未单独记录。回退可用废纸篓中的构建号 67 副本 |
+| 最终交付状态、发布/回退状态 | 已发布 v1.3.27 | [Release](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.27)。重新下载的 DMG SHA-256 仍为 `c1b256393d07d7ef3033d64ddc03f0ffe6ab0f86063396e305f0c18643a69811`。资产：`LibreShot-1.3.24-68.dmg`、`SHA256SUMS`、`INSTALL-AND-PERMISSIONS.md`。构建源码 `ce5e174`。安装后显示 1.3.24（68）。同包重启前后保存未单独记录。回退可用废纸篓中的构建号 67 副本 |
+
+## 发布后的 Issue
+
+- [#39](https://github.com/songpl-AI/LibreShot/issues/39#issuecomment-6217548914) 已回复并保持开放。本机绿色按钮全屏后快捷键可以打开区域截图；报告人的系统未复测。
+- 仍开放：[#39](https://github.com/songpl-AI/LibreShot/issues/39)、[#36](https://github.com/songpl-AI/LibreShot/issues/36)、[#27](https://github.com/songpl-AI/LibreShot/issues/27)。
