@@ -1,5 +1,12 @@
 # 更新日志 / Changelog
 
+## [1.3.26](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.26) — 2026-10-16
+
+- 区域截图遮罩和长截图提示可以进入其他 App 的全屏空间。
+- 开始截图时屏幕可能抖一下。这是系统切换空间的动画，不是截图效果。
+
+复用构建号 64 原包。安装后显示 1.3.24（构建号 64），未再重新签名。本机尚未用真实全屏窗口确认问题已消失，对应 Issue 保持开放。[更新说明](docs/releases/1.3.26.md) · [安装与发布记录](docs/qa/fullscreen-space-1.3.24-64-install-20261016.md)。
+
 ## [1.3.25](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.25) — 2026-10-16
 
 - 框选时在指针左下方显示放大预览，蓝色十字标出落点。
