@@ -2,6 +2,11 @@ import Cocoa
 import Combine
 import SwiftUI
 
+/// Join another app's fullscreen Space. Window level alone cannot cover that Space.
+private let captureOverlayCollectionBehavior: NSWindow.CollectionBehavior = [
+    .canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications
+]
+
 class OverlayWindowController: NSWindowController {
     private var cursorPushed = false
     private let viewModel = OverlayViewModel()
@@ -56,7 +61,7 @@ class OverlayWindowController: NSWindowController {
         window.level = .screenSaver
         window.ignoresMouseEvents = false
         window.acceptsMouseMovedEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.collectionBehavior = captureOverlayCollectionBehavior
         
         self.init(window: window)
         
@@ -734,7 +739,7 @@ private final class LongCaptureGuideOverlay {
         // SCK excludes our application from the long-capture stream. Keep the
         // guide UI readable so remote desktops can display it to the user.
         window.sharingType = .readOnly
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.collectionBehavior = captureOverlayCollectionBehavior
         return window
     }
     
@@ -766,7 +771,7 @@ private final class LongCaptureGuideOverlay {
         // SCK excludes our application from the long-capture stream. Keep the
         // guide UI readable so remote desktops can display it to the user.
         window.sharingType = .readOnly
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.collectionBehavior = captureOverlayCollectionBehavior
         return window
     }
     
@@ -786,7 +791,7 @@ private final class LongCaptureGuideOverlay {
         // SCK excludes our application from the long-capture stream. Keep the
         // guide UI readable so remote desktops can display it to the user.
         window.sharingType = .readOnly
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.collectionBehavior = captureOverlayCollectionBehavior
         window.contentViewController = NSHostingController(
             rootView: LongCaptureFloatingStatusView(
                 viewModel: viewModel,

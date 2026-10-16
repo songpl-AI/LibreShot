@@ -4,6 +4,11 @@ import AppKit
 struct OverlayPermissionRegressionChecks {
     @MainActor
     static func main() async {
+        let behavior = OverlayWindowController().window?.collectionBehavior
+        precondition(behavior?.contains(.canJoinAllSpaces) == true
+                     && behavior?.contains(.fullScreenAuxiliary) == true
+                     && behavior?.contains(.canJoinAllApplications) == true,
+                     "The capture overlay must join another app's fullscreen space")
         for mode in [CaptureMode.normal, .longScreenshot] {
             let controller = OverlayWindowController()
             controller.previewImageLoader = { _ in throw CaptureServiceError.permissionDenied }
