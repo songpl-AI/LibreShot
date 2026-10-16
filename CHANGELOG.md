@@ -1,5 +1,13 @@
 # 更新日志 / Changelog
 
+## [1.3.25](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.25) — 2026-10-16
+
+- 框选时在指针左下方显示放大预览，蓝色十字标出落点。
+- 同时显示坐标和颜色。Shift 切换 RGB/HEX，⌘C 复制色值。完成截图后 ⌘C 仍复制截图。
+- 全屏虚线仍可在设置里开关。
+
+复用维护者确认放大镜通过的原包。安装后显示 1.3.24（构建号 63），未再重新签名。独立取色工具、贴图历史暂缓。全屏空间无法区域截图未复现，不声明修复。[更新说明](docs/releases/1.3.25.md) · [安装与发布记录](docs/qa/loupe-orientation-1.3.24-63-install-20261016.md)。
+
 ## [1.3.24](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.24) — 2026-10-16
 
 - 文字确定后按屏幕分辨率绘制，不再发虚。
