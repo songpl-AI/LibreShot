@@ -4,7 +4,7 @@
 
 免费开源的原生 macOS 截图与标注工具。
 
-[下载 v1.3.26](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.26) · [更新说明](docs/releases/1.3.26.md) · [更新日志](CHANGELOG.md)
+[下载 v1.3.27](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.27) · [更新说明](docs/releases/1.3.27.md) · [更新日志](CHANGELOG.md)
 
 ## 核心功能
 
