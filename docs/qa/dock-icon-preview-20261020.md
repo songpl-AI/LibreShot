@@ -12,6 +12,7 @@
 | 关闭开关 | 通过 | 取消勾选后立即回到 `UIElement`，Dock 列表中的 `LibreShot Preview` 消失；`showInDock = 0` |
 | 重启保持 | 通过 | 开启后终止进程并重新启动，仍为 `Foreground`，Dock 图标仍在；设置为 `0` 时重启为 `UIElement` |
 | 设置窗口 | 通过 | 关闭开关时“偏好设置”窗口保持打开，可继续操作 |
+| 用户实际试用 | 通过 | 2026-10-20 用户确认“看着没问题”；范围为显示/隐藏与重启保持 |
 | 保存/另存为面板的临时切换 | 待验 | 代码改为按用户偏好恢复（[AppActivationPolicy.swift](../../LibreShot/LibreShot/Core/AppActivationPolicy.swift)、[CaptureService.swift](../../LibreShot/LibreShot/CaptureService.swift)）；需实际触发保存面板才能取证 |
 | 实际截图与保存 | 未执行 | 本记录不是安装验收；Preview 未授权屏幕录制，未触发截图 |
 | 屏幕录制/输入监控 | 不适用 | 未替换安装副本，未改动系统授权 |
@@ -40,3 +41,7 @@ defaults read com.allensong.LibreShot.Preview showInDock
 ## 结论
 
 功能自测通过，Preview 可直接试用：从 `dist/LibreShot-Preview-1.3.28-dock-icon/LibreShot Preview.app` 启动，打开设置 > 基本设置 > 程序坞。正式交付前仍需换包并补安装验收。
+
+## 用户确认（2026-10-20）
+
+用户在实际桌面试用 Preview 后确认“看着没问题”。确认范围仅限 Dock 图标的显示/隐藏及重启保持；实际截图保存、安装副本授权仍未验收。正式交付前按 [安装与授权验收规范](../operations/install-and-permissions.md) 换包并补重启前后截图保存。
