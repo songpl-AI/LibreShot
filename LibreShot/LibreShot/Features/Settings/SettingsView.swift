@@ -260,6 +260,13 @@ struct GeneralSettingsView: View {
                         Text("右键始终显示截图菜单。")
                             .font(.caption).foregroundStyle(.secondary).padding(.leading, 88)
                         Divider()
+
+                        SettingsRow("程序坞:") {
+                            Toggle("在程序坞中显示图标", isOn: $settings.showInDock)
+                        }
+                        Text("关闭后只在菜单栏显示。开启后可用 ⌘Tab 切换，也可在程序坞右键退出。")
+                            .font(.caption).foregroundStyle(.secondary).padding(.leading, 88)
+                        Divider()
                         SettingsRow("框选辅助:") {
                             Toggle("显示十字辅助线", isOn: $settings.showSelectionGuides)
                         }

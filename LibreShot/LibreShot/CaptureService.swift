@@ -146,9 +146,8 @@ class CaptureService {
     }
 
     @MainActor private static func chooseSaveDirectory(suggested: URL) -> URL? {
-        let policy = NSApp.activationPolicy()
-        if policy == .accessory { NSApp.setActivationPolicy(.regular) }
-        defer { if policy == .accessory { NSApp.setActivationPolicy(policy) } }
+        let changedPolicy = AppActivationPolicy.beginForegroundPanel()
+        defer { AppActivationPolicy.endForegroundPanel(changedPolicy) }
         NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
@@ -183,19 +182,11 @@ class CaptureService {
     
     func saveImageWithFallback(_ image: NSImage) async throws -> URL {
         return try await MainActor.run {
-            let previousActivationPolicy = NSApp.activationPolicy()
-            let shouldRestoreAccessoryPolicy = previousActivationPolicy == .accessory
-            if shouldRestoreAccessoryPolicy {
-                NSApp.setActivationPolicy(.regular)
-            }
+            let changedPolicy = AppActivationPolicy.beginForegroundPanel()
             NSApp.unhide(nil)
             NSApp.activate(ignoringOtherApps: true)
             
-            defer {
-                if shouldRestoreAccessoryPolicy {
-                    NSApp.setActivationPolicy(.accessory)
-                }
-            }
+            defer { AppActivationPolicy.endForegroundPanel(changedPolicy) }
             
             let savePanel = NSSavePanel()
             savePanel.allowedContentTypes = [.png]

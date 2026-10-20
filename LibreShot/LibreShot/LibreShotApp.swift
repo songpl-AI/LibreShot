@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlayWindowController: OverlayWindowController?
     private var settingsWindowController: SettingsWindowController?
     private var hotkeyObserver: NSObjectProtocol?
+    private var activationPolicyObserver: NSObjectProtocol?
     private var keepAliveWindow: NSWindow?
 
     private var imageEditors: [ImageEditorWindowController] = []
@@ -74,10 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         MemoryTrace.mark("app_launched")
         #endif
-        NSApplication.shared.setActivationPolicy(.accessory)
+        AppActivationPolicy.apply()
         setupKeepAliveWindow()
         setupStatusItem()
         setupHotkeys()
+        setupActivationPolicyObserver()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -240,8 +242,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsService.shared.reportHotkeyRegistrationFailures(failures)
     }
     
+    private func setupActivationPolicyObserver() {
+        activationPolicyObserver = NotificationCenter.default.addObserver(
+            forName: .activationPolicyPreferenceDidChange,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in AppActivationPolicy.apply() }
+        }
+    }
+
     deinit {
         if let observer = hotkeyObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = activationPolicyObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }

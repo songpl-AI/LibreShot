@@ -4,6 +4,7 @@ import Combine
 
 extension Notification.Name {
     static let hotkeyDidChange = Notification.Name("com.allensong.MyScreenShots.hotkeyDidChange")
+    static let activationPolicyPreferenceDidChange = Notification.Name("com.allensong.MyScreenShots.activationPolicyPreferenceDidChange")
 }
 
 enum MenuBarLeftClickAction: String, CaseIterable, Identifiable {
@@ -102,6 +103,13 @@ class SettingsService: ObservableObject {
 
     @Published var menuBarLeftClickAction: MenuBarLeftClickAction {
         didSet { defaults.set(menuBarLeftClickAction.rawValue, forKey: "menuBarLeftClickAction") }
+    }
+
+    @Published var showInDock: Bool {
+        didSet {
+            defaults.set(showInDock, forKey: "showInDock")
+            NotificationCenter.default.post(name: .activationPolicyPreferenceDidChange, object: nil)
+        }
     }
 
     @Published var showSelectionGuides: Bool {
@@ -212,6 +220,7 @@ class SettingsService: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.menuBarLeftClickAction = MenuBarLeftClickAction(rawValue: defaults.string(forKey: "menuBarLeftClickAction") ?? "") ?? .selection
+        self.showInDock = defaults.bool(forKey: "showInDock")
         self.showSelectionGuides = defaults.object(forKey: "showSelectionGuides") as? Bool ?? true
         self.toolbarAlignment = ToolbarAlignment(rawValue: defaults.string(forKey: "toolbarAlignment") ?? "") ?? .center
         self.annotationToolStyles = defaults.data(forKey: "annotationToolStyles")

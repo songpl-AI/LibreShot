@@ -28,6 +28,7 @@ xcrun swiftc "${task_flags[@]}" \
   LibreShot/LibreShot/Core/Storage/ToolbarConfiguration.swift \
   LibreShot/LibreShot/Core/Storage/EditorShortcuts.swift \
   LibreShot/LibreShot/Core/Storage/SettingsService.swift \
+  LibreShot/LibreShot/Core/AppActivationPolicy.swift \
   LibreShot/LibreShot/Core/Hotkey/HotkeyService.swift \
   LibreShot/LibreShot/Features/Settings/SettingsView.swift \
   LibreShot/LibreShot/Features/Settings/SettingsWindowController.swift \
