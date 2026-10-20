@@ -191,7 +191,7 @@ final class ImageTranslationModel: ObservableObject {
         renderTask = nil
         renderRevision += 1
         isRendering = true
-        progress = "正在排版…"
+        progress = "正在生成译文…"
     }
 
     func render(attachmentID: UUID? = nil) async {
@@ -230,12 +230,12 @@ final class ImageTranslationModel: ObservableObject {
             overflowIDs = result.overflowIDs
             complexBackgroundIDs = result.complexBackgroundIDs
             errorMessage = nil
-            progress = result.overflowIDs.isEmpty ? "排版完成" : "\(result.overflowIDs.count) 个区域译文过长或为空，请修改译文或取消勾选。"
+            progress = result.overflowIDs.isEmpty ? "翻译完成，点选区可切换原文/译文" : "\(result.overflowIDs.count) 个区域译文过长或为空，请修改译文或取消勾选。"
         } catch is CancellationError {
             if !isDismissed, revision == renderRevision, renderInvocationID == invocationID {
                 translatedImage = nil
                 suspendedOperation = .render
-                progress = "已暂停排版"
+                progress = "已暂停生成译文"
             }
         } catch {
             guard revision == renderRevision, renderInvocationID == invocationID else { return }
@@ -362,12 +362,20 @@ struct InlineImageTranslationView: View {
         let sessionID = self.sessionID
         VStack(spacing: 4) {
             HStack(spacing: 6) {
+                Text("译为")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
                 Picker("目标语言", selection: $model.targetLanguageID) {
                     Text("简体中文").tag("zh-Hans")
                     Text("English").tag("en")
                     Text("日本語").tag("ja")
                     Text("한국어").tag("ko")
-                }.labelsHidden().frame(width: 84).disabled(model.isBusy)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 104)
+                .disabled(model.isBusy)
+                .help("选择译文语言")
                 Picker("图像", selection: $viewModel.showsOriginalTranslation) {
                     Text("原文").tag(true)
                     Text("译文").tag(false)
@@ -380,17 +388,18 @@ struct InlineImageTranslationView: View {
                 } label: {
                     Image(systemName: model.isBusy ? "stop.circle" : "arrow.clockwise")
                         .frame(width: 22, height: 22)
-                }.help(model.isBusy ? "取消翻译" : "重新翻译")
+                }.buttonStyle(.plain)
+                    .help(model.isBusy ? "取消翻译" : "重新翻译")
                     .accessibilityLabel(model.isBusy ? "取消翻译" : "重新翻译")
                 Button { showsCorrections.toggle() } label: {
                     Image(systemName: "pencil.line").frame(width: 22, height: 22)
-                }.help("校正译文").accessibilityLabel("校正译文")
+                }.buttonStyle(.plain)
+                    .help("校正译文").accessibilityLabel("校正译文")
                     .popover(isPresented: $showsCorrections) {
                         ImageTranslationCorrections(model: model).frame(width: 310, height: 360)
                     }
             }
             .frame(height: 26)
-            .buttonStyle(.plain)
             HStack(spacing: 6) {
                 if model.isBusy { ProgressView().controlSize(.mini) }
                 Text(model.errorMessage ?? model.progress)
