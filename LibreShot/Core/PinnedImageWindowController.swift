@@ -31,8 +31,22 @@ final class PinnedImagePresentation: ObservableObject {
     @Published var image: NSImage
     @Published var opacity: Double = 1
     @Published var editor: OverlayViewModel?
+    /// Percent of the source image's logical size, shown briefly during zoom.
+    @Published private(set) var zoomPercent: Int?
+    private var zoomHideWorkItem: DispatchWorkItem?
+
     init(image: NSImage) { self.image = image }
     func setOpacity(_ value: Double) { opacity = min(1, max(0.1, value)) }
+
+    func showZoom(percent: Int, hideAfter delay: TimeInterval = 0.9) {
+        zoomPercent = percent
+        zoomHideWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.zoomPercent = nil }
+        zoomHideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    deinit { zoomHideWorkItem?.cancel() }
 }
 
 final class PinnedImageWindow: OverlayWindow {
@@ -339,6 +353,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         let origin = CGPoint(x: snap(current.minX + anchor.x * (1 - size.width / current.width)),
                              y: snap(current.minY + anchor.y * (1 - size.height / current.height)))
         window.setFrame(CGRect(origin: origin, size: size), display: true, animate: false)
+        presentation.showZoom(percent: Int((size.width / image.size.width * 100).rounded()))
         positionEditorPanel()
     }
 
@@ -665,6 +680,24 @@ struct PinnedImageView: View {
             Button("透明度: 50%") { presentation.setOpacity(0.5) }
             Button("透明度: 30%") { presentation.setOpacity(0.3) }
         }
+        .overlay(alignment: .top) {
+            if displayMode == .pinned, let zoomPercent = presentation.zoomPercent {
+                Text("\(zoomPercent)%")
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                    .fixedSize()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.regularMaterial, in: Capsule(style: .continuous))
+                    .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.55), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
+                    .padding(.top, 10)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("当前缩放 \(zoomPercent)%")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: presentation.zoomPercent)
 
     }
 }
