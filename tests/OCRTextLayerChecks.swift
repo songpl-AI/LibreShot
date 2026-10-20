@@ -67,6 +67,12 @@ import SwiftUI
         chinese.applyCharacterSelection(regionID: 9, range: NSRange(location: 4, length: 4), extending: false)
         precondition(chinese.selectedText == "设计评审")
 
+        precondition(model.listText == model.text)
+        model.listText = "Edited OCR text"
+        precondition(model.hasEditedListText)
+        model.resetListText()
+        precondition(!model.hasEditedListText && model.listText == model.text)
+
         var closed = false
         model.onClose = { closed = true }
         model.close()

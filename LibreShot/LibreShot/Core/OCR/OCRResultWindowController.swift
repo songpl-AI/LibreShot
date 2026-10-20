@@ -44,23 +44,48 @@ class OCRResultWindowController: NSWindowController, NSWindowDelegate {
 }
 
 struct OCRResultView: View {
-    let text: String
+    @Binding var text: String
+    private let originalText: String?
+    private let showsEditingHint: Bool
+    private let copyShortcut: Bool
     @State private var translatedText = ""
     @State private var translateError: String?
 
+    init(text: String) {
+        _text = .constant(text)
+        originalText = nil
+        showsEditingHint = false
+        copyShortcut = true
+    }
+
+    init(text: Binding<String>, originalText: String? = nil,
+         showsEditingHint: Bool = false, copyShortcut: Bool = true) {
+        _text = text
+        self.originalText = originalText
+        self.showsEditingHint = showsEditingHint
+        self.copyShortcut = copyShortcut
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            TextEditor(text: .constant(text))
+            TextEditor(text: $text)
                 .font(.system(.body, design: .monospaced))
                 .padding(8)
                 .frame(minHeight: 140)
             Divider()
             VStack(spacing: 10) {
-                HStack {
+                HStack(spacing: 10) {
                     Text("\(text.count) 字符").foregroundStyle(.secondary).font(.caption)
+                    if showsEditingHint {
+                        Text("编辑仅影响此处的复制/翻译")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    OCRCopyButton(text: text, title: "复制文本")
-                        .keyboardShortcut("c", modifiers: .command)
+                    if let originalText, text != originalText {
+                        Button("恢复原文") { text = originalText }
+                            .buttonStyle(.borderless)
+                    }
+                    copyButton
                 }
                 if #available(macOS 26.0, *) {
                     HStack {
@@ -92,6 +117,15 @@ struct OCRResultView: View {
             }
         }
         .frame(minWidth: 480, minHeight: 360)
+    }
+
+    @ViewBuilder private var copyButton: some View {
+        if copyShortcut {
+            OCRCopyButton(text: text, title: "复制文本")
+                .keyboardShortcut("c", modifiers: .command)
+        } else {
+            OCRCopyButton(text: text, title: "复制文本")
+        }
     }
 }
 
@@ -258,6 +292,7 @@ final class OCRTextLayerModel: ObservableObject {
     let image: NSImage
     let regions: [OCRTextRegion]
     let text: String
+    @Published var listText: String
     @Published private(set) var selectedRanges: [Int: NSRange] = [:]
     @Published var mode: OCRTextLayerMode = .layer
     @Published private(set) var copyFeedback: String?
@@ -267,8 +302,13 @@ final class OCRTextLayerModel: ObservableObject {
     init(image: NSImage, regions: [OCRTextRegion], text: String) {
         self.image = image
         self.regions = OCRTextRegion.readingOrder(from: regions)
-        self.text = text.isEmpty ? self.regions.map(\.text).joined(separator: "\n") : text
+        let original = text.isEmpty ? self.regions.map(\.text).joined(separator: "\n") : text
+        self.text = original
+        self.listText = original
     }
+
+    var hasEditedListText: Bool { listText != text }
+    func resetListText() { listText = text }
 
     var selectedIDs: Set<Int> { Set(selectedRanges.keys) }
     var selectedLineCount: Int { selectedRanges.count }
@@ -484,7 +524,7 @@ private struct OCRTextLayerWorkspaceView: View {
             if model.mode == .layer {
                 OCRTextLayerView(model: model)
             } else {
-                OCRResultView(text: model.text)
+                OCRResultView(text: $model.listText, originalText: model.text, showsEditingHint: true, copyShortcut: false)
             }
         }
     }
