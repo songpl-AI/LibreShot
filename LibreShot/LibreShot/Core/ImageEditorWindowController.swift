@@ -213,7 +213,7 @@ struct ImageEditorView: View {
                 EditorToolbarView(viewModel: model, layout: layout)
                     .zIndex(1)
                 if model.propertyTool != nil {
-                    ToolPropertyBarView(viewModel: model, availableWidth: geometry.size.width - 24)
+                    ToolPropertyAccessoriesView(viewModel: model, availableWidth: geometry.size.width - 24)
                         .padding(.top, 8)
                 }
                 if #available(macOS 26.0, *), let translation = model.imageTranslationModel {
