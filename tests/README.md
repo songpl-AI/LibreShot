@@ -9,7 +9,7 @@
 
 ## 指针拖动与取色（2026-10-20）
 
-- `bash tests/run-annotation-pointer-drag-checks.sh`：指针模式下，未选中的矩形/椭圆内部或边框、箭头和矩形马赛克/模糊可按下即拖动，无需先点选；空白处仍移动整个截图；文字/序号保留点击编辑，画笔与效果笔刷不拦截。
+- `bash tests/run-annotation-pointer-drag-checks.sh`：选择／移动模式下，未选中的矩形/椭圆内部或边框可按下即拖动；矩形等绘图工具激活时，手型边框也直接移动原形状，内部仍可新建；空白处仍移动整个截图；文字/序号保留点击编辑，画笔与效果笔刷不拦截。
 - `bash tests/run-selection-loupe-checks.sh`：放大镜仍以指针下原始像素为准，并新增 Display P3 截图按 sRGB 转换后再给出 HEX/RGB，避免宽色域屏幕读数与常用取色器不一致。
 
 ## 原位翻译与紧凑编辑器
