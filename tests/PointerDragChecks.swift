@@ -55,6 +55,32 @@ import SwiftUI
         precondition(borderModel.annotations[0].startPoint == CGPoint(x: 120, y: 112),
                      "Rectangle border drags on the first gesture")
 
+        // The reported bug: draw a rectangle, clear selection, then drag its border
+        // while the rectangle tool is still active. It must move, not draw a new one.
+        let drawnModel = model([])
+        drawnModel.selectedTool = .rectangle
+        drawnModel.handleDrawingDrag(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 300, y: 220))
+        drawnModel.endDrawing()
+        precondition(drawnModel.annotations.count == 1)
+        drawnModel.selectedAnnotationID = nil
+        precondition(drawnModel.handleSelectedShapeDrag(from: borderStart,
+                                                       to: CGPoint(x: 180, y: 112), within: bounds),
+                     "An active drawing tool still grabs the border instead of drawing")
+        precondition(drawnModel.annotations.count == 1, "Border drag does not create a second rectangle")
+        precondition(drawnModel.annotations[0].startPoint == CGPoint(x: 120, y: 112),
+                     "Border drag with the rectangle tool moves the existing shape")
+
+        // Interiors stay available for drawing while a tool is active.
+        let insideDraw = model([rect])
+        insideDraw.selectedTool = .rectangle
+        precondition(!insideDraw.handleSelectedShapeDrag(from: CGPoint(x: 200, y: 160),
+                                                         to: CGPoint(x: 250, y: 210), within: bounds),
+                     "Shape drag leaves a rectangle interior to the active drawing tool")
+        insideDraw.handleDrawingDrag(from: CGPoint(x: 200, y: 160), to: CGPoint(x: 250, y: 210))
+        insideDraw.endDrawing()
+        precondition(insideDraw.annotations.count == 2,
+                     "A drawing tool can still start a new shape inside an existing one")
+
         // Ellipse interior counts as a grab target, matching the hand cursor.
         var ellipse = Annotation(type: .ellipse, color: .blue)
         ellipse.startPoint = CGPoint(x: 100, y: 100)

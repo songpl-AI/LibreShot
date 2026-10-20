@@ -793,10 +793,11 @@ class OverlayViewModel: ObservableObject {
         if shapeDrag == nil {
             guard state == .editing, !isEditingText, !isMovingSelection, !isResizingText,
                   activeSelectionHandle == nil else { return false }
-            // Pointer mode grabs the shape under the press immediately; requiring a
-            // separate click first makes the hand cursor dishonest. Text and numbers
-            // keep their click-to-edit path and are not auto-selected here.
-            if selectedTool == nil, let id = shapeDragCandidate(at: start) {
+            // The hand cursor promises a move, so grab the annotation under the
+            // press on the first gesture. With a drawing tool active only its
+            // visible stroke counts; interiors stay available for drawing.
+            if !isPressOnSelectedShapeControl(start),
+               let id = pressDragCandidate(at: start), id != selectedAnnotationID {
                 selectExistingAnnotation(id: id)
             }
             guard let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
@@ -1344,32 +1345,52 @@ class OverlayViewModel: ObservableObject {
         annotation.containsSelectionPoint(point)
     }
 
-    /// Pointer-mode grab target. Rectangle and ellipse interiors count, matching
-    /// the hand cursor; text/number and effect-brush strokes keep their own click
-    /// behavior so double-click editing and painting are not intercepted.
-    private func shapeDragCandidate(at point: CGPoint) -> UUID? {
+    /// Annotation the hand cursor is pointing at. Visible strokes are grabbable
+    /// with any tool; rectangle and ellipse interiors only in pointer mode so a
+    /// drawing tool can still start a new shape inside an existing one. Text,
+    /// numbers and effect brushes keep their own click/paint behavior.
+    private func pressDragCandidate(at point: CGPoint) -> UUID? {
         guard state == .editing, selectionRect.contains(point) else { return nil }
-        for annotation in annotations.reversed() where annotation.type != .pen {
-            if annotation.type == .text || annotation.type == .number || annotation.isEffectBrush {
-                if annotation.containsSelectionPoint(point) { return nil }
-                continue
-            }
-            switch annotation.type {
-            case .rectangle:
+        if let hit = hitTest(at: point) {
+            guard let annotation = annotations.first(where: { $0.id == hit }),
+                  !annotation.isEffectBrush,
+                  annotation.type != .text, annotation.type != .number else { return nil }
+            return hit
+        }
+        guard selectedTool == nil else { return nil }
+        return pointerInteriorCandidate(at: point)
+    }
+
+    private func pointerInteriorCandidate(at point: CGPoint) -> UUID? {
+        for annotation in annotations.reversed() where annotation.type == .rectangle || annotation.type == .ellipse {
+            if annotation.type == .rectangle {
                 if annotation.rectanglePath.contains(point) { return annotation.id }
-            case .ellipse:
+            } else {
                 let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
                 guard !rect.isEmpty else { continue }
                 let path = CGMutablePath()
                 path.addEllipse(in: rect)
                 if path.contains(point) { return annotation.id }
-            case .arrow, .mosaic, .blur:
-                if annotation.containsSelectionPoint(point) { return annotation.id }
-            case .pen, .text, .number:
-                break
             }
         }
         return nil
+    }
+
+    /// Resize handles and arrow endpoints of the selected shape outrank a new
+    /// grab target, so a press near them still resizes or moves the endpoint.
+    private func isPressOnSelectedShapeControl(_ point: CGPoint) -> Bool {
+        guard let selected = annotations.first(where: { $0.id == selectedAnnotationID }) else { return false }
+        if let rect = selectedShapeRect {
+            if SelectionHandle.allCases.contains(where: { handle in
+                let position = handle.position(in: rect)
+                return abs(point.x - position.x) <= 8 && abs(point.y - position.y) <= 8
+            }) { return true }
+        }
+        if selected.type == .arrow,
+           [selected.startPoint, selected.endPoint].contains(where: { hypot(point.x - $0.x, point.y - $0.y) <= 8 }) {
+            return true
+        }
+        return false
     }
 
     private func clampPoint(_ point: CGPoint, to rect: CGRect) -> CGPoint {
