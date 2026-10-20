@@ -51,12 +51,12 @@ Start scrolling capture from the menu bar or capture toolbar. Select a region, t
 
 OCR keeps the screenshot visible and marks the recognized lines: click to select one line, drag across text to select arbitrary characters or phrases, including across lines (trailing start line, full middle lines, leading end line); `⌘A` to select all, `⌘C` to copy; with nothing selected, `⌘C` copies all text, and Return also copies. Double-click a line to copy it. Use the Layer/List switch to open the full text window for review or translation; the List text is editable, affects only its own copy/translation, and can be restored to the OCR original. Translation requires macOS 26+. Missing language packs prompt a download; installed languages work offline. Retry after cancelling; approved downloads may continue in the background. Manage packs in System Settings → General → Language & Region → Translation Languages.
 
-Translate in Place puts translations at the original text positions. Edit individual translations, switch original/translated views, copy, save or continue annotating. Shorten or exclude overflowing regions before export. Complex textures, tables and unusual fonts need review; seamless background reconstruction is not guaranteed.
+Translate in Place puts translations at the original text positions. Its controls live in the property bar: choose the target language, switch original/translated views, retranslate, correct individual translations, copy, save or keep annotating. Press the Translate toolbar icon again to close the translation and keep the original image. Shorten or exclude overflowing regions before export. Complex textures, tables and unusual fonts need review; seamless background reconstruction is not guaranteed.
 
 Screenshots, OCR and translation text are processed locally. Initial language-pack downloads and update checks need internet access.
 
 ## Settings
 
-Use the menu bar or `⌘,` while LibreShot is active. Configure save folder, Auto Save, launch at login, capture sound, capture corners, shortcuts, double-Option, double-click completion and Space behavior.
+Use the menu bar or `⌘,` while LibreShot is active. Configure save folder, Auto Save, launch at login, Dock icon, capture sound, capture corners, shortcuts, double-Option, double-click completion and Space behavior.
 
 Toolbar settings control visibility, order, editor shortcuts, the default tool and left/center/right alignment. Hover a property slider to see its value and adjust it with the wheel. Complete and Cancel always remain visible. Changes apply to the next capture. Hiding the default tool falls back to Select/Move. Restore Defaults resets visibility, order and the default tool.
