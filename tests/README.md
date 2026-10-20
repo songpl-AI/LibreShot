@@ -7,6 +7,11 @@
 
 `bash tests/run-overlay-permission-checks.sh`：用真实遮罩窗口和可控预览失败复现 Issue #7 的“授权弹窗被灰色遮罩盖住”问题，检查失败后的遮罩关闭、错误回传，以及重复触发时过期预览不会重新显示遮罩。
 
+## 悬浮反馈与取色（2026-10-20）
+
+- `bash tests/run-annotation-hover-checks.sh`：悬浮只标记最上层可编辑标注，选中、文字输入、画笔和效果笔刷都不会重复或误报，且不改变标注与选择状态。
+- `bash tests/run-selection-loupe-checks.sh`：放大镜仍以指针下原始像素为准，并新增 Display P3 截图按 sRGB 转换后再给出 HEX/RGB，避免宽色域屏幕读数与常用取色器不一致。
+
 ## 原位翻译与紧凑编辑器
 
 - `bash tests/run-visual-checks.sh`：验证宽屏单排与窄窗口均衡换行、长图适宽/全图布局、译文主色、原选区会话及 Retina 导出坐标。

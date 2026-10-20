@@ -694,9 +694,35 @@ class OverlayViewModel: ObservableObject {
     @Published var selectedAnnotationID: UUID? {
         willSet { if newValue != selectedAnnotationID { endToolPropertyAdjustment() } }
     }
-    
+
+    /// Topmost editable annotation under the pointer, used only for hover feedback.
+    /// It is independent of selection and never changes annotation data.
+    @Published private(set) var hoveredAnnotationID: UUID?
+
     func annotationID(at point: CGPoint) -> UUID? {
         hitTest(at: point)
+    }
+
+    /// Updates the hover outline without taking part in drag or click routing.
+    /// Pen ink and effect-brush strokes keep their existing affordances and are skipped.
+    func updateHover(at point: CGPoint?) {
+        guard let point, state == .editing, !isEditingText, !hasDrawingGesture,
+              activeSelectionHandle == nil, !isTransformingShape, !isMovingSelection,
+              !isResizingText else {
+            clearHover()
+            return
+        }
+        let id = hitTest(at: point).flatMap { candidate -> UUID? in
+            guard let annotation = annotations.first(where: { $0.id == candidate }),
+                  !annotation.isEffectBrush else { return nil }
+            return candidate
+        }
+        let next = id == selectedAnnotationID ? nil : id
+        if next != hoveredAnnotationID { hoveredAnnotationID = next }
+    }
+
+    func clearHover() {
+        if hoveredAnnotationID != nil { hoveredAnnotationID = nil }
     }
     
     private struct AnnotationPress {
@@ -1084,6 +1110,7 @@ class OverlayViewModel: ObservableObject {
         currentAnnotation = nil
         selectedTool = nil
         selectedAnnotationID = nil
+        hoveredAnnotationID = nil
         cancelTextInput()
         nextNumber = 1
         lastNumberID = nil

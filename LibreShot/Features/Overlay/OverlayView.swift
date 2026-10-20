@@ -63,6 +63,16 @@ struct OverlayView: View {
                                 continue
                             }
                             drawAnnotation(context: drawingContext, annotation: annotation, canvasSize: size)
+                            if annotation.id == viewModel.hoveredAnnotationID,
+                               annotation.id != viewModel.selectedAnnotationID {
+                                // A dark rim plus a white core stays visible on both light
+                                // and dark content without changing the annotation's ink.
+                                let hoverRect = annotation.selectionBounds.insetBy(dx: -4, dy: -4)
+                                let radius: CGFloat = [.text, .number].contains(annotation.type) ? 5 : 3
+                                let hoverPath = Path(roundedRect: hoverRect, cornerRadius: radius)
+                                drawingContext.stroke(hoverPath, with: .color(.black.opacity(0.28)), lineWidth: 3)
+                                drawingContext.stroke(hoverPath, with: .color(.white.opacity(0.9)), lineWidth: 1.25)
+                            }
                             // Highlight selected annotation
                             if annotation.id == viewModel.selectedAnnotationID {
                                 // Draw selection halo/border
@@ -229,15 +239,23 @@ struct OverlayView: View {
                 switch phase {
                 case .active(let point):
                     if viewModel.state == .idle || viewModel.state == .selecting { guidePoint = point }
-                    if editorToolbarFrame(screenSize: geometry.size).contains(point) { NSCursor.arrow.set() }
+                    let overToolbar = editorToolbarFrame(screenSize: geometry.size).contains(point)
+                    viewModel.updateHover(at: overToolbar ? nil : point)
+                    if overToolbar { NSCursor.arrow.set() }
                     else if onBlankCanvasDrag != nil && viewModel.canMoveBlankCanvas(at: point) { NSCursor.openHand.set() }
                     else { OverlayPointerCursor.cursor(for: viewModel.cursorStyle(at: point)).set() }
-                case .ended: guidePoint = nil; NSCursor.arrow.set()
+                case .ended:
+                    guidePoint = nil
+                    viewModel.updateHover(at: nil)
+                    NSCursor.arrow.set()
                 }
             }
             .onChange(of: guidePoint) { viewModel.updateSelectionLoupe(at: $0) }
             .onChange(of: viewModel.previewImage) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
-            .onChange(of: viewModel.state) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
+            .onChange(of: viewModel.state) { _ in
+                viewModel.updateSelectionLoupe(at: guidePoint)
+                viewModel.clearHover()
+            }
             .coordinateSpace(name: "overlay")
             .contentShape(Rectangle())
             .gesture(
@@ -652,11 +670,14 @@ struct SelectionGuidesView: View {
                 lines.addLine(to: CGPoint(x: point.x, y: size.height))
             }
             let stroke = StrokeStyle(lineWidth: 1, lineCap: .butt, dash: [4, 4])
-            // A faint offset shadow keeps a single fine line readable on light content.
-            var shadow = context
-            shadow.translateBy(x: 0.5, y: 0.5)
-            shadow.stroke(lines, with: .color(.black.opacity(0.2)), style: stroke)
-            context.stroke(lines, with: .color(.white.opacity(0.65)), style: stroke)
+            // Blue reads as an accent without competing with the loupe; the white halo
+            // keeps it visible over dark content, while the blue core survives light content.
+            var halo = context
+            halo.translateBy(x: 0.5, y: 0.5)
+            halo.stroke(lines, with: .color(.white.opacity(0.55)),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .butt, dash: [4, 4]))
+            context.stroke(lines, with: .color(Color(red: 0.25, green: 0.52, blue: 1).opacity(0.95)),
+                           style: stroke)
         }
     }
 }

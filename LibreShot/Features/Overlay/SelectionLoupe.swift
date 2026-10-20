@@ -54,9 +54,12 @@ enum SelectionLoupeSampler {
         let request = CGRect(x: centerX - radius, y: centerY - radius, width: side, height: side)
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
         let visible = request.intersection(bounds).integral
+        // Readouts are always sRGB so HEX/RGB values match common pickers even on a
+        // Display P3 screen. Device RGB is only a fallback and is not the target space.
+        let readoutSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         guard visible.width >= 1, visible.height >= 1, let crop = image.cropping(to: visible),
               let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
-                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      space: readoutSpace,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
               let data = context.data else { return pixels }
         let destX = visible.minX - request.minX
@@ -119,7 +122,7 @@ struct SelectionLoupeView: View {
                         .fill(Color(red: Double(reading.red) / 255, green: Double(reading.green) / 255, blue: Double(reading.blue) / 255))
                         .frame(width: 10, height: 10)
                         .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.white.opacity(0.85), lineWidth: 0.5))
-                    Text(showsRGB ? reading.rgbText : reading.hexText)
+                    Text(showsRGB ? "sRGB \(reading.rgbText)" : "sRGB \(reading.hexText)")
                 }
                 Text(copied ? "已复制" : "按 ⌘ + C 复制色值")
                 Text("按 Shift 切换 RGB/HEX")
@@ -133,6 +136,6 @@ struct SelectionLoupeView: View {
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("selection-loupe")
-        .accessibilityLabel("\(reading.x),\(reading.y) \(showsRGB ? reading.rgbText : reading.hexText)")
+        .accessibilityLabel("\(reading.x),\(reading.y) 原图取色 \(showsRGB ? reading.rgbText : reading.hexText) sRGB")
     }
 }

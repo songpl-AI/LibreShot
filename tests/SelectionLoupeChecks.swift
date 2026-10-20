@@ -22,6 +22,27 @@ import SwiftUI
         precondition(edge.grid[0] == SIMD3<UInt8>(0, 0, 0), "Pixels outside the image stay black")
         precondition(edge.red == 10, "The clamped edge pixel is still sampled")
 
+        // A Display P3 screenshot must report the sRGB equivalent rather than raw P3 components.
+        let p3 = CGColorSpace(name: CGColorSpace.displayP3)!
+        let p3Context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: p3, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        p3Context.setFillColor(CGColor(colorSpace: p3, components: [0.35, 0.55, 0.8, 1])!)
+        p3Context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        let p3Image = p3Context.makeImage()!
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+        let reference = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: srgb, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        reference.interpolationQuality = .none
+        reference.draw(p3Image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let expected = reference.data!.bindMemory(to: UInt8.self, capacity: 4)
+        let p3Reading = SelectionLoupeSampler.sample(image: p3Image, scale: 1, point: .zero)!
+        precondition(p3Reading.red == Int(expected[0]) &&
+                     p3Reading.green == Int(expected[1]) &&
+                     p3Reading.blue == Int(expected[2]),
+                     "P3 pixels are converted to the sRGB readout, not raw display components")
+        precondition(p3Reading.hexText == String(format: "HEX:#%02X%02X%02X", expected[0], expected[1], expected[2]),
+                     "P3 readout keeps HEX and RGB in the same sRGB space")
+
         let bounds = CGSize(width: 800, height: 500)
         let size = SelectionLoupeSampler.stackSize
         let lowerLeft = SelectionLoupeSampler.origin(anchor: CGPoint(x: 500, y: 120), bounds: bounds)
@@ -45,7 +66,7 @@ import SwiftUI
                                      windowNumber: 0, context: nil, characters: "c", charactersIgnoringModifiers: "c",
                                      isARepeat: false, keyCode: 8)!
         precondition(!model.performSelectionLoupeShortcut(copy), "Finished editing keeps Command-C for the screenshot")
-        print("PASS: selection loupe samples the pointer pixel, stays below-left, and copies HEX or RGB")
+        print("PASS: selection loupe samples the pointer pixel in sRGB, stays below-left, and copies HEX or RGB")
     }
 
     static func solidImage(width: Int, height: Int, _ pixel: (Int, Int) -> (UInt8, UInt8, UInt8)) -> CGImage {
