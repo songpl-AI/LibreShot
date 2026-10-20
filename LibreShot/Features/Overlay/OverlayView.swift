@@ -165,6 +165,17 @@ struct OverlayView: View {
                         .position(x: geometry.size.width / 2, y: 30)
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("color-sampling-hint")
+                } else if let feedback = viewModel.colorSamplingFeedback {
+                    Text("已取色 \(feedback)")
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(.regularMaterial, in: Capsule(style: .continuous))
+                        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.55), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
+                        .position(x: geometry.size.width / 2, y: 30)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("color-sampling-feedback")
                 }
 
                 // Layer 4: Toolbar (Only in Editing mode)
@@ -414,7 +425,7 @@ struct OverlayView: View {
     }
     
     private func editorAccessorySize(screenSize: CGSize) -> CGSize {
-        let properties = ToolPropertyAccessoriesView.size(for: viewModel, availableWidth: screenSize.width - 20)
+        let properties = ToolPropertyBarView.size(for: viewModel, availableWidth: screenSize.width - 20)
         let translationVisible = viewModel.translationSource != nil && viewModel.showsTranslationControls
         return CGSize(width: max(properties.width, translationVisible ? min(430, screenSize.width - 20) : 0),
                       height: (properties.height > 0 ? properties.height + 8 : 0) + (translationVisible ? 78 : 0))
@@ -430,7 +441,7 @@ struct OverlayView: View {
     @ViewBuilder private func editorAccessories(screenSize: CGSize) -> some View {
         VStack(spacing: 0) {
             if viewModel.propertyTool != nil {
-                ToolPropertyAccessoriesView(viewModel: viewModel, availableWidth: screenSize.width - 20)
+                ToolPropertyBarView(viewModel: viewModel, availableWidth: screenSize.width - 20)
                     .padding(.vertical, 4)
             }
             if #available(macOS 26.0, *), let model = viewModel.imageTranslationModel {
@@ -540,6 +551,7 @@ private final class CaptureConfirmationObserver: NSView {
     private var monitor: Any?
     private var consumesMouseUp = false
     private var confirmationPoint: CGPoint?
+    private var samplingPoint: CGPoint?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -553,11 +565,24 @@ private final class CaptureConfirmationObserver: NSView {
         }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] event in
             guard let self, event.window === self.window, let model = self.model else { return event }
+            let point = self.convert(event.locationInWindow, from: nil)
+            // The eyedropper owns the next canvas click. The property bar stays
+            // clickable so a swatch or a second eyedropper click can cancel it.
+            if model.isSamplingColor, self.bounds.contains(point), self.acceptsPoint?(point) == true {
+                if event.type == .leftMouseDown {
+                    self.samplingPoint = point
+                } else if event.type == .leftMouseUp {
+                    if let start = self.samplingPoint, hypot(point.x - start.x, point.y - start.y) < 8 {
+                        _ = model.sampleColor(at: point)
+                    }
+                    self.samplingPoint = nil
+                }
+                return nil
+            }
             if self.consumesMouseUp {
                 if event.type == .leftMouseUp { self.consumesMouseUp = false }
                 return nil
             }
-            let point = self.convert(event.locationInWindow, from: nil)
             if event.type == .leftMouseDown {
                 guard self.bounds.contains(point), self.acceptsPoint?(point) == true else {
                     self.confirmationPoint = nil

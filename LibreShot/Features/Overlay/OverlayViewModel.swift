@@ -92,15 +92,15 @@ class OverlayViewModel: ObservableObject {
         didSet {
             if selectedTool != oldValue {
                 AnnotationColorPanel.close()
-                toolPropertyAdvancedExpanded = false
                 colorSamplingRole = nil
             }
             if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) }
         }
     }
     @Published var toolPropertyDetailsExpanded = false
-    @Published var toolPropertyAdvancedExpanded = false
     @Published private(set) var colorSamplingRole: NumberColorRole?
+    @Published private(set) var colorSamplingFeedback: String?
+    private var colorSamplingFeedbackToken = UUID()
     var isSamplingColor: Bool { colorSamplingRole != nil }
     @Published private(set) var toolPropertyInputCancellation = UUID()
     @Published private var toolPropertyInputID: UUID?
@@ -288,9 +288,6 @@ class OverlayViewModel: ObservableObject {
         if isEditingNumber, [36, 76].contains(event.keyCode),
            event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
             commitTextInput(); return true
-        }
-        if toolPropertyAdvancedExpanded, event.keyCode == 53 {
-            toolPropertyAdvancedExpanded = false; return true
         }
         let editing = isEditingText || textResponder
         let modifiers = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
@@ -708,7 +705,6 @@ class OverlayViewModel: ObservableObject {
         willSet {
             if newValue != selectedAnnotationID {
                 endToolPropertyAdjustment()
-                toolPropertyAdvancedExpanded = false
                 colorSamplingRole = nil
             }
         }
@@ -1099,8 +1095,8 @@ class OverlayViewModel: ObservableObject {
         toolPropertyInputID = nil
         endOverlayDrag()
         toolPropertyDetailsExpanded = false
-        toolPropertyAdvancedExpanded = false
         colorSamplingRole = nil
+        colorSamplingFeedback = nil
         confirmationClick = nil
         clearImageTranslation()
         endSelectedShapeDrag()
@@ -1603,6 +1599,7 @@ class OverlayViewModel: ObservableObject {
     func beginColorSampling(role: NumberColorRole) {
         guard state == .editing, propertyTool != nil, !isEditingText else { return }
         colorSamplingRole = colorSamplingRole == role ? nil : role
+        if colorSamplingRole == nil { colorSamplingFeedback = nil }
     }
 
     func cancelColorSampling() {
@@ -1621,7 +1618,18 @@ class OverlayViewModel: ObservableObject {
                           blue: Double(reading.blue) / 255)
         if propertyTool == .number { setNumberColor(color, role: role) }
         else { setColor(color) }
+        showColorFeedback(String(format: "#%02X%02X%02X", reading.red, reading.green, reading.blue))
         return true
+    }
+
+    private func showColorFeedback(_ text: String) {
+        colorSamplingFeedback = text
+        let token = UUID()
+        colorSamplingFeedbackToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self, self.colorSamplingFeedbackToken == token else { return }
+            self.colorSamplingFeedback = nil
+        }
     }
 
     func setRectangleCornerRadius(_ radius: CGFloat) { changeToolStyle { $0.rectangleCornerRadius = radius } }

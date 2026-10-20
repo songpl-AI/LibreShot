@@ -509,7 +509,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         let tools = model.visibleToolbarItems.filter { $0.annotationType != nil || $0 == .select || $0 == .undo }
         let layout = ToolbarLayout(items: tools, availableWidth: available - 16 - PinnedEditorTools.accessoryWidth)
         let headerWidth = layout.size.width + PinnedEditorTools.accessoryWidth
-        let properties = ToolPropertyAccessoriesView.size(for: model, availableWidth: available - 16)
+        let properties = ToolPropertyBarView.size(for: model, availableWidth: available - 16)
         let rawWidth = max(headerWidth, properties.width) + 16
         // Keep the centered header inset integral. AppKit rounds window origins;
         // an odd difference otherwise shifts left/right alignment by half a point.
@@ -749,7 +749,7 @@ struct PinnedEditorTools: View {
                         .accessibilityLabel("收起工具栏")
                 }
                 if model.propertyTool != nil {
-                    ToolPropertyAccessoriesView(viewModel: model, availableWidth: geometry.size.width - 16)
+                    ToolPropertyBarView(viewModel: model, availableWidth: geometry.size.width - 16)
                 }
             }.padding(8)
         }.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
