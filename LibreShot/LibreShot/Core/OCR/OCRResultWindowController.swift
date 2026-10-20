@@ -324,6 +324,41 @@ final class OCRTextLayerModel: ObservableObject {
         }
     }
 
+    func applyRangeSelection(from start: (regionID: Int, character: Int),
+                             to end: (regionID: Int, character: Int)) {
+        guard let startIndex = regions.firstIndex(where: { $0.id == start.regionID }),
+              let endIndex = regions.firstIndex(where: { $0.id == end.regionID }) else { return }
+        func length(_ index: Int) -> Int { (regions[index].text as NSString).length }
+        func clamped(_ value: Int, _ index: Int) -> Int { min(max(0, value), length(index)) }
+        var result: [Int: NSRange] = [:]
+        func add(_ index: Int, _ location: Int, _ end: Int) {
+            let start = clamped(location, index)
+            let stop = clamped(end, index)
+            guard stop > start else { return }
+            result[regions[index].id] = NSRange(location: start, length: stop - start)
+        }
+        if startIndex == endIndex {
+            add(startIndex, min(start.character, end.character), max(start.character, end.character))
+        } else if startIndex < endIndex {
+            add(startIndex, start.character, length(startIndex))
+            if endIndex > startIndex + 1 {
+                for index in (startIndex + 1)..<endIndex {
+                    add(index, 0, length(index))
+                }
+            }
+            add(endIndex, 0, end.character)
+        } else {
+            add(endIndex, end.character, length(endIndex))
+            if startIndex > endIndex + 1 {
+                for index in (endIndex + 1)..<startIndex {
+                    add(index, 0, length(index))
+                }
+            }
+            add(startIndex, 0, start.character)
+        }
+        selectedRanges = result
+    }
+
     func selectAll() {
         selectedRanges = Dictionary(uniqueKeysWithValues: regions.map { ($0.id, fullRange(for: $0.id)) })
     }
@@ -574,8 +609,8 @@ final class OCRTextLayerCanvasView: NSView {
     private var marquee: CGRect?
     private var suppressMouseUp = false
     private var hoveredID: Int?
-    private var characterRegionID: Int?
-    private var characterAnchor: Int?
+    private var selectionAnchor: (regionID: Int, character: Int)?
+    private var selectionCurrent: (regionID: Int, character: Int)?
     private var trackingArea: NSTrackingArea?
 
     private func observeModel() {
@@ -721,6 +756,11 @@ final class OCRTextLayerCanvasView: NSView {
         return min(max(index, 0), (region.text as NSString).length)
     }
 
+    func selectionTarget(at point: CGPoint) -> (regionID: Int, character: Int)? {
+        guard let id = regionID(at: point), let character = characterIndex(at: point, regionID: id) else { return nil }
+        return (id, character)
+    }
+
     override func resetCursorRects() {
         for (_, rect) in regionRects() {
             addCursorRect(rect, cursor: .iBeam)
@@ -734,9 +774,9 @@ final class OCRTextLayerCanvasView: NSView {
         didDrag = false
         marquee = nil
         suppressMouseUp = false
-        characterRegionID = regionID(at: point)
-        characterAnchor = characterRegionID.flatMap { characterIndex(at: point, regionID: $0) }
-        if event.clickCount == 2, let id = characterRegionID {
+        selectionAnchor = selectionTarget(at: point)
+        selectionCurrent = selectionAnchor
+        if event.clickCount == 2, let id = selectionAnchor?.regionID {
             model?.copyLine(id)
             suppressMouseUp = true
         }
@@ -745,15 +785,12 @@ final class OCRTextLayerCanvasView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let start = pressStart else { return }
         let point = convert(event.locationInWindow, from: nil)
-        if let id = characterRegionID, let anchor = characterAnchor {
-            let current = characterIndex(at: point, regionID: id) ?? anchor
-            guard current != anchor || hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+        if let anchor = selectionAnchor {
+            let target = selectionTarget(at: point) ?? selectionCurrent ?? anchor
+            selectionCurrent = target
+            guard target != anchor || hypot(point.x - start.x, point.y - start.y) > 3 else { return }
             didDrag = true
-            model?.applyCharacterSelection(
-                regionID: id,
-                range: NSRange(location: min(anchor, current), length: abs(current - anchor)),
-                extending: false
-            )
+            model?.applyRangeSelection(from: anchor, to: target)
             needsDisplay = true
             return
         }
@@ -770,8 +807,8 @@ final class OCRTextLayerCanvasView: NSView {
             didDrag = false
             marquee = nil
             suppressMouseUp = false
-            characterRegionID = nil
-            characterAnchor = nil
+            selectionAnchor = nil
+            selectionCurrent = nil
             needsDisplay = true
         }
         if suppressMouseUp { return }
@@ -779,19 +816,15 @@ final class OCRTextLayerCanvasView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let extending = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         if didDrag {
-            if let id = characterRegionID, let anchor = characterAnchor {
-                let current = characterIndex(at: point, regionID: id) ?? anchor
-                model?.applyCharacterSelection(
-                    regionID: id,
-                    range: NSRange(location: min(anchor, current), length: abs(current - anchor)),
-                    extending: false
-                )
+            if let anchor = selectionAnchor {
+                let target = selectionTarget(at: point) ?? selectionCurrent ?? anchor
+                model?.applyRangeSelection(from: anchor, to: target)
                 return
             }
             guard let marquee else { return }
             let ids = Set(regionRects().filter { $0.rect.intersects(marquee) }.map(\.id))
             model?.applySelection(ids, extending: extending)
-        } else if let id = characterRegionID {
+        } else if let id = selectionAnchor?.regionID {
             model?.applySelection([id], extending: extending)
         } else if !extending {
             model?.clearSelection()

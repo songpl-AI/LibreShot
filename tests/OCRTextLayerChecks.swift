@@ -42,6 +42,23 @@ import SwiftUI
         partial.copySelection()
         precondition(NSPasteboard.general.string(forType: .string) == "First",
                      "Character selection copies only the selected range")
+        let cross = OCRTextLayerModel(image: image, regions: regions, text: "First line\nSecond line")
+        cross.applyRangeSelection(from: (regionID: 1, character: 6), to: (regionID: 2, character: 6))
+        precondition(cross.selectedText == "line\nSecond", "Cross-line ranges keep the trailing and leading pieces")
+        precondition(cross.selectedRanges[1] != nil && cross.selectedRanges[2] != nil)
+        cross.applyRangeSelection(from: (regionID: 2, character: 6), to: (regionID: 1, character: 6))
+        precondition(cross.selectedText == "line\nSecond", "Reverse cross-line drags select the same text")
+        let three = OCRTextLayerModel(image: image, regions: [
+            OCRTextRegion(id: 1, text: "First line", bounds: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.05), confidence: 1),
+            OCRTextRegion(id: 2, text: "Second line", bounds: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.05), confidence: 1),
+            OCRTextRegion(id: 3, text: "Third line", bounds: CGRect(x: 0.1, y: 0.3, width: 0.3, height: 0.05), confidence: 1)
+        ], text: "First line\nSecond line\nThird line")
+        three.applyRangeSelection(from: (regionID: 1, character: 6), to: (regionID: 3, character: 5))
+        precondition(three.selectedRanges[1] != nil && three.selectedRanges[3] != nil)
+        precondition(three.selectedRanges[2] == NSRange(location: 0, length: 11),
+                     "Middle lines are selected in full")
+        precondition(three.selectedText == "line\nSecond line\nThird")
+
         let chinese = OCRTextLayerModel(image: image,
                                         regions: [OCRTextRegion(id: 9, text: "付款页·设计评审",
                                                                 bounds: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.05),
@@ -129,6 +146,18 @@ import SwiftUI
         let draggedText = interactionModel.selectedText
         interactionModel.copySelection()
         precondition(NSPasteboard.general.string(forType: .string) == draggedText)
+
+        interactionModel.clearSelection()
+        post(.leftMouseDown, at: CGPoint(x: 200, y: 100))
+        post(.leftMouseDragged, at: CGPoint(x: 540, y: 350))
+        post(.leftMouseUp, at: CGPoint(x: 540, y: 350))
+        flush()
+        precondition(interactionModel.selectedRanges[1] != nil && interactionModel.selectedRanges[2] != nil,
+                     "Cross-line drag selects the trailing and leading pieces")
+        precondition(!interactionModel.selectedText.isEmpty && interactionModel.selectedText.contains("line"))
+        let crossText = interactionModel.selectedText
+        interactionModel.copySelection()
+        precondition(NSPasteboard.general.string(forType: .string) == crossText)
 
         interactionModel.clearSelection()
         let keyA = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command],
