@@ -9,7 +9,7 @@ A free, open-source native screenshot and annotation tool for macOS.
 ## Features
 
 - **Area, full-screen and scrolling capture**: Capture the screen under the pointer and annotate it; scroll, zoom and edit long captures.
-- **Annotation and tool properties**: Pen, rectangle, ellipse, arrow, text, numbers, mosaic and blur. Compact properties combine sliders and exact values, red/green/blue presets, custom colors and an eyedropper. Preferences are remembered per tool, with reset and undo.
+- **Annotation and tool properties**: Pen, rectangle, ellipse, arrow, text, numbers, mosaic and blur. Compact properties combine sliders and exact values, red/green/blue presets and custom colors, and retain independent preferences, reset and undo.
 - **Rounded rectangles and number colors**: Rounded corners, filled/outlined numbers, and independent border, fill and digit colors.
 - **OCR and translation**: On-device text recognition, text translation and translation in place. Translation requires macOS 26+; initial language-pack downloads require internet access.
 - **Copy, save and pin**: New users finish by copying only, with optional Auto Save, manual Save, Save As and pins at the capture position. Zoom pins with the wheel, adjust opacity with Ctrl+wheel and edit through the context menu.

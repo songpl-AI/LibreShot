@@ -154,30 +154,6 @@ struct OverlayView: View {
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 }
                 
-                if viewModel.isSamplingColor {
-                    Text("点击截图取色 · Esc 取消")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(.regularMaterial, in: Capsule(style: .continuous))
-                        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.55), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
-                        .position(x: geometry.size.width / 2, y: 30)
-                        .allowsHitTesting(false)
-                        .accessibilityIdentifier("color-sampling-hint")
-                } else if let feedback = viewModel.colorSamplingFeedback {
-                    Text("已取色 \(feedback)")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(.regularMaterial, in: Capsule(style: .continuous))
-                        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.55), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
-                        .position(x: geometry.size.width / 2, y: 30)
-                        .allowsHitTesting(false)
-                        .accessibilityIdentifier("color-sampling-feedback")
-                }
-
                 // Layer 4: Toolbar (Only in Editing mode)
                 if viewModel.state == .editing {
                     if showsToolbar {
@@ -255,7 +231,6 @@ struct OverlayView: View {
                     if viewModel.state == .idle || viewModel.state == .selecting { guidePoint = point }
                     let overToolbar = editorToolbarFrame(screenSize: geometry.size).contains(point)
                     if overToolbar { NSCursor.arrow.set() }
-                    else if viewModel.isSamplingColor { NSCursor.crosshair.set() }
                     else if onBlankCanvasDrag != nil && viewModel.canMoveBlankCanvas(at: point) { NSCursor.openHand.set() }
                     else { OverlayPointerCursor.cursor(for: viewModel.cursorStyle(at: point)).set() }
                 case .ended:
@@ -265,16 +240,12 @@ struct OverlayView: View {
             }
             .onChange(of: guidePoint) { viewModel.updateSelectionLoupe(at: $0) }
             .onChange(of: viewModel.previewImage) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
-            .onChange(of: viewModel.state) { _ in
-                viewModel.updateSelectionLoupe(at: guidePoint)
-                viewModel.cancelColorSampling()
-            }
+            .onChange(of: viewModel.state) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
             .coordinateSpace(name: "overlay")
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named("overlay"))
                     .onChanged { value in
-                        if viewModel.isSamplingColor { return }
                         if viewModel.state == .idle || viewModel.state == .selecting { guidePoint = value.location }
                         if let onBlankCanvasDrag, movingBlankCanvas || viewModel.canMoveBlankCanvas(at: value.startLocation) {
                             movingBlankCanvas = true
@@ -336,12 +307,6 @@ struct OverlayView: View {
                         }
                     }
                     .onEnded { value in
-                        if viewModel.isSamplingColor {
-                            _ = viewModel.sampleColor(at: value.location)
-                            viewModel.clearAnnotationPress()
-                            viewModel.endOverlayDrag()
-                            return
-                        }
                         if movingBlankCanvas {
                             movingBlankCanvas = false
                             onBlankCanvasDrag?(value.translation, true)
@@ -551,7 +516,6 @@ private final class CaptureConfirmationObserver: NSView {
     private var monitor: Any?
     private var consumesMouseUp = false
     private var confirmationPoint: CGPoint?
-    private var samplingPoint: CGPoint?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -566,19 +530,6 @@ private final class CaptureConfirmationObserver: NSView {
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { [weak self] event in
             guard let self, event.window === self.window, let model = self.model else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            // The eyedropper owns the next canvas click. The property bar stays
-            // clickable so a swatch or a second eyedropper click can cancel it.
-            if model.isSamplingColor, self.bounds.contains(point), self.acceptsPoint?(point) == true {
-                if event.type == .leftMouseDown {
-                    self.samplingPoint = point
-                } else if event.type == .leftMouseUp {
-                    if let start = self.samplingPoint, hypot(point.x - start.x, point.y - start.y) < 8 {
-                        _ = model.sampleColor(at: point)
-                    }
-                    self.samplingPoint = nil
-                }
-                return nil
-            }
             if self.consumesMouseUp {
                 if event.type == .leftMouseUp { self.consumesMouseUp = false }
                 return nil

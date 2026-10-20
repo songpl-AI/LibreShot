@@ -90,18 +90,11 @@ class OverlayViewModel: ObservableObject {
     @Published var selectedTool: AnnotationType? {
         willSet { if newValue != selectedTool { endToolPropertyAdjustment() } }
         didSet {
-            if selectedTool != oldValue {
-                AnnotationColorPanel.close()
-                colorSamplingRole = nil
-            }
+            if selectedTool != oldValue { AnnotationColorPanel.close() }
             if let tool = selectedTool, tool != oldValue { loadToolDefaults(for: tool) }
         }
     }
     @Published var toolPropertyDetailsExpanded = false
-    @Published private(set) var colorSamplingRole: NumberColorRole?
-    @Published private(set) var colorSamplingFeedback: String?
-    private var colorSamplingFeedbackToken = UUID()
-    var isSamplingColor: Bool { colorSamplingRole != nil }
     @Published private(set) var toolPropertyInputCancellation = UUID()
     @Published private var toolPropertyInputID: UUID?
     private struct ToolPropertyAdjustment {
@@ -279,9 +272,6 @@ class OverlayViewModel: ObservableObject {
             }
             return false
         }
-        if isSamplingColor, event.keyCode == 53 {
-            cancelColorSampling(); return true
-        }
         if isEditingNumber, event.keyCode == 53 {
             cancelTextInput(); return true
         }
@@ -339,7 +329,7 @@ class OverlayViewModel: ObservableObject {
     func canConfirmDoubleClick(at point: CGPoint) -> Bool {
         (allowsCaptureCompletion || onBlankDoubleClick != nil) && settings.doubleClickCompletesCapture && state == .editing
             && !selectionRect.isEmpty && selectionRect.contains(point)
-            && !isEditingText && !isResizingText && !isMovingSelection && !isSamplingColor
+            && !isEditingText && !isResizingText && !isMovingSelection
             && activeSelectionHandle == nil && !isTransformingShape
             && isConfirmationBlank(at: point, annotations: annotations)
     }
@@ -395,7 +385,7 @@ class OverlayViewModel: ObservableObject {
         confirmationClick = nil
         guard let click, settings.doubleClickCompletesCapture, state == .editing,
               selectionRect == click.selection, selectionRect.contains(point), selectedTool == click.tool,
-              hypot(point.x - click.point.x, point.y - click.point.y) < 5, !isSamplingColor,
+              hypot(point.x - click.point.x, point.y - click.point.y) < 5,
               !isResizingText, !isMovingSelection, activeSelectionHandle == nil, !isTransformingShape,
               isConfirmationBlank(at: point, annotations: click.annotations) else { return false }
         // A blank first click may open a new empty text editor. Existing editors
@@ -703,10 +693,7 @@ class OverlayViewModel: ObservableObject {
     
     @Published var selectedAnnotationID: UUID? {
         willSet {
-            if newValue != selectedAnnotationID {
-                endToolPropertyAdjustment()
-                colorSamplingRole = nil
-            }
+            if newValue != selectedAnnotationID { endToolPropertyAdjustment() }
         }
     }
 
@@ -1095,8 +1082,6 @@ class OverlayViewModel: ObservableObject {
         toolPropertyInputID = nil
         endOverlayDrag()
         toolPropertyDetailsExpanded = false
-        colorSamplingRole = nil
-        colorSamplingFeedback = nil
         confirmationClick = nil
         clearImageTranslation()
         endSelectedShapeDrag()
@@ -1589,52 +1574,10 @@ class OverlayViewModel: ObservableObject {
         applyToolStyle(.factory(for: tool), for: tool)
     }
 
-    func setColor(_ color: Color) {
-        colorSamplingRole = nil
-        changeToolStyle { $0.color = color }
-    }
-
-    /// Arms the eyedropper for the quick color role. Clicking the same control
-    /// again disarms it. Sampling reads the frozen screenshot, never the dimmed UI.
-    func beginColorSampling(role: NumberColorRole) {
-        guard state == .editing, propertyTool != nil, !isEditingText else { return }
-        colorSamplingRole = colorSamplingRole == role ? nil : role
-        if colorSamplingRole == nil { colorSamplingFeedback = nil }
-    }
-
-    func cancelColorSampling() {
-        if colorSamplingRole != nil { colorSamplingRole = nil }
-    }
-
-    @discardableResult
-    func sampleColor(at point: CGPoint) -> Bool {
-        guard let role = colorSamplingRole else { return false }
-        defer { colorSamplingRole = nil }
-        guard let image = previewImage, previewScale > 0,
-              let reading = SelectionLoupeSampler.sample(image: image, scale: previewScale, point: point) else {
-            return false
-        }
-        let color = Color(red: Double(reading.red) / 255, green: Double(reading.green) / 255,
-                          blue: Double(reading.blue) / 255)
-        if propertyTool == .number { setNumberColor(color, role: role) }
-        else { setColor(color) }
-        showColorFeedback(String(format: "#%02X%02X%02X", reading.red, reading.green, reading.blue))
-        return true
-    }
-
-    private func showColorFeedback(_ text: String) {
-        colorSamplingFeedback = text
-        let token = UUID()
-        colorSamplingFeedbackToken = token
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            guard let self, self.colorSamplingFeedbackToken == token else { return }
-            self.colorSamplingFeedback = nil
-        }
-    }
+    func setColor(_ color: Color) { changeToolStyle { $0.color = color } }
 
     func setRectangleCornerRadius(_ radius: CGFloat) { changeToolStyle { $0.rectangleCornerRadius = radius } }
     func setNumberColor(_ color: Color?, role: NumberColorRole) {
-        colorSamplingRole = nil
         changeToolStyle { style in
             let ink = color.map { AnnotationInk($0) }
             switch role { case .border: style.numberBorderInk = ink; case .fill: style.numberFillInk = ink; case .digit: style.numberDigitInk = ink }

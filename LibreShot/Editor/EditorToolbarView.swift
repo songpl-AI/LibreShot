@@ -185,11 +185,10 @@ struct ToolPropertyBarView: View {
     static let rowHeight: CGFloat = 26
 
     enum Control: Hashable {
-        case color, eyedropper, width, corner, font, numberStyle, effectMode, brush, block, blur, details, actions
+        case color, width, corner, font, numberStyle, effectMode, brush, block, blur, details, actions
         var width: CGFloat {
             switch self {
             case .color: return rowHeight * 4 + swatchSpacing * 3
-            case .eyedropper: return rowHeight
             case .numberStyle, .effectMode: return 128
             case .details, .actions: return rowHeight
             default: return 128
@@ -201,10 +200,10 @@ struct ToolPropertyBarView: View {
         guard let tool = model.propertyTool else { return [] }
         var controls: [Control]
         switch tool {
-        case .rectangle: controls = [.color, .eyedropper, .width, .corner]
-        case .pen, .ellipse, .arrow: controls = [.color, .eyedropper, .width]
-        case .text: controls = [.color, .eyedropper, .font]
-        case .number: controls = [.numberStyle, .color, .eyedropper, .font, .details]
+        case .rectangle: controls = [.color, .width, .corner]
+        case .pen, .ellipse, .arrow: controls = [.color, .width]
+        case .text: controls = [.color, .font]
+        case .number: controls = [.numberStyle, .color, .font, .details]
         case .mosaic, .blur:
             controls = [.effectMode]
             if model.effectDrawingMode(for: tool) == .brush { controls.append(.brush) }
@@ -270,19 +269,6 @@ struct ToolPropertyBarView: View {
     @ViewBuilder private func control(_ item: Control) -> some View {
         switch item {
         case .color: colorControls(role: quickColorRole)
-        case .eyedropper:
-            let sampling = viewModel.colorSamplingRole == quickColorRole
-            Button { viewModel.beginColorSampling(role: quickColorRole) } label: {
-                Image(systemName: "eyedropper")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(sampling ? Color.white : Color.primary)
-                    .frame(width: Self.rowHeight, height: Self.rowHeight)
-                    .background(sampling ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 4))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(sampling ? "正在取色：点击截图取样，Esc 取消" : "从截图取色")
-            .accessibilityLabel(sampling ? "取消取色" : "从截图取色")
         case .width: numericControl("粗细", range: 1...20, dragRange: 1...10, value: viewModel.currentToolStyle.lineWidth, ticks: [1, 3, 5, 8, 10], action: viewModel.setLineWidth)
         case .corner: numericControl("圆角", range: 0...128, dragRange: 0...30, value: viewModel.currentToolStyle.rectangleCornerRadius ?? 0, ticks: [0, 5, 10, 15, 20, 25, 30], action: viewModel.setRectangleCornerRadius)
         case .font: numericControl("字号", range: 8...128, dragRange: 12...48, value: viewModel.currentToolStyle.fontSize, ticks: [12, 18, 24, 32, 40, 48], action: viewModel.setFontSize)

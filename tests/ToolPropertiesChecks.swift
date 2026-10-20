@@ -416,7 +416,7 @@ struct ToolPropertiesChecks {
         model.selectTool(.arrow)
         require(settings.annotationStyle(for: .text).fontSize == 39 && model.currentToolStyle.lineWidth == 3, "Tool switch commits the outgoing gesture without changing the next tool")
         model.selectTool(.rectangle)
-        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 456, height: 34), "Rectangle controls reserve the single-row bounds")
+        require(ToolPropertyBarView.size(for: model, availableWidth: 640) == CGSize(width: 424, height: 34), "Rectangle controls reserve the single-row bounds")
         model.selectTool(.number)
         let compact = ToolPropertyBarView.size(for: model, availableWidth: 640)
         model.toolPropertyDetailsExpanded = true
