@@ -27,6 +27,10 @@ import SwiftUI
         precondition(model.selectedIDs == [1, 2])
         model.clearSelection()
         precondition(model.selectedIDs.isEmpty)
+        model.copySelection()
+        precondition(NSPasteboard.general.string(forType: .string) == "First line\nSecond line",
+                     "Copying with no selection copies every line")
+        precondition(model.copyFeedback == "已复制全部 2 行")
         model.copyLine(2)
         precondition(model.selectedIDs == [2] && model.selectedText == "Second line")
 
@@ -110,6 +114,15 @@ import SwiftUI
         window.sendEvent(keyC)
         precondition(NSPasteboard.general.string(forType: .string) == "First line\nSecond line",
                      "⌘C copies the current selection")
+        interactionModel.clearSelection()
+        let returnKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                         timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                         characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false,
+                                         keyCode: 36)!
+        window.sendEvent(returnKey)
+        precondition(NSPasteboard.general.string(forType: .string) == "First line\nSecond line",
+                     "Return copies all when nothing is selected")
+        precondition(interactionModel.copyFeedback == "已复制全部 2 行")
 
         let empty = OCRTextLayerModel(image: image, regions: [], text: "")
         precondition(empty.regions.isEmpty && empty.selectedText.isEmpty)

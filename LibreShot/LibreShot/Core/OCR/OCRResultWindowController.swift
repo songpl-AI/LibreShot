@@ -292,13 +292,14 @@ final class OCRTextLayerModel: ObservableObject {
     }
 
     func copySelection() {
-        let selected = regions.filter { selectedIDs.contains($0.id) }
+        let copyingAll = selectedIDs.isEmpty
+        let selected = copyingAll ? regions : regions.filter { selectedIDs.contains($0.id) }
         guard !selected.isEmpty else { return }
         let value = selected.map(\.text).joined(separator: "\n")
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
-        showFeedback("已复制 \(selected.count) 行")
+        showFeedback(copyingAll ? "已复制全部 \(selected.count) 行" : "已复制 \(selected.count) 行")
     }
 
     func close() {
@@ -440,7 +441,9 @@ private struct OCRTextLayerView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.selectedCount > 0 ? "已选 \(model.selectedCount) 行" : "选择文字")
                     .font(.system(size: 12, weight: .semibold))
-                Text(model.copyFeedback ?? "单击选中 · 拖拽多选 · 双击单行复制")
+                Text(model.copyFeedback ?? (model.selectedCount == 0
+                    ? "单击选中 · 拖拽多选 · 双击单行复制 · ⌘C 复制全部"
+                    : "⌘C 或 Return 复制选中 · Esc 关闭"))
                     .font(.system(size: 11))
                     .foregroundStyle(model.copyFeedback == nil ? Color.secondary : Color.green)
             }
@@ -457,13 +460,13 @@ private struct OCRTextLayerView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "doc.on.doc")
-                    Text("复制")
+                    Text(model.selectedCount == 0 ? "复制全部" : "复制")
                     Text("⌘C").font(.system(size: 10, weight: .medium)).opacity(0.75)
                 }
             }
             .keyboardShortcut("c", modifiers: .command)
             .buttonStyle(.borderedProminent)
-            .disabled(model.selectedCount == 0)
+            .disabled(model.regions.isEmpty)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -511,10 +514,38 @@ final class OCRTextLayerCanvasView: NSView {
     private var didDrag = false
     private var marquee: CGRect?
     private var suppressMouseUp = false
+    private var hoveredID: Int?
+    private var trackingArea: NSTrackingArea?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let id = regionID(at: point)
+        if id != hoveredID {
+            hoveredID = id
+            needsDisplay = true
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if hoveredID != nil {
+            hoveredID = nil
+            needsDisplay = true
+        }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -551,6 +582,13 @@ final class OCRTextLayerCanvasView: NSView {
                 path.fill()
                 NSColor.controlAccentColor.withAlphaComponent(0.9).setStroke()
                 path.lineWidth = 1.5
+                path.stroke()
+            } else if id == hoveredID {
+                let path = NSBezierPath(roundedRect: rect.insetBy(dx: -2, dy: -2), xRadius: 4, yRadius: 4)
+                NSColor.controlAccentColor.withAlphaComponent(0.07).setFill()
+                path.fill()
+                NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+                path.lineWidth = 1
                 path.stroke()
             } else {
                 let path = NSBezierPath()
@@ -633,6 +671,9 @@ final class OCRTextLayerCanvasView: NSView {
             }
         }
         if event.keyCode == 53 { model?.close(); return }
+        if event.keyCode == 36 || event.keyCode == 76 {
+            model?.copySelection(); return
+        }
         super.keyDown(with: event)
     }
 
