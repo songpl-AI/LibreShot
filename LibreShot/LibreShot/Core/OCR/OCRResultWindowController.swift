@@ -278,8 +278,12 @@ final class OCRTextLayerModel: ObservableObject {
     var isFullLineSelection: Bool {
         !selectedRanges.isEmpty && selectedRanges.allSatisfy { $0.value == fullRange(for: $0.key) }
     }
+    var isAllSelected: Bool {
+        !regions.isEmpty && selectedRanges.count == regions.count && isFullLineSelection
+    }
     var selectionSummary: String {
         if selectedRanges.isEmpty { return "选择文字" }
+        if isAllSelected { return "已全选 \(regions.count) 行" }
         return isFullLineSelection ? "已选 \(selectedRanges.count) 行" : "已选 \(selectedCharacterCount) 字"
     }
     var selectedText: String {
@@ -540,7 +544,7 @@ private struct OCRTextLayerView: View {
 }
 
 private struct OCRTextLayerCanvas: NSViewRepresentable {
-    let model: OCRTextLayerModel
+    @ObservedObject var model: OCRTextLayerModel
     let imageRect: CGRect
 
     func makeNSView(context: Context) -> OCRTextLayerCanvasView {
@@ -551,7 +555,7 @@ private struct OCRTextLayerCanvas: NSViewRepresentable {
     }
 
     func updateNSView(_ view: OCRTextLayerCanvasView, context: Context) {
-        view.model = model
+        if view.model !== model { view.model = model }
         view.imageRect = imageRect
         view.needsDisplay = true
         view.window?.invalidateCursorRects(for: view)
@@ -560,8 +564,11 @@ private struct OCRTextLayerCanvas: NSViewRepresentable {
 
 @MainActor
 final class OCRTextLayerCanvasView: NSView {
-    var model: OCRTextLayerModel?
+    var model: OCRTextLayerModel? {
+        didSet { observeModel() }
+    }
     var imageRect: CGRect = .zero
+    private var modelObservation: AnyCancellable?
     private var pressStart: CGPoint?
     private var didDrag = false
     private var marquee: CGRect?
@@ -570,6 +577,14 @@ final class OCRTextLayerCanvasView: NSView {
     private var characterRegionID: Int?
     private var characterAnchor: Int?
     private var trackingArea: NSTrackingArea?
+
+    private func observeModel() {
+        modelObservation = nil
+        guard let model else { return }
+        modelObservation = model.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async { self?.needsDisplay = true }
+        }
+    }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }

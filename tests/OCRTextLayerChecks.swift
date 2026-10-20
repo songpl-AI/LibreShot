@@ -25,6 +25,7 @@ import SwiftUI
         precondition(model.copyFeedback == "已复制 2 行")
         model.selectAll()
         precondition(model.selectedIDs == [1, 2])
+        precondition(model.isAllSelected && model.selectionSummary == "已全选 2 行")
         model.clearSelection()
         precondition(model.selectedIDs.isEmpty)
         model.copySelection()
@@ -153,8 +154,33 @@ import SwiftUI
                      "Return copies all when nothing is selected")
         precondition(interactionModel.copyFeedback == "已复制全部 2 行")
 
+        // A live select-all must repaint the canvas, not only update the footer.
+        interactionModel.clearSelection()
+        canvasWindow.display()
+        let before = bluePixels(canvasWindow)
+        interactionModel.selectAll()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        canvasWindow.display()
+        let after = bluePixels(canvasWindow)
+        precondition(after > before + 20, "Select-all repaints the visible selection")
+
         let empty = OCRTextLayerModel(image: image, regions: [], text: "")
         precondition(empty.regions.isEmpty && empty.selectedText.isEmpty)
-        print("PASS: OCR text layer ordering, selection, copy, click/double-click, marquee, shortcuts and close")
+        print("PASS: OCR text layer ordering, selection, copy, click/double-click, marquee, shortcuts, select-all repaint and close")
+    }
+
+    static func bluePixels(_ view: NSView) -> Int {
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return 0 }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        var count = 0
+        for y in stride(from: 0, to: rep.pixelsHigh, by: 4) {
+            for x in stride(from: 0, to: rep.pixelsWide, by: 4) {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                if color.blueComponent > 0.65 && color.blueComponent - color.redComponent > 0.2 {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 }
