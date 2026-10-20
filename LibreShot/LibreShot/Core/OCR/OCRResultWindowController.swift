@@ -1,5 +1,6 @@
 import Cocoa
 import Combine
+import CoreText
 import SwiftUI
 import Translation
 
@@ -257,7 +258,7 @@ final class OCRTextLayerModel: ObservableObject {
     let image: NSImage
     let regions: [OCRTextRegion]
     let text: String
-    @Published var selectedIDs: Set<Int> = []
+    @Published private(set) var selectedRanges: [Int: NSRange] = [:]
     @Published var mode: OCRTextLayerMode = .layer
     @Published private(set) var copyFeedback: String?
     var onClose: (() -> Void)?
@@ -269,41 +270,92 @@ final class OCRTextLayerModel: ObservableObject {
         self.text = text.isEmpty ? self.regions.map(\.text).joined(separator: "\n") : text
     }
 
-    var selectedCount: Int { selectedIDs.count }
+    var selectedIDs: Set<Int> { Set(selectedRanges.keys) }
+    var selectedLineCount: Int { selectedRanges.count }
+    var selectedCharacterCount: Int { selectedRanges.values.reduce(0) { $0 + $1.length } }
+    var selectedCount: Int { selectedCharacterCount }
+    var hasSelection: Bool { !selectedRanges.isEmpty }
+    var isFullLineSelection: Bool {
+        !selectedRanges.isEmpty && selectedRanges.allSatisfy { $0.value == fullRange(for: $0.key) }
+    }
+    var selectionSummary: String {
+        if selectedRanges.isEmpty { return "选择文字" }
+        return isFullLineSelection ? "已选 \(selectedRanges.count) 行" : "已选 \(selectedCharacterCount) 字"
+    }
     var selectedText: String {
-        regions.filter { selectedIDs.contains($0.id) }.map(\.text).joined(separator: "\n")
+        regions.compactMap { region in
+            guard let range = selectedRanges[region.id], range.length > 0 else { return nil }
+            let value = region.text as NSString
+            let start = min(max(0, range.location), value.length)
+            let end = min(max(start, NSMaxRange(range)), value.length)
+            guard end > start else { return nil }
+            return value.substring(with: NSRange(location: start, length: end - start))
+        }.joined(separator: "\n")
     }
 
     func applySelection(_ ids: Set<Int>, extending: Bool) {
-        if extending { selectedIDs.formUnion(ids) } else { selectedIDs = ids }
+        if extending {
+            for id in ids { selectedRanges[id] = fullRange(for: id) }
+        } else {
+            selectedRanges = Dictionary(uniqueKeysWithValues: ids.map { ($0, fullRange(for: $0)) })
+        }
+    }
+
+    func applyCharacterSelection(regionID: Int, range: NSRange, extending: Bool) {
+        guard let region = regions.first(where: { $0.id == regionID }) else { return }
+        let length = (region.text as NSString).length
+        let start = min(max(0, range.location), length)
+        let end = min(max(start, NSMaxRange(range)), length)
+        guard end > start else {
+            selectedRanges[regionID] = nil
+            return
+        }
+        let next = NSRange(location: start, length: end - start)
+        if extending, let old = selectedRanges[regionID] {
+            let unionStart = min(old.location, next.location)
+            let unionEnd = max(NSMaxRange(old), NSMaxRange(next))
+            selectedRanges[regionID] = NSRange(location: unionStart, length: unionEnd - unionStart)
+        } else {
+            selectedRanges[regionID] = next
+        }
     }
 
     func selectAll() {
-        selectedIDs = Set(regions.map(\.id))
+        selectedRanges = Dictionary(uniqueKeysWithValues: regions.map { ($0.id, fullRange(for: $0.id)) })
     }
 
     func clearSelection() {
-        selectedIDs.removeAll()
+        selectedRanges.removeAll()
     }
 
     func copyLine(_ id: Int) {
-        selectedIDs = [id]
+        selectedRanges = [id: fullRange(for: id)]
         copySelection()
     }
 
     func copySelection() {
-        let copyingAll = selectedIDs.isEmpty
-        let selected = copyingAll ? regions : regions.filter { selectedIDs.contains($0.id) }
-        guard !selected.isEmpty else { return }
-        let value = selected.map(\.text).joined(separator: "\n")
+        let copyingAll = selectedRanges.isEmpty
+        let value = copyingAll ? regions.map(\.text).joined(separator: "\n") : selectedText
+        guard !value.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
-        showFeedback(copyingAll ? "已复制全部 \(selected.count) 行" : "已复制 \(selected.count) 行")
+        if copyingAll {
+            showFeedback("已复制全部 \(regions.count) 行")
+        } else if isFullLineSelection {
+            showFeedback("已复制 \(selectedRanges.count) 行")
+        } else {
+            showFeedback("已复制 \(selectedCharacterCount) 字")
+        }
     }
 
     func close() {
         onClose?()
+    }
+
+    private func fullRange(for id: Int) -> NSRange {
+        guard let region = regions.first(where: { $0.id == id }) else { return NSRange(location: 0, length: 0) }
+        return NSRange(location: 0, length: (region.text as NSString).length)
     }
 
     private func showFeedback(_ text: String) {
@@ -435,15 +487,15 @@ private struct OCRTextLayerView: View {
 
     private var bottomBar: some View {
         HStack(spacing: 12) {
-            Image(systemName: model.selectedCount > 0 ? "checkmark.circle.fill" : "text.cursor")
+            Image(systemName: model.hasSelection ? "checkmark.circle.fill" : "text.cursor")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(model.selectedCount > 0 ? Color.accentColor : Color.secondary)
+                .foregroundStyle(model.hasSelection ? Color.accentColor : Color.secondary)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.selectedCount > 0 ? "已选 \(model.selectedCount) 行" : "选择文字")
+                Text(model.selectionSummary)
                     .font(.system(size: 12, weight: .semibold))
-                Text(model.copyFeedback ?? (model.selectedCount == 0
-                    ? "单击选中 · 拖拽多选 · 双击单行复制 · ⌘C 复制全部"
-                    : "⌘C 或 Return 复制选中 · Esc 关闭"))
+                Text(model.copyFeedback ?? (model.hasSelection
+                    ? "⌘C 或 Return 复制选中 · 双击单行复制"
+                    : "拖选文字 · 双击单行复制 · ⌘C 复制全部"))
                     .font(.system(size: 11))
                     .foregroundStyle(model.copyFeedback == nil ? Color.secondary : Color.green)
             }
@@ -460,7 +512,7 @@ private struct OCRTextLayerView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "doc.on.doc")
-                    Text(model.selectedCount == 0 ? "复制全部" : "复制")
+                    Text(model.hasSelection ? "复制" : "复制全部")
                     Text("⌘C").font(.system(size: 10, weight: .medium)).opacity(0.75)
                 }
             }
@@ -515,6 +567,8 @@ final class OCRTextLayerCanvasView: NSView {
     private var marquee: CGRect?
     private var suppressMouseUp = false
     private var hoveredID: Int?
+    private var characterRegionID: Int?
+    private var characterAnchor: Int?
     private var trackingArea: NSTrackingArea?
 
     override var isFlipped: Bool { true }
@@ -576,13 +630,23 @@ final class OCRTextLayerCanvasView: NSView {
         guard let model, imageRect.width > 0 else { return }
         NSGraphicsContext.current?.shouldAntialias = true
         for (id, rect) in regionRects() {
-            if model.selectedIDs.contains(id) {
-                let path = NSBezierPath(roundedRect: rect.insetBy(dx: -2, dy: -2), xRadius: 4, yRadius: 4)
-                NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
-                path.fill()
-                NSColor.controlAccentColor.withAlphaComponent(0.9).setStroke()
-                path.lineWidth = 1.5
-                path.stroke()
+            if let selected = model.selectedRanges[id] {
+                let length = (model.regions.first(where: { $0.id == id })?.text as NSString?)?.length ?? 0
+                if selected == NSRange(location: 0, length: length) {
+                    let path = NSBezierPath(roundedRect: rect.insetBy(dx: -2, dy: -2), xRadius: 4, yRadius: 4)
+                    NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
+                    path.fill()
+                    NSColor.controlAccentColor.withAlphaComponent(0.9).setStroke()
+                    path.lineWidth = 1.5
+                    path.stroke()
+                } else if let highlight = characterRect(regionID: id, range: selected) {
+                    let path = NSBezierPath(roundedRect: highlight, xRadius: 2, yRadius: 2)
+                    NSColor.controlAccentColor.withAlphaComponent(0.24).setFill()
+                    path.fill()
+                    NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+                    path.lineWidth = 1
+                    path.stroke()
+                }
             } else if id == hoveredID {
                 let path = NSBezierPath(roundedRect: rect.insetBy(dx: -2, dy: -2), xRadius: 4, yRadius: 4)
                 NSColor.controlAccentColor.withAlphaComponent(0.07).setFill()
@@ -611,6 +675,37 @@ final class OCRTextLayerCanvasView: NSView {
         }
     }
 
+    private func textLine(for region: OCRTextRegion, in rect: CGRect) -> (line: CTLine, width: CGFloat, scale: CGFloat) {
+        let font = NSFont.systemFont(ofSize: max(9, rect.height * 0.78))
+        let attributed = NSAttributedString(string: region.text, attributes: [.font: font])
+        let line = CTLineCreateWithAttributedString(attributed)
+        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        return (line, width, width > 0 ? rect.width / width : 1)
+    }
+
+    private func characterRect(regionID: Int, range: NSRange) -> CGRect? {
+        guard let model, let region = model.regions.first(where: { $0.id == regionID }),
+              let rect = regionRects().first(where: { $0.id == regionID })?.rect else { return nil }
+        let length = (region.text as NSString).length
+        let start = min(max(0, range.location), length)
+        let end = min(max(start, NSMaxRange(range)), length)
+        guard end > start else { return nil }
+        let layout = textLine(for: region, in: rect)
+        let x0 = CTLineGetOffsetForStringIndex(layout.line, start, nil) * layout.scale
+        let x1 = CTLineGetOffsetForStringIndex(layout.line, end, nil) * layout.scale
+        return CGRect(x: rect.minX + x0, y: rect.minY + 1,
+                      width: max(1, x1 - x0), height: max(1, rect.height - 2))
+    }
+
+    func characterIndex(at point: CGPoint, regionID: Int) -> Int? {
+        guard let model, let region = model.regions.first(where: { $0.id == regionID }),
+              let rect = regionRects().first(where: { $0.id == regionID })?.rect else { return nil }
+        let layout = textLine(for: region, in: rect)
+        let x = min(max((point.x - rect.minX) / layout.scale, 0), layout.width)
+        let index = CTLineGetStringIndexForPosition(layout.line, CGPoint(x: x, y: 0))
+        return min(max(index, 0), (region.text as NSString).length)
+    }
+
     override func resetCursorRects() {
         for (_, rect) in regionRects() {
             addCursorRect(rect, cursor: .iBeam)
@@ -624,7 +719,9 @@ final class OCRTextLayerCanvasView: NSView {
         didDrag = false
         marquee = nil
         suppressMouseUp = false
-        if event.clickCount == 2, let id = regionID(at: point) {
+        characterRegionID = regionID(at: point)
+        characterAnchor = characterRegionID.flatMap { characterIndex(at: point, regionID: $0) }
+        if event.clickCount == 2, let id = characterRegionID {
             model?.copyLine(id)
             suppressMouseUp = true
         }
@@ -633,6 +730,18 @@ final class OCRTextLayerCanvasView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let start = pressStart else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if let id = characterRegionID, let anchor = characterAnchor {
+            let current = characterIndex(at: point, regionID: id) ?? anchor
+            guard current != anchor || hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+            didDrag = true
+            model?.applyCharacterSelection(
+                regionID: id,
+                range: NSRange(location: min(anchor, current), length: abs(current - anchor)),
+                extending: false
+            )
+            needsDisplay = true
+            return
+        }
         guard hypot(point.x - start.x, point.y - start.y) > 4 else { return }
         didDrag = true
         marquee = CGRect(x: min(start.x, point.x), y: min(start.y, point.y),
@@ -646,16 +755,28 @@ final class OCRTextLayerCanvasView: NSView {
             didDrag = false
             marquee = nil
             suppressMouseUp = false
+            characterRegionID = nil
+            characterAnchor = nil
             needsDisplay = true
         }
         if suppressMouseUp { return }
         guard pressStart != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         let extending = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
-        if didDrag, let marquee {
+        if didDrag {
+            if let id = characterRegionID, let anchor = characterAnchor {
+                let current = characterIndex(at: point, regionID: id) ?? anchor
+                model?.applyCharacterSelection(
+                    regionID: id,
+                    range: NSRange(location: min(anchor, current), length: abs(current - anchor)),
+                    extending: false
+                )
+                return
+            }
+            guard let marquee else { return }
             let ids = Set(regionRects().filter { $0.rect.intersects(marquee) }.map(\.id))
             model?.applySelection(ids, extending: extending)
-        } else if let id = regionID(at: point) {
+        } else if let id = characterRegionID {
             model?.applySelection([id], extending: extending)
         } else if !extending {
             model?.clearSelection()

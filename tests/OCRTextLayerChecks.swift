@@ -34,6 +34,21 @@ import SwiftUI
         model.copyLine(2)
         precondition(model.selectedIDs == [2] && model.selectedText == "Second line")
 
+        let partial = OCRTextLayerModel(image: image, regions: regions, text: "First line\nSecond line")
+        partial.applyCharacterSelection(regionID: 1, range: NSRange(location: 0, length: 5), extending: false)
+        precondition(partial.selectedText == "First")
+        precondition(partial.selectionSummary == "已选 5 字")
+        partial.copySelection()
+        precondition(NSPasteboard.general.string(forType: .string) == "First",
+                     "Character selection copies only the selected range")
+        let chinese = OCRTextLayerModel(image: image,
+                                        regions: [OCRTextRegion(id: 9, text: "付款页·设计评审",
+                                                                bounds: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.05),
+                                                                confidence: 1)],
+                                        text: "付款页·设计评审")
+        chinese.applyCharacterSelection(regionID: 9, range: NSRange(location: 4, length: 4), extending: false)
+        precondition(chinese.selectedText == "设计评审")
+
         var closed = false
         model.onClose = { closed = true }
         model.close()
@@ -45,6 +60,8 @@ import SwiftUI
         precondition(canvas.regionID(at: CGPoint(x: 200, y: 100)) == 1, "Canvas hit testing maps normalized OCR boxes")
         precondition(canvas.regionID(at: CGPoint(x: 540, y: 350)) == 2)
         precondition(canvas.regionID(at: CGPoint(x: 20, y: 20)) == nil)
+        precondition(canvas.characterIndex(at: CGPoint(x: 120, y: 100), regionID: 1) == 0)
+        precondition(canvas.characterIndex(at: CGPoint(x: 330, y: 100), regionID: 1) == 10)
 
         // Drive the real canvas with window events: click, double-click copy,
         // marquee selection and the ⌘A/⌘C shortcuts.
@@ -100,6 +117,18 @@ import SwiftUI
         window.makeKey()
         window.makeFirstResponder(canvasWindow)
         precondition(window.firstResponder === canvasWindow, "The canvas owns keyboard focus")
+        interactionModel.clearSelection()
+        post(.leftMouseDown, at: CGPoint(x: 125, y: 100))
+        post(.leftMouseDragged, at: CGPoint(x: 240, y: 100))
+        post(.leftMouseUp, at: CGPoint(x: 240, y: 100))
+        flush()
+        precondition(interactionModel.selectedRanges[1] != nil)
+        precondition(interactionModel.selectedText.hasPrefix("F") && interactionModel.selectedText.count < 10,
+                     "Dragging inside one line selects a character range")
+        let draggedText = interactionModel.selectedText
+        interactionModel.copySelection()
+        precondition(NSPasteboard.general.string(forType: .string) == draggedText)
+
         interactionModel.clearSelection()
         let keyA = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command],
                                     timestamp: 0, windowNumber: window.windowNumber, context: nil,

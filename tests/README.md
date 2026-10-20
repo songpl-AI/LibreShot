@@ -142,7 +142,7 @@ Issue #4 补充覆盖多种截图宽高、小幅位移以及 20/32/64 px 固定�
 
 ### 原位文字提取
 
-`bash tests/run-ocr-text-layer-checks.sh` 使用生产 OCR 文字框和 `OCRTextLayerCanvasView`，检查阅读顺序、单击选中、双击复制、拖拽框选、⌘A/⌘C、未选中时复制全部、Return、复制反馈、关闭回调及非文字区域不命中。
+`bash tests/run-ocr-text-layer-checks.sh` 使用生产 OCR 文字框和 `OCRTextLayerCanvasView`，检查阅读顺序、单击选中、字符级拖选、双击复制、拖拽框选、⌘A/⌘C、未选中时复制全部、Return、复制反馈、关闭回调及非文字区域不命中。
 
 `bash tests/run-ocr-sandbox-isolation-profile.sh production` 在签名沙盒应用中调用生产 OCR 接口，连续识别 5 次并空闲 15 秒，保留增量预算 32 MiB。该预算是诊断门槛，不是 10 MiB 的产品承诺。原始 `worker-parent` 模式保留为 PNG 隔离原型对照；`in-process` 仍用于重现旧识别路径的高驻留。
 
