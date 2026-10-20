@@ -151,5 +151,21 @@ struct NumberToolRegressionChecks {
         window.sendEvent(key(53, "\u{1b}")); precondition(cancelled)
         m.reset(); precondition(m.nextNumber == 1 && m.selectedNumberFontSize == Annotation.numberFontSize)
         print("PASS: window Escape dispatch and new-session reset")
+
+        // Preset checkmarks compare at 8-bit sRGB precision. Converting a SwiftUI
+        // preset through NSColor and back can differ below that threshold.
+        let colorModel = model()
+        colorModel.selectTool(.number)
+        for preset in [Color.red, .green, .blue] {
+            colorModel.setNumberColor(preset, role: .fill)
+            precondition(AnnotationInk(colorModel.numberColor(for: .fill)).matches(AnnotationInk(preset)),
+                         "Number fill checkmark matches \(preset)")
+            colorModel.setNumberColor(preset, role: .border)
+            precondition(AnnotationInk(colorModel.numberColor(for: .border)).matches(AnnotationInk(preset)),
+                         "Number border checkmark matches \(preset)")
+        }
+        precondition(AnnotationInk(Color.red).matches(AnnotationInk(AnnotationInk(Color.red).color)),
+                     "Preset comparison tolerates sRGB round-trip rounding")
+        print("PASS: number preset checkmarks survive sRGB round-trip rounding")
     }
 }

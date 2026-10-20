@@ -56,6 +56,16 @@ struct AnnotationInk: Codable, Equatable {
         red = Double(rgb.redComponent); green = Double(rgb.greenComponent); blue = Double(rgb.blueComponent)
     }
     var color: Color { Color(red: red, green: green, blue: blue) }
+    /// Compares at 8-bit sRGB precision. Converting a preset through NSColor and
+    /// back can change the double by a tiny amount, which must not hide a checkmark.
+    func matches(_ other: Self) -> Bool {
+        func quantized(_ value: Double) -> Int {
+            Int((min(1, max(0, value)) * 255).rounded())
+        }
+        return quantized(red) == quantized(other.red)
+            && quantized(green) == quantized(other.green)
+            && quantized(blue) == quantized(other.blue)
+    }
     var validated: Self {
         var result = self
         func clamp(_ v: Double) -> Double { v.isFinite ? min(1, max(0, v)) : 0 }

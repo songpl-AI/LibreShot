@@ -330,7 +330,7 @@ struct ToolPropertyBarView: View {
                     Circle().fill(preset.color).frame(width: 16, height: 16)
                         .overlay(Circle().stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
                         .overlay {
-                            if AnnotationInk(color(for: role)) == AnnotationInk(preset.color) && !(viewModel.propertyTool == .number && role == .border && viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil) {
+                            if AnnotationInk(color(for: role)).matches(AnnotationInk(preset.color)) && !(viewModel.propertyTool == .number && role == .border && viewModel.currentToolStyle.numberStyle == .filled && viewModel.currentToolStyle.numberBorderInk == nil) {
                                 Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.white)
                             }
                         }
