@@ -241,3 +241,402 @@ final class OCRTranslationModel: ObservableObject {
         #endif
     }
 }
+
+// MARK: - In-place text layer
+
+enum OCRTextLayerMode: String, CaseIterable, Identifiable {
+    case layer, list
+    var id: String { rawValue }
+    var title: String { self == .layer ? "图层" : "列表" }
+}
+
+/// Owns the ordering, selection and copy state of one OCR result. The canvas
+/// only paints; all mutations go through this model so tests do not need a window.
+@MainActor
+final class OCRTextLayerModel: ObservableObject {
+    let image: NSImage
+    let regions: [OCRTextRegion]
+    let text: String
+    @Published var selectedIDs: Set<Int> = []
+    @Published var mode: OCRTextLayerMode = .layer
+    @Published private(set) var copyFeedback: String?
+    var onClose: (() -> Void)?
+    private var feedbackToken = UUID()
+
+    init(image: NSImage, regions: [OCRTextRegion], text: String) {
+        self.image = image
+        self.regions = OCRTextRegion.readingOrder(from: regions)
+        self.text = text.isEmpty ? self.regions.map(\.text).joined(separator: "\n") : text
+    }
+
+    var selectedCount: Int { selectedIDs.count }
+    var selectedText: String {
+        regions.filter { selectedIDs.contains($0.id) }.map(\.text).joined(separator: "\n")
+    }
+
+    func applySelection(_ ids: Set<Int>, extending: Bool) {
+        if extending { selectedIDs.formUnion(ids) } else { selectedIDs = ids }
+    }
+
+    func selectAll() {
+        selectedIDs = Set(regions.map(\.id))
+    }
+
+    func clearSelection() {
+        selectedIDs.removeAll()
+    }
+
+    func copyLine(_ id: Int) {
+        selectedIDs = [id]
+        copySelection()
+    }
+
+    func copySelection() {
+        let selected = regions.filter { selectedIDs.contains($0.id) }
+        guard !selected.isEmpty else { return }
+        let value = selected.map(\.text).joined(separator: "\n")
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        showFeedback("已复制 \(selected.count) 行")
+    }
+
+    func close() {
+        onClose?()
+    }
+
+    private func showFeedback(_ text: String) {
+        copyFeedback = text
+        let token = UUID()
+        feedbackToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+            guard let self, self.feedbackToken == token else { return }
+            self.copyFeedback = nil
+        }
+    }
+}
+
+@MainActor
+final class OCRTextLayerWindowController: NSWindowController, NSWindowDelegate {
+    let model: OCRTextLayerModel
+    var onClose: (() -> Void)?
+
+    init(image: NSImage, regions: [OCRTextRegion], text: String) {
+        let model = OCRTextLayerModel(image: image, regions: regions, text: text)
+        self.model = model
+        let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
+        let maxWidth = min(1000, visible.width * 0.9)
+        let maxHeight = min(780, visible.height * 0.9)
+        let widthScale = (maxWidth - 40) / max(image.size.width, 1)
+        let heightScale = (maxHeight - 120) / max(image.size.height, 1)
+        let imageScale = min(1, min(widthScale, heightScale))
+        let contentWidth = max(680, image.size.width * imageScale + 40)
+        let contentHeight = max(480, image.size.height * imageScale + 120)
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: contentWidth, height: contentHeight),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "文字提取"
+        window.minSize = CGSize(width: 680, height: 480)
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+        model.onClose = { [weak self] in self?.close() }
+        window.contentView = NSHostingView(rootView: OCRTextLayerWorkspaceView(model: model))
+        window.delegate = self
+        window.center()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func windowWillClose(_ notification: Notification) {
+        model.onClose = nil
+        window?.contentView = nil
+        onClose?()
+        onClose = nil
+        #if DEBUG
+        MemoryTrace.markAfterRelease("ocr_text_layer_window_closed")
+        #endif
+    }
+}
+
+private struct OCRTextLayerWorkspaceView: View {
+    @ObservedObject var model: OCRTextLayerModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Label("文字提取", systemImage: "doc.text.viewfinder")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("识别到 \(model.regions.count) 行")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Picker("显示方式", selection: $model.mode) {
+                    ForEach(OCRTextLayerMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 128)
+                if model.mode == .list {
+                    Button("完成") { model.close() }
+                        .keyboardShortcut(.cancelAction)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color(nsColor: .windowBackgroundColor))
+            Divider()
+            if model.mode == .layer {
+                OCRTextLayerView(model: model)
+            } else {
+                OCRResultView(text: model.text)
+            }
+        }
+    }
+}
+
+private struct OCRTextLayerView: View {
+    @ObservedObject var model: OCRTextLayerModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            GeometryReader { geometry in
+                let imageRect = Self.fittedRect(for: model.image.size, in: geometry.size)
+                ZStack {
+                    Color(nsColor: .underPageBackgroundColor)
+                    if imageRect.width > 0 {
+                        Image(nsImage: model.image)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: imageRect.width, height: imageRect.height)
+                            .position(x: imageRect.midX, y: imageRect.midY)
+                    }
+                    if model.regions.isEmpty {
+                        VStack(spacing: 6) {
+                            Image(systemName: "text.magnifyingglass")
+                                .font(.system(size: 26))
+                            Text("未识别到文字").font(.headline)
+                            Text("可以切到“列表”查看原始结果").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(18)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        OCRTextLayerCanvas(model: model, imageRect: imageRect)
+                    }
+                }
+            }
+            bottomBar
+        }
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: model.selectedCount > 0 ? "checkmark.circle.fill" : "text.cursor")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(model.selectedCount > 0 ? Color.accentColor : Color.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.selectedCount > 0 ? "已选 \(model.selectedCount) 行" : "选择文字")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(model.copyFeedback ?? "单击选中 · 拖拽多选 · 双击单行复制")
+                    .font(.system(size: 11))
+                    .foregroundStyle(model.copyFeedback == nil ? Color.secondary : Color.green)
+            }
+            Spacer()
+            Button("全选") { model.selectAll() }
+                .keyboardShortcut("a", modifiers: .command)
+                .buttonStyle(.borderless)
+                .disabled(model.regions.isEmpty)
+            Button("完成") { model.close() }
+                .keyboardShortcut(.cancelAction)
+                .buttonStyle(.borderless)
+            Button {
+                model.copySelection()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "doc.on.doc")
+                    Text("复制")
+                    Text("⌘C").font(.system(size: 10, weight: .medium)).opacity(0.75)
+                }
+            }
+            .keyboardShortcut("c", modifiers: .command)
+            .buttonStyle(.borderedProminent)
+            .disabled(model.selectedCount == 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private static func fittedRect(for imageSize: CGSize, in available: CGSize) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return .zero }
+        let inset: CGFloat = 20
+        let width = max(1, available.width - inset * 2)
+        let height = max(1, available.height - inset * 2)
+        let scale = min(width / imageSize.width, height / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(x: (available.width - size.width) / 2,
+                      y: (available.height - size.height) / 2,
+                      width: size.width, height: size.height)
+    }
+}
+
+private struct OCRTextLayerCanvas: NSViewRepresentable {
+    let model: OCRTextLayerModel
+    let imageRect: CGRect
+
+    func makeNSView(context: Context) -> OCRTextLayerCanvasView {
+        let view = OCRTextLayerCanvasView()
+        view.model = model
+        view.imageRect = imageRect
+        return view
+    }
+
+    func updateNSView(_ view: OCRTextLayerCanvasView, context: Context) {
+        view.model = model
+        view.imageRect = imageRect
+        view.needsDisplay = true
+        view.window?.invalidateCursorRects(for: view)
+    }
+}
+
+@MainActor
+final class OCRTextLayerCanvasView: NSView {
+    var model: OCRTextLayerModel?
+    var imageRect: CGRect = .zero
+    private var pressStart: CGPoint?
+    private var didDrag = false
+    private var marquee: CGRect?
+    private var suppressMouseUp = false
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window, window.firstResponder === window else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
+    func regionRects() -> [(id: Int, rect: CGRect)] {
+        guard let model, imageRect.width > 0, imageRect.height > 0 else { return [] }
+        return model.regions.map { region in
+            let b = region.bounds
+            return (region.id, CGRect(x: imageRect.minX + b.minX * imageRect.width,
+                                      y: imageRect.minY + b.minY * imageRect.height,
+                                      width: b.width * imageRect.width,
+                                      height: b.height * imageRect.height))
+        }
+    }
+
+    func regionID(at point: CGPoint) -> Int? {
+        regionRects().reversed().first {
+            $0.rect.insetBy(dx: -3, dy: -3).contains(point)
+        }?.id
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let model, imageRect.width > 0 else { return }
+        NSGraphicsContext.current?.shouldAntialias = true
+        for (id, rect) in regionRects() {
+            if model.selectedIDs.contains(id) {
+                let path = NSBezierPath(roundedRect: rect.insetBy(dx: -2, dy: -2), xRadius: 4, yRadius: 4)
+                NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
+                path.fill()
+                NSColor.controlAccentColor.withAlphaComponent(0.9).setStroke()
+                path.lineWidth = 1.5
+                path.stroke()
+            } else {
+                let path = NSBezierPath()
+                path.move(to: CGPoint(x: rect.minX, y: rect.maxY - 1))
+                path.line(to: CGPoint(x: rect.maxX, y: rect.maxY - 1))
+                path.setLineDash([2, 3], count: 2, phase: 0)
+                NSColor.controlAccentColor.withAlphaComponent(0.28).setStroke()
+                path.lineWidth = 1
+                path.stroke()
+            }
+        }
+        if let marquee {
+            let path = NSBezierPath(roundedRect: marquee, xRadius: 2, yRadius: 2)
+            NSColor.controlAccentColor.withAlphaComponent(0.10).setFill()
+            path.fill()
+            NSColor.controlAccentColor.withAlphaComponent(0.85).setStroke()
+            path.lineWidth = 1
+            path.setLineDash([4, 3], count: 2, phase: 0)
+            path.stroke()
+        }
+    }
+
+    override func resetCursorRects() {
+        for (_, rect) in regionRects() {
+            addCursorRect(rect, cursor: .iBeam)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        let point = convert(event.locationInWindow, from: nil)
+        pressStart = point
+        didDrag = false
+        marquee = nil
+        suppressMouseUp = false
+        if event.clickCount == 2, let id = regionID(at: point) {
+            model?.copyLine(id)
+            suppressMouseUp = true
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = pressStart else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - start.x, point.y - start.y) > 4 else { return }
+        didDrag = true
+        marquee = CGRect(x: min(start.x, point.x), y: min(start.y, point.y),
+                         width: abs(point.x - start.x), height: abs(point.y - start.y))
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            pressStart = nil
+            didDrag = false
+            marquee = nil
+            suppressMouseUp = false
+            needsDisplay = true
+        }
+        if suppressMouseUp { return }
+        guard pressStart != nil else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        let extending = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+        if didDrag, let marquee {
+            let ids = Set(regionRects().filter { $0.rect.intersects(marquee) }.map(\.id))
+            model?.applySelection(ids, extending: extending)
+        } else if let id = regionID(at: point) {
+            model?.applySelection([id], extending: extending)
+        } else if !extending {
+            model?.clearSelection()
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            switch event.charactersIgnoringModifiers {
+            case "a": model?.selectAll(); return
+            case "c": model?.copySelection(); return
+            default: break
+            }
+        }
+        if event.keyCode == 53 { model?.close(); return }
+        super.keyDown(with: event)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        model?.close()
+    }
+}

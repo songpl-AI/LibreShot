@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var imageEditors: [ImageEditorWindowController] = []
     private var pinnedWindows: [PinnedImageWindowController] = []
-    private var ocrWindowController: OCRResultWindowController?
+    private var ocrWindowController: OCRTextLayerWindowController?
     private var imageTranslationWindows: [NSWindowController] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -634,17 +634,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #if DEBUG
             MemoryTrace.mark("ocr_action_started")
             #endif
-            let text = try await OCRService.shared.recognizeText(from: outputImage)
+            let recognized = try await OCRService.shared.recognizeRegions(from: outputImage)
+            let regions = OCRTextRegion.readingOrder(from: recognized)
+            let text = regions.map(\.text).joined(separator: "\n")
             ocrWindowController?.close()
-            let controller = OCRResultWindowController(text: text)
+            let controller = OCRTextLayerWindowController(image: outputImage, regions: regions, text: text)
             controller.onClose = { [weak self, weak controller] in
                 guard let self, self.ocrWindowController === controller else { return }
                 self.ocrWindowController = nil
             }
             ocrWindowController = controller
             controller.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
             #if DEBUG
-            MemoryTrace.mark("ocr_result_window_open")
+            MemoryTrace.mark("ocr_text_layer_window_open")
             #endif
         case .translate:
             if #available(macOS 26.0, *) {
