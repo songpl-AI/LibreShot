@@ -63,16 +63,6 @@ struct OverlayView: View {
                                 continue
                             }
                             drawAnnotation(context: drawingContext, annotation: annotation, canvasSize: size)
-                            if annotation.id == viewModel.hoveredAnnotationID,
-                               annotation.id != viewModel.selectedAnnotationID {
-                                // A dark rim plus a white core stays visible on both light
-                                // and dark content without changing the annotation's ink.
-                                let hoverRect = annotation.selectionBounds.insetBy(dx: -4, dy: -4)
-                                let radius: CGFloat = [.text, .number].contains(annotation.type) ? 5 : 3
-                                let hoverPath = Path(roundedRect: hoverRect, cornerRadius: radius)
-                                drawingContext.stroke(hoverPath, with: .color(.black.opacity(0.28)), lineWidth: 3)
-                                drawingContext.stroke(hoverPath, with: .color(.white.opacity(0.9)), lineWidth: 1.25)
-                            }
                             // Highlight selected annotation
                             if annotation.id == viewModel.selectedAnnotationID {
                                 // Draw selection halo/border
@@ -240,22 +230,17 @@ struct OverlayView: View {
                 case .active(let point):
                     if viewModel.state == .idle || viewModel.state == .selecting { guidePoint = point }
                     let overToolbar = editorToolbarFrame(screenSize: geometry.size).contains(point)
-                    viewModel.updateHover(at: overToolbar ? nil : point)
                     if overToolbar { NSCursor.arrow.set() }
                     else if onBlankCanvasDrag != nil && viewModel.canMoveBlankCanvas(at: point) { NSCursor.openHand.set() }
                     else { OverlayPointerCursor.cursor(for: viewModel.cursorStyle(at: point)).set() }
                 case .ended:
                     guidePoint = nil
-                    viewModel.updateHover(at: nil)
                     NSCursor.arrow.set()
                 }
             }
             .onChange(of: guidePoint) { viewModel.updateSelectionLoupe(at: $0) }
             .onChange(of: viewModel.previewImage) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
-            .onChange(of: viewModel.state) { _ in
-                viewModel.updateSelectionLoupe(at: guidePoint)
-                viewModel.clearHover()
-            }
+            .onChange(of: viewModel.state) { _ in viewModel.updateSelectionLoupe(at: guidePoint) }
             .coordinateSpace(name: "overlay")
             .contentShape(Rectangle())
             .gesture(

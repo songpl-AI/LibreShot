@@ -695,34 +695,8 @@ class OverlayViewModel: ObservableObject {
         willSet { if newValue != selectedAnnotationID { endToolPropertyAdjustment() } }
     }
 
-    /// Topmost editable annotation under the pointer, used only for hover feedback.
-    /// It is independent of selection and never changes annotation data.
-    @Published private(set) var hoveredAnnotationID: UUID?
-
     func annotationID(at point: CGPoint) -> UUID? {
         hitTest(at: point)
-    }
-
-    /// Updates the hover outline without taking part in drag or click routing.
-    /// Pen ink and effect-brush strokes keep their existing affordances and are skipped.
-    func updateHover(at point: CGPoint?) {
-        guard let point, state == .editing, !isEditingText, !hasDrawingGesture,
-              activeSelectionHandle == nil, !isTransformingShape, !isMovingSelection,
-              !isResizingText else {
-            clearHover()
-            return
-        }
-        let id = hitTest(at: point).flatMap { candidate -> UUID? in
-            guard let annotation = annotations.first(where: { $0.id == candidate }),
-                  !annotation.isEffectBrush else { return nil }
-            return candidate
-        }
-        let next = id == selectedAnnotationID ? nil : id
-        if next != hoveredAnnotationID { hoveredAnnotationID = next }
-    }
-
-    func clearHover() {
-        if hoveredAnnotationID != nil { hoveredAnnotationID = nil }
     }
     
     private struct AnnotationPress {
@@ -817,8 +791,15 @@ class OverlayViewModel: ObservableObject {
     @discardableResult
     func handleSelectedShapeDrag(from start: CGPoint, to point: CGPoint, within bounds: CGRect) -> Bool {
         if shapeDrag == nil {
-            guard state == .editing, !isEditingText, !isMovingSelection, !isResizingText, activeSelectionHandle == nil,
-                  let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
+            guard state == .editing, !isEditingText, !isMovingSelection, !isResizingText,
+                  activeSelectionHandle == nil else { return false }
+            // Pointer mode grabs the shape under the press immediately; requiring a
+            // separate click first makes the hand cursor dishonest. Text and numbers
+            // keep their click-to-edit path and are not auto-selected here.
+            if selectedTool == nil, let id = shapeDragCandidate(at: start) {
+                selectExistingAnnotation(id: id)
+            }
+            guard let annotation = annotations.first(where: { $0.id == selectedAnnotationID }),
                   annotation.type != .pen else { return false }
             let rect = annotation.selectionBounds
             let handle = (selectedShapeRect == nil ? [] : SelectionHandle.allCases).filter {
@@ -899,8 +880,14 @@ class OverlayViewModel: ObservableObject {
 
     private func selectExistingAnnotation(id: UUID) {
         guard let annotation = annotations.first(where: { $0.id == id }), annotation.type != .pen else { return }
+        // Selecting with the pointer stays in pointer mode so the next object can
+        // be grabbed directly. Clicking with a drawing tool still switches to that
+        // object's tool, preserving the existing editing flow.
+        let keepsPointer = selectedTool == nil
         selectedAnnotationID = id
-        selectedTool = visibleToolbarItems.contains(where: { $0.annotationType == annotation.type }) ? annotation.type : nil
+        if !keepsPointer {
+            selectedTool = visibleToolbarItems.contains(where: { $0.annotationType == annotation.type }) ? annotation.type : nil
+        }
         selectedColor = annotation.color
         if annotation.type == .number { selectedNumberFontSize = annotation.fontSize; selectedNumberStyle = annotation.numberStyle }
         if annotation.type == .text || annotation.type == .number {
@@ -1110,7 +1097,6 @@ class OverlayViewModel: ObservableObject {
         currentAnnotation = nil
         selectedTool = nil
         selectedAnnotationID = nil
-        hoveredAnnotationID = nil
         cancelTextInput()
         nextNumber = 1
         lastNumberID = nil
@@ -1356,6 +1342,34 @@ class OverlayViewModel: ObservableObject {
     
     private func isPoint(_ point: CGPoint, in annotation: Annotation) -> Bool {
         annotation.containsSelectionPoint(point)
+    }
+
+    /// Pointer-mode grab target. Rectangle and ellipse interiors count, matching
+    /// the hand cursor; text/number and effect-brush strokes keep their own click
+    /// behavior so double-click editing and painting are not intercepted.
+    private func shapeDragCandidate(at point: CGPoint) -> UUID? {
+        guard state == .editing, selectionRect.contains(point) else { return nil }
+        for annotation in annotations.reversed() where annotation.type != .pen {
+            if annotation.type == .text || annotation.type == .number || annotation.isEffectBrush {
+                if annotation.containsSelectionPoint(point) { return nil }
+                continue
+            }
+            switch annotation.type {
+            case .rectangle:
+                if annotation.rectanglePath.contains(point) { return annotation.id }
+            case .ellipse:
+                let rect = CGRect(from: annotation.startPoint, to: annotation.endPoint)
+                guard !rect.isEmpty else { continue }
+                let path = CGMutablePath()
+                path.addEllipse(in: rect)
+                if path.contains(point) { return annotation.id }
+            case .arrow, .mosaic, .blur:
+                if annotation.containsSelectionPoint(point) { return annotation.id }
+            case .pen, .text, .number:
+                break
+            }
+        }
+        return nil
     }
 
     private func clampPoint(_ point: CGPoint, to rect: CGRect) -> CGPoint {
