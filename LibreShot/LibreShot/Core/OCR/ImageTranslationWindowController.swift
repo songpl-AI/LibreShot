@@ -337,10 +337,14 @@ final class ImageTranslationModel: ObservableObject {
 
 @available(macOS 26.0, *)
 struct InlineImageTranslationView: View {
+    /// Match the property bar's footprint so the toolbar and accessory layout
+    /// stay stable while a translation session is open.
+    static let barWidth: CGFloat = 360
+    static let barHeight: CGFloat = 52
+
     @ObservedObject var viewModel: OverlayViewModel
     @ObservedObject private var model: ImageTranslationModel
     @State private var showsCorrections = false
-    @State private var didAutoCollapse = false
     @State private var attachmentID = UUID()
     private let sessionID: UUID
 
@@ -356,58 +360,50 @@ struct InlineImageTranslationView: View {
         let requestID = model.activeRequestID
         let attachmentID = self.attachmentID
         let sessionID = self.sessionID
-        let collapsedState = $didAutoCollapse
-        let correctionsState = $showsCorrections
-        VStack(spacing: 0) {
-            if viewModel.showsTranslationControls {
-                VStack(spacing: 5) {
-                    HStack(spacing: 6) {
-                        Picker("目标语言", selection: $model.targetLanguageID) {
-                            Text("简体中文").tag("zh-Hans")
-                            Text("English").tag("en")
-                            Text("日本語").tag("ja")
-                            Text("한국어").tag("ko")
-                        }.labelsHidden().frame(width: 84).disabled(model.isBusy)
-                        Picker("图像", selection: $viewModel.showsOriginalTranslation) {
-                            Text("原文").tag(true)
-                            Text("译文").tag(false)
-                        }.pickerStyle(.segmented).labelsHidden().frame(width: 90)
-                        Spacer(minLength: 0)
-                        Button {
-                            if model.isBusy { model.cancel() }
-                            else if model.regions.isEmpty { Task { [weak model] in await model?.recognize() } }
-                            else { model.startTranslation() }
-                        } label: {
-                            Image(systemName: model.isBusy ? "stop.circle" : "arrow.clockwise")
-                                .frame(width: 24, height: 24)
-                        }.help(model.isBusy ? "取消翻译" : "重新翻译")
-                            .accessibilityLabel(model.isBusy ? "取消翻译" : "重新翻译")
-                        Button { showsCorrections.toggle() } label: {
-                            Image(systemName: "pencil.line").frame(width: 24, height: 24)
-                        }.help("校正译文").accessibilityLabel("校正译文")
-                            .popover(isPresented: $showsCorrections) {
-                                ImageTranslationCorrections(model: model).frame(width: 310, height: 360)
-                            }
-                        Button { viewModel.clearImageTranslation() } label: {
-                            Image(systemName: "xmark").frame(width: 24, height: 24)
-                        }.help("移除翻译，保留原图").accessibilityLabel("移除翻译")
-                    }.buttonStyle(.plain)
-                    HStack(spacing: 6) {
-                        if model.isBusy { ProgressView().controlSize(.mini) }
-                        Text(model.errorMessage ?? model.progress)
-                            .font(.system(size: 11))
-                            .foregroundStyle(model.errorMessage != nil || !model.overflowIDs.isEmpty ? Color.red : Color.secondary)
-                            .lineLimit(1).truncationMode(.tail)
-                        Spacer(minLength: 0)
-                    }.frame(height: 14)
-                }
-                .padding(10)
-                .frame(height: 70)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-                .padding(.top, 8)
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Picker("目标语言", selection: $model.targetLanguageID) {
+                    Text("简体中文").tag("zh-Hans")
+                    Text("English").tag("en")
+                    Text("日本語").tag("ja")
+                    Text("한국어").tag("ko")
+                }.labelsHidden().frame(width: 84).disabled(model.isBusy)
+                Picker("图像", selection: $viewModel.showsOriginalTranslation) {
+                    Text("原文").tag(true)
+                    Text("译文").tag(false)
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 90)
+                Spacer(minLength: 0)
+                Button {
+                    if model.isBusy { model.cancel() }
+                    else if model.regions.isEmpty { Task { [weak model] in await model?.recognize() } }
+                    else { model.startTranslation() }
+                } label: {
+                    Image(systemName: model.isBusy ? "stop.circle" : "arrow.clockwise")
+                        .frame(width: 22, height: 22)
+                }.help(model.isBusy ? "取消翻译" : "重新翻译")
+                    .accessibilityLabel(model.isBusy ? "取消翻译" : "重新翻译")
+                Button { showsCorrections.toggle() } label: {
+                    Image(systemName: "pencil.line").frame(width: 22, height: 22)
+                }.help("校正译文").accessibilityLabel("校正译文")
+                    .popover(isPresented: $showsCorrections) {
+                        ImageTranslationCorrections(model: model).frame(width: 310, height: 360)
+                    }
             }
+            .frame(height: 26)
+            .buttonStyle(.plain)
+            HStack(spacing: 6) {
+                if model.isBusy { ProgressView().controlSize(.mini) }
+                Text(model.errorMessage ?? model.progress)
+                    .font(.system(size: 11))
+                    .foregroundStyle(model.errorMessage != nil || !model.overflowIDs.isEmpty ? Color.red : Color.secondary)
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 0)
+            }.frame(height: 14)
         }
+        .padding(4)
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
         .task { [weak model] in await model?.activate(attachmentID: attachmentID) }
         .task(id: model.renderRevision) { [weak model] in await model?.render(attachmentID: attachmentID) }
         .translationTask(model.configuration) { [weak model, requestID, attachmentID] session in
@@ -421,13 +417,7 @@ struct InlineImageTranslationView: View {
         .onChange(of: model.canExport, initial: true) { [weak viewModel, weak model] _, _ in
             guard let viewModel, let model, viewModel.translationSessionID == sessionID,
                   viewModel.imageTranslationModel === model else { return }
-            let allowed = model.canExport
-            viewModel.translationCanExport = allowed
-            if allowed && !collapsedState.wrappedValue && !correctionsState.wrappedValue &&
-               model.complexBackgroundIDs.isEmpty && model.errorMessage == nil {
-                collapsedState.wrappedValue = true
-                viewModel.showsTranslationControls = false
-            }
+            viewModel.translationCanExport = model.canExport
         }
         .onChange(of: model.targetLanguageID) { [weak model] _, _ in model?.startTranslation() }
         .onDisappear { [weak model] in model?.suspend(attachmentID: attachmentID) }

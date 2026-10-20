@@ -113,7 +113,7 @@ struct EditorToolbarView: View {
         case .undo where isDisabled(item): label = "撤销（当前没有标注）"
         case .longCapture where isDisabled(item): label = "长截图（请先撤销标注并结束文字编辑）"
         case .translate where isDisabled(item): label = "原图翻译需要 macOS 26 或更新版本"
-        case .translate where viewModel.translationSource != nil: label = "点击选区切换原文/译文；点击此按钮显示或隐藏翻译设置"
+        case .translate where viewModel.translationSource != nil: label = "点击关闭翻译，保留原图；点选区可切换原文/译文"
         default: label = item.title
         }
         return viewModel.shortcutTitle(for: item).map { "\(label)（\($0)）" } ?? label

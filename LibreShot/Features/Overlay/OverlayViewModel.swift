@@ -144,7 +144,6 @@ class OverlayViewModel: ObservableObject {
     @Published var translatedSelection: CGImage? { didSet { scheduleEffectPreview() } }
     @Published var showsOriginalTranslation = false { didSet { scheduleEffectPreview() } }
     @Published var translationCanExport = false
-    @Published var showsTranslationControls = false
 
     var canExportSelection: Bool {
         guard translationSource != nil else { return true }
@@ -175,7 +174,6 @@ class OverlayViewModel: ObservableObject {
         translatedSelection = nil
         translationCanExport = false
         showsOriginalTranslation = false
-        showsTranslationControls = false
         translationSessionID = UUID()
         #if DEBUG
         if hadTranslation { MemoryTrace.markAfterRelease("inline_translation_cleared") }
@@ -447,7 +445,14 @@ class OverlayViewModel: ObservableObject {
     func confirmImageTranslation() {
         commitTextInput()
         guard !isEditingText else { return }
-        if translationSource != nil { showsTranslationControls.toggle(); return }
+        // The toolbar icon behaves like the other tools: pressing it while a
+        // translation session is open closes that session instead of toggling
+        // a separate settings panel.
+        if translationSource != nil {
+            if #available(macOS 26.0, *) { imageTranslationModel?.cancel() }
+            clearImageTranslation()
+            return
+        }
         guard #available(macOS 26.0, *), let image = previewImage,
               !selectionRect.isEmpty, previewScale > 0 else { return }
         let pixels = CGRect(x: selectionRect.minX * previewScale, y: selectionRect.minY * previewScale,
@@ -460,7 +465,6 @@ class OverlayViewModel: ObservableObject {
         #if DEBUG
         MemoryTrace.mark("inline_translation_source_ready")
         #endif
-        showsTranslationControls = true
         selectedTool = nil
         selectedAnnotationID = nil
     }

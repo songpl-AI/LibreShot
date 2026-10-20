@@ -390,10 +390,12 @@ struct OverlayView: View {
     }
     
     private func editorAccessorySize(screenSize: CGSize) -> CGSize {
+        if #available(macOS 26.0, *), viewModel.translationSource != nil {
+            return CGSize(width: min(InlineImageTranslationView.barWidth, screenSize.width - 20),
+                          height: InlineImageTranslationView.barHeight + 8)
+        }
         let properties = ToolPropertyBarView.size(for: viewModel, availableWidth: screenSize.width - 20)
-        let translationVisible = viewModel.translationSource != nil && viewModel.showsTranslationControls
-        return CGSize(width: max(properties.width, translationVisible ? min(430, screenSize.width - 20) : 0),
-                      height: (properties.height > 0 ? properties.height + 8 : 0) + (translationVisible ? 78 : 0))
+        return CGSize(width: properties.width, height: properties.height > 0 ? properties.height + 8 : 0)
     }
 
     private func editorToolbarFrame(screenSize: CGSize) -> CGRect {
@@ -405,13 +407,14 @@ struct OverlayView: View {
 
     @ViewBuilder private func editorAccessories(screenSize: CGSize) -> some View {
         VStack(spacing: 0) {
-            if viewModel.propertyTool != nil {
-                ToolPropertyBarView(viewModel: viewModel, availableWidth: screenSize.width - 20)
-                    .padding(.vertical, 4)
-            }
             if #available(macOS 26.0, *), let model = viewModel.imageTranslationModel {
                 InlineImageTranslationView(viewModel: viewModel, model: model)
-                    .id(viewModel.translationSessionID).frame(width: min(430, screenSize.width - 20))
+                    .id(viewModel.translationSessionID)
+                    .frame(width: min(InlineImageTranslationView.barWidth, screenSize.width - 20))
+                    .padding(.vertical, 4)
+            } else if viewModel.propertyTool != nil {
+                ToolPropertyBarView(viewModel: viewModel, availableWidth: screenSize.width - 20)
+                    .padding(.vertical, 4)
             }
         }
     }
