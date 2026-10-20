@@ -2,7 +2,7 @@
 
 ## 未发布 / Unreleased
 
-- 设置 > 基本设置新增“在程序坞中显示图标”。关闭时只有菜单栏；开启后可用 `⌘Tab` 切换、从程序坞右键退出，保存/另存为面板关闭后仍保持显示。Preview 自测见 [记录](docs/qa/dock-icon-preview-20261020.md)；1.3.29 / build 83 已装到本机，实际截图保存验收待补，见 [安装记录](docs/qa/1.3.29-83-dock-icon-install-20261020.md)。
+- 设置 > 基本设置新增“在程序坞中显示图标”。关闭时只有菜单栏；开启后可用 `⌘Tab` 切换、从程序坞右键退出，保存/另存为面板关闭后仍保持显示。Preview 自测见 [记录](docs/qa/dock-icon-preview-20261020.md)；1.3.29 / build 83 已装到本机，同包重启前后截图保存通过，见 [安装记录](docs/qa/1.3.29-83-dock-icon-install-20261020.md)。
 - 2026-10-05 按维护决定取消约 10 MiB 的内存目标，[Issue #5](https://github.com/songpl-AI/LibreShot/issues/5) 已关闭（不再计划）；历史测量保留，关闭不表示达到该数值。
 
 ## [1.3.28](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.28) — 2026-10-20
