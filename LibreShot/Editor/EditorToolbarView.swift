@@ -577,7 +577,9 @@ private final class CompactSwatchColorWell: NSColorWell {
 
     static func closeRaisedPanels() {
         for well in raisedWells.allObjects { well.deactivate() }
-        NSColorPanel.shared.orderOut(nil)
+        if NSColorPanel.sharedColorPanelExists {
+            NSColorPanel.shared.orderOut(nil)
+        }
     }
 
     override var intrinsicContentSize: NSSize { NSSize(width: 26, height: 26) }

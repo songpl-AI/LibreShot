@@ -4,11 +4,16 @@ import ImageIO
 
 private final class ExportCountingService: CaptureService {
     var normalizationCalls = 0
+    var normalizationContexts = 0
     var unannotatedNormalizationCalls = 0
     var pngCalls = 0
     override func bitmapRep(from image: NSImage, opaque: Bool = false, reuseExportPixels: Bool = false) -> NSBitmapImageRep? {
         normalizationCalls += 1
         return super.bitmapRep(from: image, opaque: opaque, reuseExportPixels: reuseExportPixels)
+    }
+    override func normalizedBitmapContext(from image: CGImage, opaque: Bool = false) -> CGContext? {
+        normalizationContexts += 1
+        return super.normalizedBitmapContext(from: image, opaque: opaque)
     }
     override func normalizedUnannotatedImage(_ image: NSImage) -> NSImage {
         unannotatedNormalizationCalls += 1
@@ -191,14 +196,20 @@ struct LongCaptureExportChecks {
                                normalizeOnce: Bool = false) -> NSImage {
         let inputBefore = rows(fixture.pixels)
         service.normalizationCalls = 0
+        service.normalizationContexts = 0
         service.unannotatedNormalizationCalls = 0
         let actual = ImageEditorExportRenderer.render(image: fixture.image, model: fixture.model, base: base,
             action: action, backing: fixture.backing, source: fixture.source, service: service)
         let normalizationCalls = service.normalizationCalls
+        let normalizationContexts = service.normalizationContexts
         let unannotatedCalls = service.unannotatedNormalizationCalls
         let expected = legacy(fixture, base: base, service: reference)
-        let route = fast ? "certified original-pixel path" : (normalizeOnce ? "one normalization without empty composite draw" : "legacy composite fallback")
-        require(normalizationCalls == (fast ? 0 : 1) && unannotatedCalls == (normalizeOnce ? 1 : 0), "\(label): \(route)")
+        let drawsAnnotations = !fixture.model.annotations.isEmpty
+        let needsIntermediateBitmap = !fast && !drawsAnnotations
+        require(normalizationCalls == (needsIntermediateBitmap ? 1 : 0)
+                && normalizationContexts == (fast ? 0 : 1)
+                && unannotatedCalls == (normalizeOnce ? 1 : 0),
+                "\(label): expected normalization route and no intermediate bitmap for annotations")
         let old = DecodedExport(reference.pngData(from: expected)!)
         let new = DecodedExport(service.pngData(from: actual)!)
         require(exact(old, new) && actual.size == expected.size && rows(fixture.pixels) == inputBefore,

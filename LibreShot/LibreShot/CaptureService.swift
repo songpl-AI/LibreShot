@@ -567,12 +567,26 @@ class CaptureService {
             return bitmap
         }
         outcome = "context-failed"
-        
+        guard let bitmapContext = normalizedBitmapContext(from: cgImage, opaque: opaque) else {
+            return nil
+        }
+        outcome = "image-failed"
+        guard let normalizedImage = bitmapContext.makeImage() else {
+            return nil
+        }
+
+        let bitmapRep = NSBitmapImageRep(cgImage: normalizedImage)
+        bitmapRep.size = image.size
+        outcome = "success"
+        return bitmapRep
+    }
+
+    func normalizedBitmapContext(from image: CGImage, opaque: Bool = false) -> CGContext? {
         let alphaInfo: CGImageAlphaInfo = opaque ? .noneSkipLast : .premultipliedLast
-        guard let bitmapContext = CGContext(
+        guard let context = CGContext(
             data: nil,
-            width: cgImage.width,
-            height: cgImage.height,
+            width: image.width,
+            height: image.height,
             bitsPerComponent: 8,
             bytesPerRow: 0,
             space: exportColorSpace,
@@ -580,29 +594,19 @@ class CaptureService {
         ) else {
             return nil
         }
-        
-        bitmapContext.interpolationQuality = .high
-        
+
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.interpolationQuality = .high
         if opaque {
-            bitmapContext.setFillColor(NSColor.white.cgColor)
-            bitmapContext.fill(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            context.setFillColor(NSColor.white.cgColor)
+            context.fill(bounds)
         } else {
-            bitmapContext.clear(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            context.clear(bounds)
         }
-        
-        bitmapContext.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
-        
-        outcome = "image-failed"
-        guard let normalizedImage = bitmapContext.makeImage() else {
-            return nil
-        }
-        
-        let bitmapRep = NSBitmapImageRep(cgImage: normalizedImage)
-        bitmapRep.size = image.size
-        outcome = "success"
-        return bitmapRep
+        context.draw(image, in: bounds)
+        return context
     }
-    
+
     /// Compatibility entry point for exporters that already hold a styled image.
     /// The optional-argument overload below remains the settings-aware path.
     func styledImage(_ image: NSImage) -> NSImage {

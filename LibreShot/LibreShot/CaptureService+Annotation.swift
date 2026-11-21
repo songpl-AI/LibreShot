@@ -62,30 +62,21 @@ extension CaptureService {
     }
 
     private func renderCompositeImage(baseImage: NSImage, annotations: [Annotation]) -> NSImage {
-        guard let bitmapRep = bitmapRep(from: baseImage, opaque: false),
-              let cgImage = bitmapRep.cgImage else {
-            return baseImage
+        // Keep the normalized backing mutable until the marks have been drawn.
+        // A CGImage snapshot at this point would require another full-size buffer.
+        let context: CGContext?
+        if annotations.isEmpty {
+            // Keep the existing representation handoff for the unmarked fallback.
+            context = unmarkedCompositeContext(from: baseImage)
+        } else {
+            context = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                .flatMap { normalizedBitmapContext(from: $0) }
         }
-        
-        let pixelSize = CGSize(width: cgImage.width, height: cgImage.height)
+        guard let bitmapContext = context else { return baseImage }
+
         let logicalSize = baseImage.size
-        let scaleX = logicalSize.width > 0 ? pixelSize.width / logicalSize.width : 1
-        let scaleY = logicalSize.height > 0 ? pixelSize.height / logicalSize.height : 1
-        
-        guard let bitmapContext = CGContext(
-            data: nil,
-            width: cgImage.width,
-            height: cgImage.height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return baseImage
-        }
-        
-        bitmapContext.interpolationQuality = .high
-        bitmapContext.draw(cgImage, in: CGRect(origin: .zero, size: pixelSize))
+        let scaleX = logicalSize.width > 0 ? CGFloat(bitmapContext.width) / logicalSize.width : 1
+        let scaleY = logicalSize.height > 0 ? CGFloat(bitmapContext.height) / logicalSize.height : 1
         bitmapContext.saveGState()
         bitmapContext.scaleBy(x: scaleX, y: scaleY)
         bitmapContext.translateBy(x: 0, y: logicalSize.height)
@@ -101,6 +92,22 @@ extension CaptureService {
         return NSImage(cgImage: outputImage, size: logicalSize)
     }
     
+    private func unmarkedCompositeContext(from image: NSImage) -> CGContext? {
+        guard let pixels = bitmapRep(from: image)?.cgImage,
+              let context = CGContext(
+                data: nil,
+                width: pixels.width,
+                height: pixels.height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: pixels.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(pixels, in: CGRect(x: 0, y: 0, width: pixels.width, height: pixels.height))
+        return context
+    }
+
     private func drawVectorAnnotations(_ annotations: [Annotation], in context: CGContext) {
         for annotation in annotations {
             context.setStrokeColor(NSColor(annotation.color).cgColor)
