@@ -22,14 +22,16 @@ enum MenuBarLeftClickAction: String, CaseIterable, Identifiable {
 }
 
 enum PinDoubleClickAction: String, CaseIterable, Identifiable {
-    case close, copy, edit
+    case close
+    case copyAndClose = "copy"
+    case edit
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .close: return "关闭贴图"
-        case .copy: return "复制图片"
+        case .copyAndClose: return "复制并关闭"
         case .edit: return "进入标注"
         }
     }

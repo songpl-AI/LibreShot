@@ -177,7 +177,7 @@ class CaptureService {
     @MainActor
     func copyAndSaveImageDirectly(_ image: NSImage) async throws -> URL {
         let encoded = pngData(from: image)
-        writeToClipboard(image, pngData: encoded)
+        _ = writeToClipboard(image, pngData: encoded)
         guard let encoded else { throw CaptureServiceError.imageConversionFailed }
         return try await savePNGDataDirectly(encoded)
     }
@@ -287,14 +287,15 @@ class CaptureService {
         return url
     }
 
-    func copyToClipboard(_ image: NSImage) {
+    @discardableResult
+    func copyToClipboard(_ image: NSImage) -> Bool {
         let copyStart = diagnosticTrace.startTime()
         diagnosticTrace.event("event=copy-start logicalSize=\(image.size.width)x\(image.size.height)")
         defer { diagnosticTrace.event("event=copy-ended elapsedMs=\(diagnosticTrace.elapsed(since: copyStart))") }
-        writeToClipboard(image, pngData: pngData(from: image))
+        return writeToClipboard(image, pngData: pngData(from: image))
     }
 
-    private func writeToClipboard(_ image: NSImage, pngData: Data?) {
+    private func writeToClipboard(_ image: NSImage, pngData: Data?) -> Bool {
         let clipboardStart = diagnosticTrace.startTime()
         diagnosticTrace.event("event=clipboard-start pngBytes=\(pngData?.count ?? 0) logicalSize=\(image.size.width)x\(image.size.height)")
         defer { diagnosticTrace.event("event=clipboard-ended elapsedMs=\(diagnosticTrace.elapsed(since: clipboardStart))") }
@@ -302,20 +303,20 @@ class CaptureService {
         
         guard let pngData else {
             diagnosticTrace.event("event=clipboard-fallback-image")
-            pasteboard.writeObjects([image])
-            return
+            return pasteboard.writeObjects([image])
         }
         
         diagnosticTrace.event("event=clipboard-png-start bytes=\(pngData.count)")
-        pasteboard.setData(pngData, forType: .png)
+        let wrotePNG = pasteboard.setData(pngData, forType: .png)
         diagnosticTrace.event("event=clipboard-png-ended bytes=\(pngData.count)")
         
         // Decode the normalized PNG so both formats have the same pixels and DPI.
         diagnosticTrace.event("event=clipboard-tiff-start pngBytes=\(pngData.count)")
+        var wroteTIFF = false
         if let normalizedBitmap = NSBitmapImageRep(data: pngData),
            let tiffData = encodedData(from: normalizedBitmap, type: .tiff) {
             diagnosticTrace.event("event=clipboard-tiff-write-start bytes=\(tiffData.count) pixels=\(normalizedBitmap.pixelsWide)x\(normalizedBitmap.pixelsHigh)")
-            pasteboard.setData(tiffData, forType: .tiff)
+            wroteTIFF = pasteboard.setData(tiffData, forType: .tiff)
             diagnosticTrace.event("event=clipboard-tiff-write-ended bytes=\(tiffData.count)")
         } else {
             diagnosticTrace.event("event=clipboard-tiff-unavailable")
@@ -323,6 +324,7 @@ class CaptureService {
         diagnosticTrace.event("event=clipboard-tiff-ended")
         // Both representations already belong to the same pasteboard item.
         // Writing NSImage again adds a second item and another decoded image.
+        return wrotePNG || wroteTIFF
     }
     
     func crop(image: NSImage, to rect: CGRect, displayID: CGDirectDisplayID? = nil) -> NSImage? {

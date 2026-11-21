@@ -44,7 +44,7 @@ Double-click completion can be disabled in Settings. Double-clicks on annotation
 
 ## Pin and scrolling capture
 
-Click Pin or use the default `⌘P` during capture editing to pin at the capture position. The wheel or Cmd+wheel zooms and briefly shows the current percentage; Ctrl+wheel adjusts display opacity. Copy and Save retain the original pixel dimensions and image opacity. Outside editing, drag to move the pin. Double-click closes it by default. In General settings, you can set a double-click to copy the image or open annotation tools. Copying leaves the pin visible.
+Click Pin or use the default `⌘P` during capture editing to pin at the capture position. The wheel or Cmd+wheel zooms and briefly shows the current percentage; Ctrl+wheel adjusts display opacity. Copy and Save retain the original pixel dimensions and image opacity. Outside editing, drag to move the pin. Double-click closes it by default. In General settings, you can set a double-click to copy and close the pin or open annotation tools. Copy and Close closes the pin after the image is copied to the clipboard.
 
 Choose Edit Annotations from the context menu to edit in place. Changes persist immediately. Drag blank space in Select/Move mode to move the pin; drawing tools still draw. The toolbar's left handle moves the pin with any tool. With blank double-click completion enabled, double-clicking blank space during pin editing saves to the configured folder and keeps editing open. Collapse with the right arrow or Esc, then reopen to continue undoing with `⌘Z`. Text input handles Esc first; existing text, numbers and handles do not trigger saving.
 

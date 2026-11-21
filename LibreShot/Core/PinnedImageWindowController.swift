@@ -214,7 +214,8 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         guard !didTearDown, displayMode == .pinned, presentation.editor == nil else { return }
         switch settings.pinDoubleClickAction {
         case .close: close()
-        case .copy: handleCopy()
+        case .copyAndClose:
+            if copyImageToClipboard() { close() }
         case .edit: beginEditing()
         }
     }
@@ -227,6 +228,10 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         
+        _ = copyImageToClipboard()
+    }
+
+    private func copyImageToClipboard() -> Bool {
         currentExportService().copyToClipboard(imageForAction())
     }
 
