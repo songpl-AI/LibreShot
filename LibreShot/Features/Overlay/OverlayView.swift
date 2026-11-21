@@ -122,7 +122,8 @@ struct OverlayView: View {
                                                               bounds: geometry.size)
                     let size = SelectionLoupeSampler.stackSize
                     SelectionLoupeView(reading: reading, showsRGB: viewModel.selectionLoupeShowsRGB,
-                                       copied: viewModel.selectionLoupeCopied)
+                                       copied: viewModel.selectionLoupeCopied,
+                                       exitsAfterCopy: viewModel.captureMode == .normal)
                         .position(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
                 }
 

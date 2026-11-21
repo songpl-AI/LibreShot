@@ -141,6 +141,7 @@ class OverlayWindowController: NSWindowController {
         
         // Escape always cancels the capture, just like the toolbar's Cancel button.
         overlayWindow.onEscapeKey = cancelAction
+        overlayWindow.onRightClickCancel = captureMode == .normal ? cancelAction : nil
         overlayWindow.bindEditingActions(to: viewModel)
         
         // 3. Determine Screen
@@ -367,7 +368,9 @@ class OverlayWindowController: NSWindowController {
             return
         }
         
+        let previousApplication = currentCaptureMode == .normal ? previousFrontmostApplication : nil
         finishOverlaySession()
+        previousApplication?.activate(options: [.activateIgnoringOtherApps])
         onCancel()
     }
     
@@ -469,6 +472,7 @@ class OverlayWindowController: NSWindowController {
         window?.contentViewController = nil
         window?.contentView = nil
         (window as? OverlayWindow)?.onEscapeKey = nil
+        (window as? OverlayWindow)?.onRightClickCancel = nil
         viewModel.reset()
         viewModel.onCapture = nil
         viewModel.onCancel = nil

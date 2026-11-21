@@ -82,6 +82,7 @@ struct SelectionLoupeView: View {
     let reading: SelectionLoupeReading
     var showsRGB = false
     var copied = false
+    var exitsAfterCopy = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -124,7 +125,8 @@ struct SelectionLoupeView: View {
                         .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.white.opacity(0.85), lineWidth: 0.5))
                     Text(showsRGB ? "sRGB \(reading.rgbText)" : "sRGB \(reading.hexText)")
                 }
-                Text(copied ? "已复制" : "按 ⌘ + C 复制色值")
+                if copied { Text("已复制") }
+                else { Text(exitsAfterCopy ? "⌘C 复制色值并退出" : "按 ⌘ + C 复制色值") }
                 Text("按 Shift 切换 RGB/HEX")
             }
             .font(.system(size: 12))

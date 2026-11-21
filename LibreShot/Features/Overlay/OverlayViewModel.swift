@@ -231,7 +231,7 @@ class OverlayViewModel: ObservableObject {
         selectionLoupe = SelectionLoupeSampler.sample(image: image, scale: previewScale, point: point)
     }
 
-    func performSelectionLoupeShortcut(_ event: NSEvent) -> Bool {
+    func performSelectionLoupeShortcut(_ event: NSEvent, to pasteboard: NSPasteboard = .general) -> Bool {
         guard state == .idle || state == .selecting, captureMode != .imageEditor else { return false }
         if event.type == .flagsChanged {
             let shift = event.modifierFlags.contains(.shift)
@@ -241,7 +241,9 @@ class OverlayViewModel: ObservableObject {
         }
         guard event.type == .keyDown, event.keyCode == 8, event.modifierFlags.contains(.command),
               event.modifierFlags.intersection([.shift, .option, .control]).isEmpty, !event.isARepeat else { return false }
-        return copySelectionLoupeColor()
+        guard copySelectionLoupeColor(to: pasteboard) else { return false }
+        if captureMode == .normal { onCancel?() }
+        return true
     }
 
     @discardableResult

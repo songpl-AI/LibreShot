@@ -12,6 +12,7 @@ class OverlayWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 
     var onEscapeKey: (() -> Void)?
+    var onRightClickCancel: (() -> Void)?
     var onConfirmKey: (() -> Void)?
     var onSaveKey: (() -> Void)?
     var onSaveAsKey: (() -> Void)?
@@ -30,6 +31,10 @@ class OverlayWindow: NSWindow {
     }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .rightMouseDown, !(firstResponder is NSTextView), let onRightClickCancel {
+            onRightClickCancel()
+            return
+        }
         if event.type == .flagsChanged {
             _ = onEditorShortcut?(event, firstResponder is NSTextView)
         }

@@ -61,12 +61,42 @@ import SwiftUI
                                       isARepeat: false, keyCode: 56)!
         precondition(!model.performSelectionLoupeShortcut(shift) && model.selectionLoupeShowsRGB)
         precondition(model.copySelectionLoupeColor(to: board) && board.string(forType: .string) == "220,30,40")
-        model.state = .editing
         let copy = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
                                      windowNumber: 0, context: nil, characters: "c", charactersIgnoringModifiers: "c",
                                      isARepeat: false, keyCode: 8)!
-        precondition(!model.performSelectionLoupeShortcut(copy), "Finished editing keeps Command-C for the screenshot")
-        print("PASS: selection loupe samples the pointer pixel in sRGB, stays below-left, and copies HEX or RGB")
+        var cancellations = 0
+        model.onCancel = {
+            precondition(board.string(forType: .string) == "220,30,40", "Write the color before dismissing the overlay")
+            cancellations += 1
+        }
+        precondition(model.performSelectionLoupeShortcut(copy, to: board) && cancellations == 1)
+        model.updateSelectionLoupe(at: nil)
+        precondition(!model.performSelectionLoupeShortcut(copy, to: board) && cancellations == 1)
+        model.captureMode = .longScreenshot
+        model.updateSelectionLoupe(at: CGPoint(x: 1.2, y: 0.6))
+        precondition(model.performSelectionLoupeShortcut(copy, to: board) && cancellations == 1)
+        model.captureMode = .normal
+        model.state = .editing
+        precondition(!model.performSelectionLoupeShortcut(copy, to: board), "Finished editing keeps Command-C for the screenshot")
+        print("PASS: selection color sampling and copy-before-dismiss, with editing and long capture unchanged")
+
+        _ = NSApplication.shared
+        let window = OverlayWindow(contentRect: CGRect(x: 0, y: 0, width: 120, height: 80),
+                                   styleMask: [.borderless], backing: .buffered, defer: false)
+        let rightClick = NSEvent.mouseEvent(with: .rightMouseDown, location: CGPoint(x: 35, y: 30),
+                                            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        var rightCancellations = 0
+        window.sendEvent(rightClick)
+        window.onRightClickCancel = { rightCancellations += 1 }
+        window.sendEvent(rightClick)
+        precondition(rightCancellations == 1)
+        let textView = NSTextView(frame: CGRect(x: 0, y: 0, width: 120, height: 80))
+        window.contentView = textView
+        precondition(window.makeFirstResponder(textView))
+        window.sendEvent(rightClick)
+        precondition(rightCancellations == 1, "A text responder retains its right click")
+        print("PASS: opted-in right-click cancellation preserves text input")
     }
 
     static func solidImage(width: Int, height: Int, _ pixel: (Int, Int) -> (UInt8, UInt8, UInt8)) -> CGImage {
