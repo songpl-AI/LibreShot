@@ -66,7 +66,7 @@ struct WindowReleaseLifecycleChecks {
         let probe = Probe(controller, state: state, token: token)
         controller.previewImageLoader = { _ in token.touch(); throw CaptureServiceError.permissionDenied }
         controller.show(captureMode: mode,
-                        onCapture: { _, _, _, _ in token.touch(); state.captures += 1 },
+                        onCapture: { _, _, _, _, _ in token.touch(); state.captures += 1 },
                         onPreviewError: { _ in token.touch(); state.errors += 1 },
                         onCancel: { token.touch(); state.cancels += 1 })
         return probe
@@ -76,7 +76,7 @@ struct WindowReleaseLifecycleChecks {
         let controller = OverlayWindowController(), token = Token(), state = State()
         let probe = Probe(controller, state: state, token: token)
         controller.previewImageLoader = { _ in token.touch(); throw CaptureServiceError.permissionDenied }
-        controller.show(onCapture: { _, _, _, _ in token.touch(); state.captures += 1 },
+        controller.show(onCapture: { _, _, _, _, _ in token.touch(); state.captures += 1 },
                         onPreviewError: { _ in token.touch(); state.errors += 1 },
                         onCancel: { token.touch(); state.cancels += 1 })
         (probe.window as! OverlayWindow).onEscapeKey?()
@@ -87,7 +87,7 @@ struct WindowReleaseLifecycleChecks {
         let controller = OverlayWindowController(), token = Token(), state = State()
         let probe = Probe(controller, state: state, token: token)
         controller.previewImageLoader = { _ in token.touch(); throw CaptureServiceError.permissionDenied }
-        controller.show(onCapture: { [weak controller] _, _, action, image in
+        controller.show(onCapture: { [weak controller] _, _, action, image, _ in
             token.touch(); state.captures += 1
             if case .ocr = action { state.image = image } else { preconditionFailure("Unexpected action") }
             state.displayPreserved = controller?.getCurrentDisplayID() == state.expectedDisplayID
@@ -132,7 +132,7 @@ struct WindowReleaseLifecycleChecks {
             if attempts == 1 { return await withCheckedContinuation { firstPreview = $0 } }
             throw CaptureServiceError.permissionDenied
         }
-        controller.show(onCapture: { _, _, _, _ in preconditionFailure("No capture expected") },
+        controller.show(onCapture: { _, _, _, _, _ in preconditionFailure("No capture expected") },
                         onPreviewError: { _ in errors += 1 }, onCancel: {})
         for _ in 0..<50 where attempts == 0 { try await Task.sleep(for: .milliseconds(5)) }
         precondition(attempts == 1)
@@ -154,7 +154,7 @@ struct WindowReleaseLifecycleChecks {
         for _ in 0..<2 {
             var errors = 0
             controller.previewImageLoader = { _ in throw CaptureServiceError.permissionDenied }
-            controller.show(onCapture: { _, _, _, _ in preconditionFailure("No capture expected") },
+            controller.show(onCapture: { _, _, _, _, _ in preconditionFailure("No capture expected") },
                             onPreviewError: { _ in errors += 1 }, onCancel: {})
             precondition(window.contentViewController != nil)
             try await Task.sleep(for: .milliseconds(50))
@@ -175,7 +175,7 @@ struct WindowReleaseLifecycleChecks {
         let image = NSImage(cgImage: context.makeImage()!, size: NSSize(width: 640, height: 480))
         controller.previewImageLoader = { _ in image }
         controller.show(captureMode: .longScreenshot,
-                        onCapture: { _, _, _, _ in preconditionFailure("No normal capture expected") },
+                        onCapture: { _, _, _, _, _ in preconditionFailure("No normal capture expected") },
                         onLongCaptureError: { _ in },
                         onCancel: {})
         for _ in 0..<100 where model.previewImage == nil {

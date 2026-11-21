@@ -52,6 +52,10 @@ struct EditorToolbarView: View {
                         Image(systemName: "gearshape").font(.system(size: 16))
                     } else if item == .mosaic || item == .blur {
                         EffectToolIcon(tool: item)
+                    } else if item == .corners {
+                        RoundedRectangle(cornerRadius: viewModel.useRoundedCorners ? 4 : 0)
+                            .strokeBorder(lineWidth: 1.5)
+                            .frame(width: 16, height: 13)
                     } else {
                         Image(systemName: item.iconName)
                             .font(.system(size: 16, weight: .regular))
@@ -67,7 +71,7 @@ struct EditorToolbarView: View {
             .opacity(isDisabled(item) ? 0.5 : 1)
             .accessibilityLabel(item == .style ? "工具属性" : item.title)
             .accessibilityHint(help(for: item))
-            .accessibilityValue(isSelected(item) ? "已选中" : "")
+            .accessibilityValue(accessibilityValue(for: item))
         }
         // Track the outer container so disabled buttons also explain their purpose.
         .onHover { isInside in
@@ -81,6 +85,11 @@ struct EditorToolbarView: View {
         if item == .select { return viewModel.selectedTool == nil }
         guard let tool = item.annotationType else { return false }
         return viewModel.selectedTool == tool
+    }
+
+    private func accessibilityValue(for item: ToolbarItem) -> String {
+        if item == .corners { return viewModel.useRoundedCorners ? "圆角" : "直角" }
+        return isSelected(item) ? "已选中" : ""
     }
 
     private func isDisabled(_ item: ToolbarItem) -> Bool {
@@ -107,6 +116,7 @@ struct EditorToolbarView: View {
             label = settings.autoSaveEnabled ? "完成：复制并自动保存" : "完成：复制到剪贴板"
         case .save: label = "保存到预设目录"
         case .pin: label = "贴图到屏幕：在截图位置显示，可滚轮缩放"
+        case .corners: label = viewModel.useRoundedCorners ? "当前是圆角，切换为直角" : "当前是直角，切换为圆角"
         case .mosaic: label = "马赛克"
         case .blur: label = "模糊"
         case .style: label = viewModel.propertyTitle

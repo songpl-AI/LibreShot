@@ -322,7 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hold a strong reference to keep it alive during the session
         self.overlayWindowController = controller
         
-        controller.show(onCapture: { [weak self, weak controller] rect, annotations, action, image in
+        controller.show(onCapture: { [weak self, weak controller] rect, annotations, action, image, roundedCorners in
             // Capture the specific screen where the selection happened
             // Use local controller reference to ensure we get the ID even if self?.overlayWindowController is nil
             let displayID = controller?.getCurrentDisplayID()
@@ -343,7 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let directRegionAction: Bool = [.copy, .save, .saveAs, .saveAndCopy].contains(action)
             let directRegionCanUseFreshCapture = directRegionRequested && directRegionAction && !preserveExistingImage
             self?.performAreaCapture(rect: rect, annotations: annotations, displayID: displayID,
-                                     action: action, existingImage: image,
+                                     action: action, roundedCorners: roundedCorners, existingImage: image,
                                      preserveExistingImage: preserveExistingImage,
                                      discardExistingImage: directRegionCanUseFreshCapture)
         }, onLongCapture: { [weak self] image in
@@ -384,7 +384,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = OverlayWindowController()
         overlayWindowController = controller
         
-        controller.show(captureMode: .longScreenshot, onCapture: { _, _, _, _ in
+        controller.show(captureMode: .longScreenshot, onCapture: { _, _, _, _, _ in
         }, onLongCapture: { [weak self] image in
             Task { [weak self] in
                 await self?.handleLongCaptureResult(image)
@@ -468,6 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func performAreaCapture(rect: CGRect, annotations: [Annotation], displayID: CGDirectDisplayID?, action: CaptureAction,
+                                    roundedCorners: Bool,
                                     existingImage: CGImage? = nil, preserveExistingImage: Bool = false,
                                     discardExistingImage: Bool = false) {
         // Keep the direct-region path behind an environment switch so the
@@ -504,6 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         annotations: annotations,
                         displayID: displayID,
                         action: action,
+                        roundedCorners: roundedCorners,
                         directRegion: directRegionCapture
                     )
                 } else {
@@ -514,7 +516,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 rect: rect,
                                 annotations: annotations,
                                 displayID: displayID,
-                                action: action
+                                action: action,
+                                roundedCorners: roundedCorners
                             )
                         }
                         // Do not let the full-screen source survive into save/OCR.
@@ -530,7 +533,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 SoundService.shared.playCaptureSound()
                 try await self?.handleImageAction(preparedImage.image, action: action,
                                                   sourceRect: preparedImage.sourceRect,
-                                                  pinDocument: preparedImage.pinDocument)
+                                                  pinDocument: preparedImage.pinDocument,
+                                                  exportService: CaptureService(exportRoundedCorners: roundedCorners))
             } catch is CancellationError {
             } catch {
                 await self?.handleCaptureError(error)
@@ -541,7 +545,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private typealias PreparedAreaImage = (image: NSImage, sourceRect: CGRect, pinDocument: PinnedImageDocument?)
 
     private func captureAreaImage(rect: CGRect, annotations: [Annotation], displayID: CGDirectDisplayID?,
-                                  action: CaptureAction, directRegion: Bool = false) async throws -> PreparedAreaImage? {
+                                  action: CaptureAction, roundedCorners: Bool, directRegion: Bool = false) async throws -> PreparedAreaImage? {
         if directRegion {
             let image = try await CaptureService.shared.captureDisplayImage(displayID: displayID, sourceRect: rect)
             #if DEBUG
@@ -551,7 +555,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (output, globalAreaRect(rect, displayID: displayID), nil)
         }
         let image = try await CaptureService.shared.captureDisplayImage(displayID: displayID)
-        return prepareAreaImage(image, rect: rect, annotations: annotations, displayID: displayID, action: action)
+        return prepareAreaImage(image, rect: rect, annotations: annotations, displayID: displayID,
+                                action: action, roundedCorners: roundedCorners)
     }
 
     private func compositeDirectRegion(_ image: NSImage, annotations: [Annotation], cropRect: CGRect, displayID: CGDirectDisplayID?) -> NSImage {
@@ -570,7 +575,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func prepareAreaImage(_ image: NSImage, rect: CGRect, annotations: [Annotation],
-                                  displayID: CGDirectDisplayID?, action: CaptureAction) -> PreparedAreaImage? {
+                                  displayID: CGDirectDisplayID?, action: CaptureAction,
+                                  roundedCorners: Bool) -> PreparedAreaImage? {
         autoreleasepool {
             let globalRect = globalAreaRect(rect, displayID: displayID)
             guard let cropped = CaptureService.shared.crop(image: image, to: globalRect, displayID: displayID) else { return nil }
@@ -580,7 +586,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Only a pin needs the immutable cropped base for later edits.
             // Ordinary exports release the full-display source before saving/OCR.
             let document = action == .pin
-                ? PinnedImageDocument(baseImage: cropped, annotations: annotations, origin: rect.origin)
+                ? PinnedImageDocument(baseImage: cropped, annotations: annotations,
+                                      origin: rect.origin, roundedCorners: roundedCorners)
                 : nil
             let output = annotations.isEmpty ? cropped
                 : CaptureService.shared.compositeCropped(image: cropped, annotations: annotations, cropRect: rect, displayID: displayID)
@@ -614,15 +621,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func handleImageAction(_ outputImage: NSImage, action: CaptureAction,
                                    sourceRect: CGRect? = nil, preferredScreen: NSScreen? = nil,
-                                   pinDocument: PinnedImageDocument? = nil) async throws {
+                                   pinDocument: PinnedImageDocument? = nil,
+                                   exportService: CaptureService = .shared) async throws {
         switch action {
         case .save:
-            _ = try await saveImage(outputImage)
+            _ = try await exportService.saveImageDirectly(outputImage)
         case .saveAs:
-            _ = try await CaptureService.shared.saveImageWithFallback(outputImage)
+            _ = try await exportService.saveImageWithFallback(outputImage)
         case .saveAndCopy:
             do {
-                _ = try await CaptureService.shared.copyAndSaveImageDirectly(outputImage)
+                _ = try await exportService.copyAndSaveImageDirectly(outputImage)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -631,14 +639,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case .copy:
             do {
-                _ = try await CaptureService.shared.completeCapture(outputImage)
+                _ = try await exportService.completeCapture(outputImage)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 showAlert(title: "已复制，但自动保存失败", message: "截图仍在剪贴板中，可粘贴使用。\n\(error.localizedDescription)")
             }
         case .pin:
-            let pinnedWindow = PinnedImageWindowController(image: CaptureService.shared.styledImage(outputImage),
+            let pinnedWindow = PinnedImageWindowController(image: exportService.styledImage(outputImage),
                                                           sourceRect: sourceRect, document: pinDocument, screen: preferredScreen)
             pinnedWindow.onClose = { [weak self, weak pinnedWindow] in
                 self?.pinnedWindows.removeAll { $0 === pinnedWindow }

@@ -84,7 +84,7 @@ import AppKit
             image.lockFocus(); NSColor.white.setFill(); NSRect(origin: .zero, size: image.size).fill(); image.unlockFocus()
             return image
         }
-        controller.show(onCapture: { _,_,_,_ in }, onCancel: {})
+        controller.show(onCapture: { _, _, _, _, _ in }, onCancel: {})
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1))
             let window = controller.window!

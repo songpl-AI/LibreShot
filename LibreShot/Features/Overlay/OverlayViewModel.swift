@@ -71,7 +71,7 @@ class OverlayViewModel: ObservableObject {
     @Published private(set) var useRoundedCorners: Bool
 
     var selectionCornerRadius: CGFloat {
-        useRoundedCorners && captureMode != .longScreenshot ? min(16, selectionRect.width / 2, selectionRect.height / 2) : 0
+        useRoundedCorners && captureMode != .longScreenshot ? CaptureService.screenshotCornerRadius(for: selectionRect.size) : 0
     }
 
     init(settings: SettingsService = .shared, useRoundedCorners: Bool? = nil) {
@@ -83,7 +83,9 @@ class OverlayViewModel: ObservableObject {
     }
 
     var visibleToolbarItems: [ToolbarItem] {
-        toolbarConfiguration.visibleItems.filter { $0 != .longCapture || captureMode == .normal }
+        toolbarConfiguration.visibleItems.filter {
+            captureMode == .normal || ($0 != .longCapture && $0 != .corners)
+        }
     }
 
     // Editor State
@@ -197,6 +199,7 @@ class OverlayViewModel: ObservableObject {
         }
         if item == .undo { return !annotations.isEmpty || !annotationUndo.isEmpty }
         if item == .longCapture { return captureMode == .normal && annotations.isEmpty && !isEditingText && translationSource == nil }
+        if item == .corners { return captureMode == .normal && state == .editing && !selectionRect.isEmpty }
         return true
     }
 
@@ -214,6 +217,7 @@ class OverlayViewModel: ObservableObject {
         case .pin: confirmPin()
         case .ocr: confirmOCR()
         case .translate: confirmImageTranslation()
+        case .corners: useRoundedCorners.toggle()
         case .longCapture: startLongCaptureFromToolbar()
         case .complete: confirmCopy()
         case .save: confirmSave()

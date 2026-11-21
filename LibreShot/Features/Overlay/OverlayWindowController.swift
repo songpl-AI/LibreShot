@@ -92,7 +92,7 @@ class OverlayWindowController: NSWindowController {
     
     func show(
         captureMode: CaptureMode = .normal,
-        onCapture: @escaping (CGRect, [Annotation], CaptureAction, CGImage?) -> Void,
+        onCapture: @escaping (CGRect, [Annotation], CaptureAction, CGImage?, Bool) -> Void,
         onLongCapture: ((NSImage) -> Void)? = nil,
         onLongCaptureError: ((Error) -> Void)? = nil,
         onPreviewError: ((Error) -> Void)? = nil,
@@ -129,8 +129,9 @@ class OverlayWindowController: NSWindowController {
             guard let self else { return }
             // The caller reads the display ID while submitting the final image.
             self.captureRequiresExistingPreviewForCallback = self.viewModel.captureRequiresExistingPreview
+            let roundedCorners = self.viewModel.useRoundedCorners
             self.finishOverlaySession(preservingTargetScreen: true)
-            onCapture(rect, annotations, action, image)
+            onCapture(rect, annotations, action, image, roundedCorners)
             self.targetScreen = nil
         }
         viewModel.onLongCaptureStart = { [weak self] rect in

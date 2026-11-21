@@ -5,7 +5,7 @@ import CoreGraphics
 enum ToolbarItem: String, CaseIterable, Identifiable {
     case select, pen, rectangle, arrow, ellipse, text, number, mosaic, blur
     case style, undo, cancel, pin, ocr, longCapture, complete, save, saveAs
-    case translate
+    case translate, corners
 
     var id: String { rawValue }
     var isRequired: Bool { self == .complete || self == .cancel }
@@ -13,7 +13,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
     /// New installations and reset use this order; saved orders keep their positions.
     static let defaultOrder: [ToolbarItem] = [
         .select, .pen, .rectangle, .ellipse, .arrow, .text, .number, .mosaic, .blur,
-        .ocr, .translate, .undo, .pin, .save, .saveAs, .longCapture, .cancel, .complete
+        .ocr, .translate, .undo, .pin, .corners, .save, .saveAs, .longCapture, .cancel, .complete
     ]
 
     var title: String {
@@ -37,6 +37,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .save: return "保存"
         case .saveAs: return "另存为…"
         case .translate: return "原图翻译"
+        case .corners: return "截图圆角／直角"
         }
     }
 
@@ -61,6 +62,7 @@ enum ToolbarItem: String, CaseIterable, Identifiable {
         case .save: return "square.and.arrow.down"
         case .saveAs: return "square.and.arrow.down.on.square"
         case .translate: return "character.bubble"
+        case .corners: return "rectangle"
         }
     }
 

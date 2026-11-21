@@ -132,14 +132,16 @@ class CaptureService {
     private let diagnosticTrace = LongCaptureTrace()
     
     private let settings: SettingsService
+    private let exportRoundedCorners: Bool?
     private let pasteboard: NSPasteboard
     private let directoryChooser: @MainActor (URL) -> URL?
     private let fileWriter: @Sendable (Data, URL) throws -> Void
 
-    init(settings: SettingsService = .shared, pasteboard: NSPasteboard = .general,
+    init(settings: SettingsService = .shared, pasteboard: NSPasteboard = .general, exportRoundedCorners: Bool? = nil,
          directoryChooser: @escaping @MainActor (URL) -> URL? = { CaptureService.chooseSaveDirectory(suggested: $0) },
          fileWriter: @escaping @Sendable (Data, URL) throws -> Void = { data, url in try data.write(to: url) }) {
         self.settings = settings
+        self.exportRoundedCorners = exportRoundedCorners
         self.pasteboard = pasteboard
         self.directoryChooser = directoryChooser
         self.fileWriter = fileWriter
@@ -602,7 +604,11 @@ class CaptureService {
     /// Compatibility entry point for exporters that already hold a styled image.
     /// The optional-argument overload below remains the settings-aware path.
     func styledImage(_ image: NSImage) -> NSImage {
-        styledImage(image, useRoundedCorners: nil)
+        styledImage(image, useRoundedCorners: exportRoundedCorners)
+    }
+
+    static func screenshotCornerRadius(for size: CGSize) -> CGFloat {
+        min(16, size.width / 2, size.height / 2)
     }
 
     /// Apply the final outline after annotation compositing, in physical pixels.
@@ -614,8 +620,9 @@ class CaptureService {
                                       bitsPerComponent: 8, bytesPerRow: 0, space: exportColorSpace,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
         let rect = CGRect(x: 0, y: 0, width: source.width, height: source.height)
-        let radiusX = min(16, image.size.width / 2) * CGFloat(source.width) / image.size.width
-        let radiusY = min(16, image.size.height / 2) * CGFloat(source.height) / image.size.height
+        let radius = Self.screenshotCornerRadius(for: image.size)
+        let radiusX = radius * CGFloat(source.width) / image.size.width
+        let radiusY = radius * CGFloat(source.height) / image.size.height
         context.addPath(CGPath(roundedRect: rect, cornerWidth: radiusX, cornerHeight: radiusY, transform: nil))
         context.clip()
         context.draw(source, in: rect)

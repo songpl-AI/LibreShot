@@ -320,6 +320,35 @@ struct ToolbarRegressionChecks {
         precondition(failed && pasteboard.data(forType: .png) != nil)
         print("PASS: automatic save on/off, real PNG output, failed save retains clipboard image")
 
+        settings.saveSaveDirectory(directory)
+        settings.useRoundedCorners = true
+        for y in 0..<16 {
+            for x in 0..<16 { bitmap.setColor(.red, atX: x, y: y) }
+        }
+        let corners = OverlayViewModel(settings: settings)
+        corners.state = .editing
+        corners.selectionRect = CGRect(x: 5, y: 10, width: 16, height: 12)
+        precondition(corners.isToolbarItemEnabled(.corners) && corners.selectionCornerRadius == 6)
+        corners.performToolbarItem(.corners)
+        precondition(corners.selectionCornerRadius == 0 && settings.useRoundedCorners)
+        let squareExport = CaptureService(settings: settings, pasteboard: pasteboard,
+                                          exportRoundedCorners: corners.useRoundedCorners)
+        let squareFile = try await squareExport.copyAndSaveImageDirectly(image)
+        let squareData = try Data(contentsOf: squareFile)
+        precondition(pasteboard.data(forType: .png) == squareData)
+        precondition(NSBitmapImageRep(data: squareData)?.colorAt(x: 0, y: 0)?.alphaComponent == 1)
+        settings.useRoundedCorners = false
+        corners.performToolbarItem(.corners)
+        precondition(corners.selectionCornerRadius == 6 && !settings.useRoundedCorners)
+        let roundedExport = CaptureService(settings: settings, pasteboard: pasteboard,
+                                           exportRoundedCorners: corners.useRoundedCorners)
+        roundedExport.copyToClipboard(image)
+        let roundedPNG = pasteboard.data(forType: .png).flatMap(NSBitmapImageRep.init(data:))
+        precondition(roundedPNG?.colorAt(x: 0, y: 0)?.alphaComponent == 0)
+        corners.reset()
+        precondition(!corners.useRoundedCorners && !corners.isToolbarItemEnabled(.corners))
+        print("PASS: per-capture corners drive preview, saved PNG and clipboard without changing the defaults")
+
         if let output = ProcessInfo.processInfo.environment["LIBRESHOT_QA_OUTPUT"] {
             try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             settings.restoreDefaultToolbar()
