@@ -7,9 +7,14 @@ import Translation
 struct ToolbarRegressionChecks {
     @MainActor
     static func main() async throws {
+        if CommandLine.arguments.contains("--capture-corners-only") {
+            try await checkCaptureCorners()
+            return
+        }
         checkEscapeCancellation()
         checkAutomaticAnnotationSelection()
         checkCapturePreviewPreservation()
+        try await checkCaptureCorners()
         try await checkOCRAndTranslation()
         if #available(macOS 26.0, *) { await checkTranslationLifecycle() }
         try await ImageTranslationChecks.run()
@@ -320,11 +325,47 @@ struct ToolbarRegressionChecks {
         precondition(failed && pasteboard.data(forType: .png) != nil)
         print("PASS: automatic save on/off, real PNG output, failed save retains clipboard image")
 
-        settings.saveSaveDirectory(directory)
-        settings.useRoundedCorners = true
-        for y in 0..<16 {
-            for x in 0..<16 { bitmap.setColor(.red, atX: x, y: y) }
+        if let output = ProcessInfo.processInfo.environment["LIBRESHOT_QA_OUTPUT"] {
+            try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
+            settings.restoreDefaultToolbar()
+            try render(ToolbarSettingsView(settings: settings).frame(width: 560, height: 390),
+                       size: CGSize(width: 560, height: 390), path: output + "/toolbar-settings.png")
+            settings.setToolbarItem(.pen, visible: false)
+            settings.setToolbarItem(.blur, visible: false)
+            settings.setToolbarItem(.save, visible: false)
+            settings.setToolbarItem(.saveAs, visible: false)
+            settings.moveToolbarItems(fromOffsets: IndexSet(integer: ToolbarItem.defaultOrder.firstIndex(of: .complete)!), toOffset: 0)
+            model.reset()
+            let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: 900)
+            try render(EditorToolbarView(viewModel: model, layout: layout).padding(16),
+                       size: CGSize(width: layout.size.width + 32, height: layout.size.height + 32), path: output + "/toolbar-custom.png")
+            let compact = ToolbarLayout(items: ToolbarItem.defaultOrder, availableWidth: 496)
+            try render(EditorToolbarView(viewModel: model, layout: compact).padding(16),
+                       size: CGSize(width: compact.size.width + 32, height: compact.size.height + 32), path: output + "/toolbar-wrapped.png")
+            print("PASS: rendered native SwiftUI settings and toolbar previews")
         }
+    }
+
+    @MainActor
+    private static func checkCaptureCorners() async throws {
+        let suite = "LibreShot.CaptureCorners.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsService(defaults: defaults)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        precondition(settings.saveSaveDirectory(directory))
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+
+        settings.useRoundedCorners = true
+        let context = CGContext(data: nil, width: 16, height: 12, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 16, height: 12))
+        let image = NSImage(cgImage: context.makeImage()!, size: CGSize(width: 16, height: 12))
         let corners = OverlayViewModel(settings: settings)
         corners.state = .editing
         corners.selectionRect = CGRect(x: 5, y: 10, width: 16, height: 12)
@@ -348,26 +389,6 @@ struct ToolbarRegressionChecks {
         corners.reset()
         precondition(!corners.useRoundedCorners && !corners.isToolbarItemEnabled(.corners))
         print("PASS: per-capture corners drive preview, saved PNG and clipboard without changing the defaults")
-
-        if let output = ProcessInfo.processInfo.environment["LIBRESHOT_QA_OUTPUT"] {
-            try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
-            settings.restoreDefaultToolbar()
-            try render(ToolbarSettingsView(settings: settings).frame(width: 560, height: 390),
-                       size: CGSize(width: 560, height: 390), path: output + "/toolbar-settings.png")
-            settings.setToolbarItem(.pen, visible: false)
-            settings.setToolbarItem(.blur, visible: false)
-            settings.setToolbarItem(.save, visible: false)
-            settings.setToolbarItem(.saveAs, visible: false)
-            settings.moveToolbarItems(fromOffsets: IndexSet(integer: ToolbarItem.defaultOrder.firstIndex(of: .complete)!), toOffset: 0)
-            model.reset()
-            let layout = ToolbarLayout(items: model.visibleToolbarItems, availableWidth: 900)
-            try render(EditorToolbarView(viewModel: model, layout: layout).padding(16),
-                       size: CGSize(width: layout.size.width + 32, height: layout.size.height + 32), path: output + "/toolbar-custom.png")
-            let compact = ToolbarLayout(items: ToolbarItem.defaultOrder, availableWidth: 496)
-            try render(EditorToolbarView(viewModel: model, layout: compact).padding(16),
-                       size: CGSize(width: compact.size.width + 32, height: compact.size.height + 32), path: output + "/toolbar-wrapped.png")
-            print("PASS: rendered native SwiftUI settings and toolbar previews")
-        }
     }
 
     @MainActor
