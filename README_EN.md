@@ -4,7 +4,7 @@
 
 A free, open-source native screenshot and annotation tool for macOS.
 
-[Download v1.3.30](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.30) · [Release notes](docs/releases/1.3.30.md) · [Changelog](CHANGELOG.md)
+[Download v1.3.33](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.33) · [Release notes](docs/releases/1.3.33.md) · [Changelog](CHANGELOG.md)
 
 ## Features
 
@@ -28,8 +28,8 @@ Packages use ad-hoc signing and are not notarized, so macOS may block opening th
 ## Quick start
 
 1. Choose area, full-screen or scrolling capture from the menu bar, or use a shortcut.
-2. Select a region and annotate it. Tool properties appear automatically; rounded corners are in Rectangle Properties.
-3. Double-click a blank area inside the selection, press Return or click ✅ to finish. New users copy only by default. Use `⌘S` to save, `⌘⇧S` for Save As, or `Esc` to cancel.
+2. Select a region to annotate it or use the toolbar’s corner-style button to switch the whole capture between rounded and square corners. Before selecting, press `⌘C` to copy the magnifier’s color and exit.
+3. Double-click a blank area inside the selection, press Return or click ✅ to finish. New users copy only by default. Use `⌘S` to save or `⌘⇧S` for Save As. To cancel area capture, right-click the canvas or press `Esc`.
 
 | Action | Default shortcut |
 | --- | --- |

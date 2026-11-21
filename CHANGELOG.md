@@ -1,5 +1,14 @@
 # 更新日志 / Changelog
 
+## [1.3.33](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.33) — 2026-11-21
+
+- 框选后可从工具栏切换当前截图的圆角／直角。保存、复制和贴图使用同一角样式。
+- 区域截图取色时，按 `⌘C` 成功复制色值后自动退出。
+- 区域截图画布支持右键取消，框选前后均可用。
+- 修复 macOS 27 上普通贴图无法拖动的问题。
+
+构建号 87，源码 `e52015f`。同包重启前后截图保存通过，实体双击 Option 待验。[更新说明](docs/releases/1.3.33.md) · [安装与验收记录](docs/qa/1.3.33-87-screenshot-corners-install-20261121.md)。
+
 ## [1.3.30](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.30) — 2026-10-20
 
 - 设置 > 基本设置新增“在程序坞中显示图标”。关闭时只有菜单栏；开启后可用 `⌘Tab` 切换、从程序坞右键退出，保存/另存为面板关闭后仍保持显示。

@@ -4,7 +4,7 @@ const translations = new Map([
   ["跳到正文", "Skip to content"],
   ["功能", "Features"], ["使用方式", "Workflow"], ["常见问题", "FAQ"],
   ["免费下载", "Download free"],
-  ["v1.3.19 已发布", "v1.3.19 is out"], ["来看看新变化", "See what's new"],
+  ["v1.3.33 已发布", "v1.3.33 is out"], ["来看看新变化", "See what's new"],
   ["截下重点，", "Capture the point,"], ["表达清楚。", "make it clear."],
   ["你的想法，值得被看见。", "Your ideas deserve to be seen."],
   ["用 LibreShot 截图、标注、提取文字，", "Capture, annotate, and extract text with LibreShot,"],

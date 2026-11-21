@@ -10,6 +10,8 @@ Full-screen captures the display under the pointer and opens annotation editing.
 
 Left-click the menu bar scissors to start area capture by default; right-click opens the full menu. Change the left-click action in General settings. Fine dashed crosshair guides appear while selecting and can be disabled in Settings.
 
+Before selecting a region, the magnifier shows the sRGB color under the pointer. Press Shift to switch between RGB and HEX. Press `⌘C` to copy the color and exit. After selecting a region, use the toolbar’s corner-style button to change the whole capture. Saving, copying and pinning use the selected style. Each new capture starts from the default in General settings.
+
 ## Annotation and properties
 
 Selecting a tool or existing annotation directly shows a compact property bar; narrow screens wrap controls into rows. Short sliders preview numeric changes live; release to finish one adjustment, which can be undone in one step. Edit the current value for precision: Return commits, Esc discards the draft, and invalid input leaves the property unchanged. Quick colors are red, green and blue; the adjacent palette icon opens the system color panel for custom colors. Each tool remembers its own color, width, font size and effect settings. Reset affects only that tool. `⌘Z` undoes object changes; explicitly chosen preferences for future annotations remain saved.
@@ -33,6 +35,7 @@ Double-click a blank area inside the selection, press Return or click ✅ to fin
 - `⌘⇧S` / Save As opens a dialog starting in that folder, with a choice of name and location.
 - Failed automatic saving reports an error and leaves the image on the clipboard.
 - Saving an area capture ends that session; manual saving in the full-screen editor keeps it open.
+- Right-click the area capture canvas to cancel. Text and numeric editing still allow the input context menu.
 - Esc cancels a capture, including while entering text. While editing a number, it first cancels the number edit; press again to cancel the capture.
 
 Double-click completion can be disabled in Settings. Double-clicks on annotations, handles, the toolbar or properties do not finish the capture, nor do double-clicks during text editing. Space can be Off (default), Finish, or Save & Copy. While entering text, Space and Return retain their normal input behavior.

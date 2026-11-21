@@ -10,7 +10,7 @@ python3 -m http.server 8765 --bind 127.0.0.1 --directory website
 
 浏览器打开 `http://127.0.0.1:8765`。首页可切换中英文；图库可切换标注、OCR 和贴图三组办公场景示意，点击图片或功能卡可放大。键盘可用左右方向键、Home、End 切换标签；放大窗口支持 Escape 关闭。
 
-宣传事实依据公开 v1.3.19 README、使用指南与安装指南。下载按钮链接到 GitHub Releases/latest。顶部版本提示和固定版本文档链接需在新版本发布时更新。
+宣传事实依据公开 v1.3.33 README、使用指南与安装指南。下载按钮链接到 GitHub Releases/latest。顶部版本提示和固定版本文档链接需在新版本发布时更新。
 
 ## 素材
 
