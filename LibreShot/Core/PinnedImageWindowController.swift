@@ -68,6 +68,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     private var editorPanel: OverlayWindow?
     // Keep the undo history with the pin, including while its tools are hidden.
     private var editingModel: OverlayViewModel?
+    private var pinDragOffset: CGSize?
     private var editorDragOrigin: CGPoint?
     private var editorDragPointerOrigin: CGPoint?
     private var editorDragScale: CGFloat = 1
@@ -126,7 +127,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = displayMode == .longCapturePreview
         window.isReleasedWhenClosed = false
         if displayMode == .pinned {
             minimumZoomScale = min(0.1, initialFrame.width / max(1, image.size.width))
@@ -159,6 +160,9 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
                 : onEditAction.map { action in { [weak self] in self?.close(); action() } },
             onResetSize: { [weak self] in self?.restoreOriginalSize() },
             onFinishEditing: { [weak self] in self?.finishEditing() },
+            onMove: { [weak self] translation, ended in
+                self?.movePinFromPointer(translation: translation, ended: ended)
+            },
             onEditorMove: { [weak self] translation, ended in
                 self?.moveEditingPinFromPointer(translation: translation, imageCoordinates: true, ended: ended)
             }
@@ -359,6 +363,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
 
     func beginEditing() {
         guard !didTearDown, displayMode == .pinned, presentation.editor == nil, let window else { return }
+        pinDragOffset = nil
         let model: OverlayViewModel
         if let retained = editingModel {
             model = retained
@@ -420,6 +425,19 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         endEditing()
     }
 
+    func movePinFromPointer(translation: CGSize, ended: Bool,
+                            pointer: CGPoint = NSEvent.mouseLocation) {
+        guard !didTearDown, displayMode == .pinned, presentation.editor == nil, let window else { return }
+        // Only use the gesture translation at the start. After the window
+        // moves, SwiftUI's coordinate space moves with it.
+        let offset = pinDragOffset ?? CGSize(
+            width: pointer.x - window.frame.minX - translation.width,
+            height: pointer.y - window.frame.minY + translation.height
+        )
+        pinDragOffset = ended ? nil : offset
+        window.setFrameOrigin(CGPoint(x: pointer.x - offset.width, y: pointer.y - offset.height))
+    }
+
     /// Translation is in immutable image coordinates, not in the zoomed window.
     /// Use screen pointer positions once movement starts: local SwiftUI translation
     /// changes as the window itself moves and otherwise makes a drag oscillate.
@@ -471,6 +489,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func endEditing() {
+        pinDragOffset = nil
         editorDragOrigin = nil
         editorDragPointerOrigin = nil
         editorSubscriptions.removeAll()
@@ -482,7 +501,7 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         if let window = window as? PinnedImageWindow {
             window.clearEditingActions(); window.onEscapeKey = nil
             window.editingEnabled = false
-            window.isMovableByWindowBackground = true
+            window.isMovableByWindowBackground = displayMode == .longCapturePreview
         }
         let model = presentation.editor
         presentation.editor = nil
@@ -537,7 +556,7 @@ final class PinnedImageHostingView: NSHostingView<PinnedImageView> {
     var onMagnify: ((NSEvent) -> Bool)?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        rootView.presentation.editor != nil || super.acceptsFirstMouse(for: event)
+        rootView.displayMode == .pinned || super.acceptsFirstMouse(for: event)
     }
 
     func isImagePoint(_ pointInWindow: CGPoint) -> Bool {
@@ -574,6 +593,7 @@ struct PinnedImageView: View {
     var onEdit: (() -> Void)? = nil
     var onResetSize: () -> Void = {}
     var onFinishEditing: () -> Void = {}
+    var onMove: (CGSize, Bool) -> Void = { _, _ in }
     var onEditorMove: (CGSize, Bool) -> Void = { _, _ in }
     
     private var opacity: Double { presentation.opacity }
@@ -612,7 +632,13 @@ struct PinnedImageView: View {
                     }
                 } else {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).opacity(opacity)
-                        .onTapGesture(count: 2, perform: onClose)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 3, coordinateSpace: .global)
+                                .onChanged { onMove($0.translation, false) }
+                                .onEnded { onMove($0.translation, true) }
+                                .exclusively(before: TapGesture(count: 2).onEnded { onClose() })
+                        )
                 }
             }
             

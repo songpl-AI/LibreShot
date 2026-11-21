@@ -47,6 +47,21 @@ import Carbon
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         precondition(window.frame == original, "first show must not recenter or cascade an area pin")
         let host = window.contentView as! PinnedImageHostingView
+        precondition(!window.isMovableByWindowBackground && host.acceptsFirstMouse(for: nil),
+                     "ordinary pins must receive drag events without relying on native background movement")
+        let pointer = CGPoint(x: original.midX, y: original.midY)
+        controller.movePinFromPointer(translation: CGSize(width: 5, height: 4), ended: false,
+                                       pointer: CGPoint(x: pointer.x + 5, y: pointer.y - 4))
+        precondition(window.frame.origin == CGPoint(x: original.minX + 5, y: original.minY - 4))
+        controller.movePinFromPointer(translation: .zero, ended: true,
+                                       pointer: CGPoint(x: pointer.x + 36, y: pointer.y - 12))
+        precondition(window.frame.origin == CGPoint(x: original.minX + 36, y: original.minY - 12),
+                     "a moving view must keep following the screen pointer")
+        controller.movePinFromPointer(translation: CGSize(width: -36, height: -12), ended: true,
+                                       pointer: pointer)
+        precondition(window.frame == original, "a second drag must use a fresh pointer offset")
+        print("PASS: ordinary pin moves on first drag and tracks the screen pointer")
+
         let backingScale = NSScreen.main!.backingScaleFactor
         // Raster pixel density must not change the logical initial frame.
         let raster = CGContext(data: nil, width: 200, height: 160, bitsPerComponent: 8, bytesPerRow: 0,
