@@ -21,6 +21,20 @@ enum MenuBarLeftClickAction: String, CaseIterable, Identifiable {
     }
 }
 
+enum PinDoubleClickAction: String, CaseIterable, Identifiable {
+    case close, copy, edit
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .close: return "关闭贴图"
+        case .copy: return "复制图片"
+        case .edit: return "进入标注"
+        }
+    }
+}
+
 class SettingsService: ObservableObject {
     static let shared = SettingsService()
     
@@ -174,6 +188,9 @@ class SettingsService: ObservableObject {
     @Published var doubleClickCompletesCapture: Bool {
         didSet { defaults.set(doubleClickCompletesCapture, forKey: "doubleClickCompletesCapture") }
     }
+    @Published var pinDoubleClickAction: PinDoubleClickAction {
+        didSet { defaults.set(pinDoubleClickAction.rawValue, forKey: "pinDoubleClickAction") }
+    }
     @Published var doubleOptionEnabled: Bool {
         didSet {
             defaults.set(doubleOptionEnabled, forKey: "doubleOptionEnabled")
@@ -241,6 +258,7 @@ class SettingsService: ObservableObject {
         }
         self.editorSpaceAction = EditorSpaceAction(rawValue: defaults.string(forKey: "editorSpaceAction") ?? "") ?? .disabled
         self.doubleClickCompletesCapture = defaults.object(forKey: "doubleClickCompletesCapture") as? Bool ?? true
+        self.pinDoubleClickAction = PinDoubleClickAction(rawValue: defaults.string(forKey: "pinDoubleClickAction") ?? "") ?? .close
         self.doubleOptionEnabled = defaults.bool(forKey: "doubleOptionEnabled")
         self.toolbarConfiguration = ToolbarConfiguration(
             hiddenItems: Set(defaults.stringArray(forKey: "hiddenToolbarItems") ?? []),

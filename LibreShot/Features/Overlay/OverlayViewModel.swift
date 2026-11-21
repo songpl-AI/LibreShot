@@ -668,10 +668,11 @@ class OverlayViewModel: ObservableObject {
         state = .selecting
     }
     
-    func updateSelection(to point: CGPoint) {
+    func updateSelection(to point: CGPoint, within bounds: CGRect) {
         guard state == .selecting, let start = startPoint else { return }
-        currentPoint = point
-        selectionRect = CGRect(from: start, to: point)
+        let endpoint = captureMode == .normal ? clampPoint(point, to: bounds) : point
+        currentPoint = endpoint
+        selectionRect = CGRect(from: start, to: endpoint)
     }
     
     func endSelection() {

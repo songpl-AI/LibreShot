@@ -11,6 +11,11 @@ struct ToolbarRegressionChecks {
             try await checkCaptureCorners()
             return
         }
+        if CommandLine.arguments.contains("--selection-bounds-only") {
+            checkInitialSelectionBounds()
+            return
+        }
+        checkInitialSelectionBounds()
         checkEscapeCancellation()
         checkAutomaticAnnotationSelection()
         checkCapturePreviewPreservation()
@@ -118,7 +123,7 @@ struct ToolbarRegressionChecks {
             try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             let selection = OverlayViewModel(settings: settings)
             selection.startSelection(at: CGPoint(x: 100, y: 100))
-            selection.updateSelection(to: CGPoint(x: 400, y: 300))
+            selection.updateSelection(to: CGPoint(x: 400, y: 300), within: CGRect(x: 0, y: 0, width: 640, height: 480))
             selection.endSelection()
             precondition(selection.selectedTool == nil)
             let initial = try render(OverlayView(viewModel: selection).background(Color.black),
@@ -196,14 +201,15 @@ struct ToolbarRegressionChecks {
         settings.setToolbarItem(.rectangle, visible: false)
         settings.moveToolbarItems(fromOffsets: IndexSet(integer: ToolbarItem.defaultOrder.firstIndex(of: .complete)!), toOffset: 0)
         precondition(model.visibleToolbarItems.first == .select)
+        let overlayBounds = CGRect(x: 0, y: 0, width: 640, height: 480)
         model.startSelection(at: CGPoint(x: 10, y: 10))
-        model.updateSelection(to: CGPoint(x: 200, y: 200))
+        model.updateSelection(to: CGPoint(x: 200, y: 200), within: overlayBounds)
         model.endSelection()
         precondition(model.selectedTool == nil) // Active session keeps its toolbar snapshot and starts in Select/Move.
         model.reset()
         precondition(model.visibleToolbarItems.first == .complete)
         model.startSelection(at: CGPoint(x: 10, y: 10))
-        model.updateSelection(to: CGPoint(x: 200, y: 200))
+        model.updateSelection(to: CGPoint(x: 200, y: 200), within: overlayBounds)
         model.endSelection()
         precondition(model.selectedTool == nil)
         precondition(!model.visibleToolbarItems.contains(.rectangle))
@@ -748,6 +754,37 @@ struct ToolbarRegressionChecks {
     }
 
     @MainActor
+    private static func checkInitialSelectionBounds() {
+        let suite = "LibreShot.SelectionBounds.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = OverlayViewModel(settings: SettingsService(defaults: defaults))
+        let bounds = CGRect(x: 0, y: 0, width: 600, height: 400)
+        let start = CGPoint(x: 120, y: 100)
+        model.startSelection(at: start)
+        model.updateSelection(to: CGPoint(x: 900, y: 530), within: bounds)
+        precondition(model.selectionRect == CGRect(x: 120, y: 100, width: 480, height: 300))
+        model.updateSelection(to: CGPoint(x: 210, y: 170), within: bounds)
+        precondition(model.selectionRect == CGRect(x: 120, y: 100, width: 90, height: 70))
+        model.updateSelection(to: CGPoint(x: -90, y: -20), within: bounds)
+        let expected = CGRect(x: 0, y: 0, width: 120, height: 100)
+        precondition(model.selectionRect == expected)
+        model.endSelection()
+        precondition(model.state == .editing && model.selectionRect == expected)
+
+        var actions: [CaptureAction] = []
+        model.onCapture = { rect, _, action, _ in
+            precondition(rect == expected)
+            actions.append(action)
+        }
+        model.confirmSave()
+        model.confirmCopy()
+        model.confirmPin()
+        precondition(actions == [.save, .copy, .pin])
+        print("PASS: area selection stops at each screen edge, resumes on return, and exports the displayed region")
+    }
+
+    @MainActor
     private static func checkSelectionResizing(settings: SettingsService) {
         let model = OverlayViewModel(settings: settings)
         let original = CGRect(x: 100, y: 100, width: 300, height: 200)
@@ -766,7 +803,7 @@ struct ToolbarRegressionChecks {
             for (handle, end, expected) in cases {
                 model.reset()
                 model.startSelection(at: original.origin)
-                model.updateSelection(to: CGPoint(x: original.maxX, y: original.maxY))
+                model.updateSelection(to: CGPoint(x: original.maxX, y: original.maxY), within: bounds)
                 model.endSelection()
                 model.selectTool(tool)
                 precondition(model.canResizeSelection)

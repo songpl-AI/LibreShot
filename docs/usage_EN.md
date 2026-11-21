@@ -6,7 +6,9 @@
 
 Use the scissors menu for area, full-screen or scrolling capture. Default shortcuts are `⌘⇧X` for area and `⌘⇧A` for full-screen; customize them in Settings. Optional double-Option requires Input Monitoring.
 
-Full-screen captures the display under the pointer and opens annotation editing. Area capture defaults to Select/Move after selecting a region; change the default tool in toolbar settings. Outer handles resize the capture region.
+Full-screen captures the display under the pointer and opens annotation editing. Area capture also uses the display under the pointer when capture starts. If you drag onto another display, the selection stops at the edge of the starting display. Drag back inside to continue adjusting it.
+
+Area capture defaults to Select/Move after selecting a region; change the default tool in toolbar settings. Outer handles resize the capture region.
 
 Left-click the menu bar scissors to start area capture by default; right-click opens the full menu. Change the left-click action in General settings. Fine dashed crosshair guides appear while selecting and can be disabled in Settings.
 
@@ -42,7 +44,7 @@ Double-click completion can be disabled in Settings. Double-clicks on annotation
 
 ## Pin and scrolling capture
 
-Click Pin or use the default `⌘P` during capture editing to pin at the capture position. The wheel or Cmd+wheel zooms and briefly shows the current percentage; Ctrl+wheel adjusts display opacity. Copy and Save retain the original pixel dimensions and image opacity. Outside editing, drag to move and double-click to close; Close is also available in the context menu.
+Click Pin or use the default `⌘P` during capture editing to pin at the capture position. The wheel or Cmd+wheel zooms and briefly shows the current percentage; Ctrl+wheel adjusts display opacity. Copy and Save retain the original pixel dimensions and image opacity. Outside editing, drag to move the pin. Double-click closes it by default. In General settings, you can set a double-click to copy the image or open annotation tools. Copying leaves the pin visible.
 
 Choose Edit Annotations from the context menu to edit in place. Changes persist immediately. Drag blank space in Select/Move mode to move the pin; drawing tools still draw. The toolbar's left handle moves the pin with any tool. With blank double-click completion enabled, double-clicking blank space during pin editing saves to the configured folder and keeps editing open. Collapse with the right arrow or Esc, then reopen to continue undoing with `⌘Z`. Text input handles Esc first; existing text, numbers and handles do not trigger saving.
 
@@ -62,4 +64,4 @@ Screenshots, OCR and translation text are processed locally. Initial language-pa
 
 Use the menu bar or `⌘,` while LibreShot is active. Configure save folder, Auto Save, launch at login, Dock icon, capture sound, capture corners, shortcuts, double-Option, double-click completion and Space behavior.
 
-Toolbar settings control visibility, order, editor shortcuts, the default tool and left/center/right alignment. Hover a property slider to see its value and adjust it with the wheel. Complete and Cancel always remain visible. Changes apply to the next capture. Hiding the default tool falls back to Select/Move. Restore Defaults resets visibility, order and the default tool.
+Toolbar settings show tools in order from left to right, then top to bottom. Drag a tool to reorder it. Select a tool to change its visibility, edit its shortcut or move it with the arrow buttons. Complete and Cancel always remain visible. Changes apply to the next capture. Hiding the default tool falls back to Select/Move. Restore Defaults resets visibility, order, the default tool and alignment. Hover a property slider to see its value and adjust it with the wheel.

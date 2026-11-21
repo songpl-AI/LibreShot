@@ -147,6 +147,9 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
             onClose: { [weak self] in
                 self?.close()
             },
+            onPinDoubleClick: { [weak self] in
+                self?.handlePinDoubleClick()
+            },
             onCopy: { [weak self] in
                 self?.handleCopy()
             },
@@ -207,6 +210,15 @@ class PinnedImageWindowController: NSWindowController, NSWindowDelegate {
         completion?()
     }
     
+    private func handlePinDoubleClick() {
+        guard !didTearDown, displayMode == .pinned, presentation.editor == nil else { return }
+        switch settings.pinDoubleClickAction {
+        case .close: close()
+        case .copy: handleCopy()
+        case .edit: beginEditing()
+        }
+    }
+
     func handleCopy() {
         guard !didTearDown else { return }
         if let onCopyAction {
@@ -587,6 +599,7 @@ struct PinnedImageView: View {
     var image: NSImage { presentation.image }
     let displayMode: PinnedImageWindowController.DisplayMode
     var onClose: () -> Void
+    var onPinDoubleClick: () -> Void
     var onCopy: () -> Void
     var onSave: () -> Void
     var onSaveAs: () -> Void
@@ -637,7 +650,7 @@ struct PinnedImageView: View {
                             DragGesture(minimumDistance: 3, coordinateSpace: .global)
                                 .onChanged { onMove($0.translation, false) }
                                 .onEnded { onMove($0.translation, true) }
-                                .exclusively(before: TapGesture(count: 2).onEnded { onClose() })
+                                .exclusively(before: TapGesture(count: 2).onEnded { onPinDoubleClick() })
                         )
                 }
             }

@@ -1,7 +1,6 @@
 import SwiftUI
 import ServiceManagement
 import CoreGraphics
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var settings = SettingsService.shared
@@ -40,171 +39,215 @@ struct SettingsView: View {
 
 struct ToolbarSettingsView: View {
     @ObservedObject var settings: SettingsService
+    @State private var selectedItem: ToolbarItem = .select
+    @State private var dropTarget: ToolbarItem?
     @State private var shortcutRestoreError: String?
-    @State private var draggedToolbarItem: ToolbarItem?
+
+    private static let dragPrefix = "LibreShot.toolbarItem."
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("自定义截图工具栏")
-                .font(.headline)
-            Text("从左到右就是截图工具栏的顺序。左右拖动排序，在每张卡片上勾选和设置快捷键。")
-                .font(.callout)
-                .foregroundColor(.secondary)
-            Text("新用户默认按 ⌘P 贴图；已有快捷键配置保留，可在“贴图到屏幕”一行设置。")
-                .font(.caption).foregroundColor(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                toolbarOptions
 
-            Picker("浮动工具栏位置", selection: $settings.toolbarAlignment) {
-                ForEach(ToolbarAlignment.allCases, id: \.self) { alignment in
-                    Text(alignment.title).tag(alignment)
-                }
-            }
-            Picker("截图后的默认工具", selection: Binding(
-                get: { settings.defaultEditorTool },
-                set: { settings.setDefaultEditorTool($0) }
-            )) {
-                Text(ToolbarItem.select.title).tag(ToolbarItem.select)
-                ForEach(settings.toolbarConfiguration.visibleItems.filter { $0.annotationType != nil }) { item in
-                    Text(item.title).tag(item)
-                }
-            }
-            Text("每次新截图使用此工具；隐藏默认工具时回到选择/移动。")
-                .font(.caption).foregroundColor(.secondary)
-
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 8) {
-                    ForEach(settings.toolbarConfiguration.orderedItems) { item in
-                        toolbarCard(item)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("工具顺序")
+                        .font(.headline)
+                    Text("按从左到右、从上到下排列。拖动排序，点击工具可设置显隐和快捷键。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 46), spacing: 6)], spacing: 6) {
+                        ForEach(settings.toolbarConfiguration.orderedItems) { item in
+                            toolbarTile(item)
+                        }
                     }
                 }
-                .padding(.vertical, 4)
-            }
-            .frame(maxWidth: .infinity, minHeight: 132, maxHeight: 140)
 
-            Text("从下一次截图开始生效。按 Esc 直接取消截图。\n再次点击当前工具可切回选择模式；拖动选区边框移动截图。")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                toolDetails
 
-            if let shortcutRestoreError {
-                Text(shortcutRestoreError).font(.caption).foregroundStyle(.red)
-            }
-            HStack {
-                Text("已显示 \(settings.toolbarConfiguration.visibleItems.count) 个按钮")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Button("恢复快捷键") {
-                    settings.restoreDefaultEditorShortcuts()
-                    shortcutRestoreError = settings.editorShortcuts.count == EditorShortcut.defaults.count ? nil : "与全局截图冲突的默认快捷键未恢复，请逐行设置。"
+                if let shortcutRestoreError {
+                    Text(shortcutRestoreError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
-                    .help("恢复编辑快捷键；与全局快捷键冲突的项需另行设置")
-                Button("恢复默认") { settings.restoreDefaultToolbar() }
-                    .help("恢复全部工具的显示和默认顺序")
+                HStack {
+                    Text("已显示 \(settings.toolbarConfiguration.visibleItems.count) 个按钮")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("恢复快捷键") {
+                        settings.restoreDefaultEditorShortcuts()
+                        shortcutRestoreError = settings.editorShortcuts.count == EditorShortcut.defaults.count
+                            ? nil : "与全局截图冲突的默认快捷键未恢复，请单独设置。"
+                    }
+                    .help("恢复编辑快捷键")
+                    Button("恢复默认") { settings.restoreDefaultToolbar() }
+                        .help("恢复工具栏默认配置")
+                }
             }
+            .padding(16)
         }
-        .padding()
     }
 
-    private func toolbarCard(_ item: ToolbarItem) -> some View {
-        let visible = settings.toolbarConfiguration.isVisible(item)
-        return VStack(spacing: 5) {
-            HStack {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-                    .accessibilityHidden(true)
-                Spacer()
-                Toggle(isOn: Binding(
-                    get: { visible },
-                    set: { settings.setToolbarItem(item, visible: $0) }
-                )) { EmptyView() }
-                .toggleStyle(.checkbox)
+    private var toolbarOptions: some View {
+        VStack(spacing: 0) {
+            optionRow("浮动工具栏位置") {
+                Picker("浮动工具栏位置", selection: $settings.toolbarAlignment) {
+                    ForEach(ToolbarAlignment.allCases, id: \.self) { alignment in
+                        Text(alignment.title).tag(alignment)
+                    }
+                }
+            }
+            Divider()
+            optionRow("截图后的默认工具") {
+                Picker("截图后的默认工具", selection: Binding(
+                    get: { settings.defaultEditorTool },
+                    set: { settings.setDefaultEditorTool($0) }
+                )) {
+                    Text(ToolbarItem.select.title).tag(ToolbarItem.select)
+                    ForEach(settings.toolbarConfiguration.visibleItems.filter { $0.annotationType != nil }) { item in
+                        Text(item.title).tag(item)
+                    }
+                }
+                .help("隐藏默认工具时回到选择／移动")
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func optionRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            content()
                 .labelsHidden()
+                .frame(width: 140, alignment: .trailing)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var toolDetails: some View {
+        let item = selectedItem
+        let order = settings.toolbarConfiguration.orderedItems
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(item.title)
+                    .font(.headline)
+                Spacer()
+                Toggle("在工具栏显示", isOn: Binding(
+                    get: { settings.toolbarConfiguration.isVisible(item) },
+                    set: { settings.setToolbarItem(item, visible: $0) }
+                ))
+                .toggleStyle(.checkbox)
                 .disabled(item.isRequired)
-                .help(item.isRequired ? "始终显示，确保可以完成或取消截图" : "显示\(item.title)")
+                .help(item.isRequired ? "完成和取消始终显示" : "从下一次截图开始生效")
             }
-            Group {
-                if item == .style {
-                    ToolbarColorIcon().frame(width: 16, height: 16)
-                } else if item == .mosaic || item == .blur {
-                    EffectToolIcon(tool: item).frame(width: 16, height: 16)
+            HStack {
+                Text("快捷键")
+                    .foregroundStyle(.secondary)
+                if item == .cancel {
+                    Text("Esc")
+                        .font(.system(.body, design: .monospaced))
+                        .help("取消截图使用 Esc")
                 } else {
-                    Image(systemName: item.iconName).font(.system(size: 15))
+                    ToolbarShortcutRecorder(settings: settings, item: item)
+                        .id(item)
                 }
-            }
-            .frame(height: 18)
-            Text(item.title)
-                .font(.system(size: 11))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
-            if item == .cancel {
-                Text("Esc")
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(width: 88, height: 22)
-                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
-            } else {
-                ToolbarShortcutRecorder(settings: settings, item: item, recordingWidth: 88)
-            }
-            HStack(spacing: 0) {
+                Spacer()
                 Button { move(item, towardsStart: true) } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 10, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 18)
+                    Image(systemName: "chevron.left")
                 }
-                .disabled(item == settings.toolbarConfiguration.orderedItems.first)
-                .accessibilityLabel("左移\(item.title)")
-                .help("左移\(item.title)")
-                Divider().frame(height: 12)
+                .disabled(item == order.first)
+                .accessibilityLabel("前移\(item.title)")
+                .help("前移")
                 Button { move(item, towardsStart: false) } label: {
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 18)
+                    Image(systemName: "chevron.right")
                 }
-                .disabled(item == settings.toolbarConfiguration.orderedItems.last)
-                .accessibilityLabel("右移\(item.title)")
-                .help("右移\(item.title)")
+                .disabled(item == order.last)
+                .accessibilityLabel("后移\(item.title)")
+                .help("后移")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
         }
-        .padding(6)
-        .frame(width: 104)
-        .opacity(visible ? 1 : 0.45)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.18)))
-        .onDrag {
-            draggedToolbarItem = item
-            return NSItemProvider(object: item.rawValue as NSString)
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func toolbarTile(_ item: ToolbarItem) -> some View {
+        let visible = settings.toolbarConfiguration.isVisible(item)
+        let selected = selectedItem == item
+        let targeted = dropTarget == item
+        return Button { selectedItem = item } label: {
+            VStack(spacing: 3) {
+                Group {
+                    if item == .mosaic || item == .blur {
+                        EffectToolIcon(tool: item).frame(width: 16, height: 16)
+                    } else {
+                        Image(systemName: item.iconName).font(.system(size: 15))
+                    }
+                }
+                .frame(height: 18)
+                Text(item.title)
+                    .font(.system(size: 10))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(height: 26, alignment: .top)
+            }
+            .padding(.horizontal, 2)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
-        .onDrop(of: [.text], delegate: ToolbarCardDropDelegate(target: item, settings: settings, dragged: $draggedToolbarItem))
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: Text("左移")) { move(item, towardsStart: true) }
-        .accessibilityAction(named: Text("右移")) { move(item, towardsStart: false) }
+        .buttonStyle(.plain)
+        .foregroundStyle(visible ? Color.primary : Color.secondary)
+        .background {
+            RoundedRectangle(cornerRadius: 7)
+                .fill(selected || targeted ? Color.accentColor.opacity(0.14) : Color(nsColor: .controlBackgroundColor))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(selected || targeted ? Color.accentColor : Color(nsColor: .separatorColor),
+                              lineWidth: targeted ? 2 : 1)
+        }
+        .overlay(alignment: .topTrailing) {
+            if !visible {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .padding(3)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .help("\(item.title) · \(visible ? "已显示" : "已隐藏")")
+        .draggable(Self.dragPrefix + item.rawValue)
+        .dropDestination(for: String.self) { values, _ in
+            guard values.count == 1, let value = values.first, value.hasPrefix(Self.dragPrefix),
+                  let source = ToolbarItem(rawValue: String(value.dropFirst(Self.dragPrefix.count))),
+                  source != item else { return false }
+            let order = settings.toolbarConfiguration.orderedItems
+            guard let from = order.firstIndex(of: source), let to = order.firstIndex(of: item) else { return false }
+            settings.moveToolbarItems(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+            selectedItem = source
+            dropTarget = nil
+            return true
+        } isTargeted: { isTargeted in
+            if isTargeted {
+                dropTarget = item
+            } else if dropTarget == item {
+                dropTarget = nil
+            }
+        }
+        .accessibilityLabel(item.title)
+        .accessibilityValue(visible ? "已显示" : "已隐藏")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityAction(named: Text("前移")) { move(item, towardsStart: true) }
+        .accessibilityAction(named: Text("后移")) { move(item, towardsStart: false) }
     }
 
     private func move(_ item: ToolbarItem, towardsStart: Bool) {
         guard let index = settings.toolbarConfiguration.orderedItems.firstIndex(of: item) else { return }
         settings.moveToolbarItems(fromOffsets: IndexSet(integer: index), toOffset: towardsStart ? index - 1 : index + 2)
-    }
-}
-
-private struct ToolbarCardDropDelegate: DropDelegate {
-    let target: ToolbarItem
-    let settings: SettingsService
-    @Binding var dragged: ToolbarItem?
-
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-
-    func dropEntered(info: DropInfo) {
-        guard let dragged, dragged != target,
-              let from = settings.toolbarConfiguration.orderedItems.firstIndex(of: dragged),
-              let to = settings.toolbarConfiguration.orderedItems.firstIndex(of: target) else { return }
-        settings.moveToolbarItems(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        dragged = nil
-        return true
     }
 }
 
@@ -274,6 +317,16 @@ struct GeneralSettingsView: View {
 
                         SettingsRow("截图音效:") {
                             Toggle("完成截图时播放音效", isOn: $settings.playSound)
+                        }
+                        Divider()
+
+                        SettingsRow("双击贴图") {
+                            Picker("双击贴图时", selection: $settings.pinDoubleClickAction) {
+                                ForEach(PinDoubleClickAction.allCases) { action in
+                                    Text(action.title).tag(action)
+                                }
+                            }
+                            .labelsHidden()
                         }
                         Divider()
 
@@ -486,7 +539,7 @@ struct ShortcutSettingsView: View {
                             Text(action.title).tag(action)
                         }
                     }
-                    Text("标注工具和保存等编辑快捷键，可在“工具栏”页按排序逐行设置。选中标注后按 Delete 删除，⌘Z 撤销。")
+                    Text("标注工具和保存等编辑快捷键，可在“工具栏”页点选工具设置。选中标注后按 Delete 删除，⌘Z 撤销。")
                         .font(.caption).foregroundStyle(.secondary)
 
                 }
@@ -614,7 +667,6 @@ struct AboutSettingsView: View {
 private struct ToolbarShortcutRecorder: View {
     @ObservedObject var settings: SettingsService
     let item: ToolbarItem
-    var recordingWidth: CGFloat = 116
     @State private var error: String?
 
     var body: some View {
@@ -627,10 +679,7 @@ private struct ToolbarShortcutRecorder: View {
                 },
                 onClear: { error = settings.setEditorShortcut(nil, for: item) },
                 allowsUnmodified: true,
-                recordingWidth: recordingWidth,
-                recordingHeight: recordingWidth < 100 ? 22 : 28,
-                textSize: recordingWidth < 100 ? 11 : 13,
-                embedsClearButton: recordingWidth < 100
+                recordingWidth: 116
             )
             .accessibilityLabel("\(item.title)快捷键")
             if let error { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }

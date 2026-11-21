@@ -283,7 +283,7 @@ struct OverlayView: View {
                             if viewModel.state != .selecting {
                                 viewModel.startSelection(at: value.startLocation)
                             }
-                            viewModel.updateSelection(to: value.location)
+                            viewModel.updateSelection(to: value.location, within: geometry.frame(in: .named("overlay")))
                         } else if viewModel.state == .editing || viewModel.state == .longCaptureReady {
                             // 1. Text / Number Tool Logic
                             if viewModel.selectedTool == .text || viewModel.selectedTool == .number {
