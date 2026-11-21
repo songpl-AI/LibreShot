@@ -12,9 +12,7 @@ function libreShotPermissionReplay(settings, permission, version) {
     const authenticating = state => /正在尝试修改你的系统设置|按钮 使用密码|使用触控ID或输入密码/.test(state);
     const onPage = (state, title) => state.startsWith(`Window: "${title}", App:`);
     const choosing = state => /对话框 打开, ID: open-panel/.test(state);
-    const selectedFile = state =>
-        /文本栏 \(selected, settable\) URL: file:\/\/\/Applications\/LibreShot\.app\//.test(state) &&
-        state.split("\n").some(line => line.includes("text LibreShot.app") && line.includes(`版本 ${version} `));
+    const selectedFile = /文本栏 \(selected, settable\) URL: file:\/\/\/Applications\/LibreShot\.app\//;
     let phase = "navigate";
 
     function uniqueIndex(state, pattern) {
@@ -26,89 +24,100 @@ function libreShotPermissionReplay(settings, permission, version) {
         return permission === "screen" ? state.split(/\n\s*\d+ text 仅系统录音/)[0] : state;
     }
 
+    function next(state) {
+        return { status: authenticating(state) ? "authentication" : "continue", phase };
+    }
+
     return async function run() {
         let state = await read();
-        while (true) {
-            if (authenticating(state)) return { status: "authentication", phase };
-            if (phase === "navigate") {
-                if (!onPage(state, pane)) {
-                    if (!onPage(state, "隐私与安全")) {
-                        const privacy = uniqueIndex(state, /row \(selectable\) 隐私与安全\s*$/);
-                        const back = uniqueIndex(state, /按钮 Description: 返回, ID: chevron\.backward/);
-                        const navigation = /row \(selected\) 隐私与安全/.test(state) ? back : privacy;
-                        if (navigation === undefined) return { status: "blocked", phase };
-                        await settings.click(navigation);
-                        state = await read();
-                    }
-                    if (!onPage(state, "隐私与安全")) return { status: "blocked", phase };
-                    const destination = uniqueIndex(state, new RegExp(`按钮 Description: ${pane}(?:[、,]|$)`));
-                    if (destination === undefined) return { status: "blocked", phase };
-                    await settings.click(destination);
+        if (authenticating(state)) return { status: "authentication", phase };
+        if (phase === "navigate") {
+            if (!onPage(state, pane)) {
+                if (!onPage(state, "隐私与安全")) {
+                    const privacy = uniqueIndex(state, /row \(selectable\) 隐私与安全\s*$/);
+                    const back = uniqueIndex(state, /按钮 Description: 返回, ID: chevron\.backward/);
+                    const navigation = /row \(selected\) 隐私与安全/.test(state) ? back : privacy;
+                    if (navigation === undefined) return { status: "blocked", phase };
+                    await settings.click(navigation);
                     state = await read();
                 }
-                if (!onPage(state, pane)) return { status: "blocked", phase };
-                const list = permissionList(state);
-                const oldRow = uniqueIndex(list, /row \(selectable\) LibreShot\.app\s*$/);
-                if (oldRow !== undefined) {
-                    await settings.click(oldRow);
-                    state = await read();
-                }
-                if (!onPage(state, pane)) return { status: "blocked", phase };
-                const selectedRow = uniqueIndex(permissionList(state), /row \(selected\) LibreShot\.app\s*$/);
-                const remove = uniqueIndex(permissionList(state), /按钮 移除\s*$/);
-                if (selectedRow !== undefined && remove !== undefined) {
-                    phase = "removed";
-                    await settings.click(remove);
-                    state = await read();
-                } else if (/row .*LibreShot\.app/.test(permissionList(state))) {
-                    return { status: "blocked", phase };
-                }
-                phase = "removed";
-            } else if (phase === "removed") {
-                const list = permissionList(state);
-                if (!onPage(state, pane) || /row .*LibreShot\.app/.test(list)) return { status: "blocked", phase };
-                const add = uniqueIndex(list, /按钮 添加\s*$/);
-                if (add === undefined) return { status: "blocked", phase };
-                phase = "choose";
-                await settings.click(add);
+                if (!onPage(state, "隐私与安全")) return { status: "blocked", phase };
+                const destination = uniqueIndex(state, new RegExp(`按钮 Description: ${pane}(?:[、,]|$)`));
+                if (destination === undefined) return { status: "blocked", phase };
+                await settings.click(destination);
                 state = await read();
-            } else if (phase === "choose") {
-                if (!choosing(state)) return { status: "blocked", phase };
-                if (!selectedFile(state)) {
-                    await settings.pressKey("super+shift+g");
-                    await settings.paste(appPath);
-                    await settings.pressKey("Return");
-                    state = await read();
-                }
-                if (authenticating(state)) return { status: "authentication", phase };
-                if (!selectedFile(state) || uniqueIndex(state, /按钮 打开, ID: OKButton/) === undefined) {
-                    return { status: "blocked", phase };
-                }
-                phase = "opened";
-                await settings.pressKey("Return");
-                state = await read();
-                const open = uniqueIndex(state, /按钮 打开, ID: OKButton/);
-                if (!authenticating(state) && choosing(state) && selectedFile(state) && open !== undefined) {
-                    await settings.click(open);
-                    state = await read();
-                }
-            } else {
-                if (!onPage(state, pane)) return { status: "blocked", phase };
-                const list = permissionList(state);
-                const on = /转换 Value: on, ID: LibreShot\.app_Toggle/.test(list);
-                if (!on) {
-                    const toggle = uniqueIndex(list, /转换 Value: off, ID: LibreShot\.app_Toggle/);
-                    if (toggle === undefined) return { status: "blocked", phase };
-                    await settings.click(toggle);
-                    state = await read();
-                    if (authenticating(state)) return { status: "authentication", phase };
-                }
-                return {
-                    status: onPage(state, pane) && /转换 Value: on, ID: LibreShot\.app_Toggle/.test(permissionList(state))
-                        ? "enabled" : "blocked",
-                    phase
-                };
             }
+            if (!onPage(state, pane)) return { status: "blocked", phase };
+            phase = "remove";
+            return next(state);
+        } else if (phase === "remove") {
+            if (!onPage(state, pane)) return { status: "blocked", phase };
+            const list = permissionList(state);
+            const oldRow = uniqueIndex(list, /row \(selectable\) LibreShot\.app\s*$/);
+            if (oldRow !== undefined) {
+                await settings.click(oldRow);
+                state = await read();
+            }
+            if (!onPage(state, pane)) return { status: "blocked", phase };
+            const selectedRow = uniqueIndex(permissionList(state), /row \(selected\) LibreShot\.app\s*$/);
+            const remove = uniqueIndex(permissionList(state), /按钮 移除\s*$/);
+            if (selectedRow !== undefined && remove !== undefined) {
+                phase = "removed";
+                await settings.click(remove);
+                state = await read();
+            } else if (/row .*LibreShot\.app/.test(permissionList(state))) {
+                return { status: "blocked", phase };
+            }
+            phase = "removed";
+            return next(state);
+        } else if (phase === "removed") {
+            const list = permissionList(state);
+            if (!onPage(state, pane) || /row .*LibreShot\.app/.test(list)) return { status: "blocked", phase };
+            const add = uniqueIndex(list, /按钮 添加\s*$/);
+            if (add === undefined) return { status: "blocked", phase };
+            phase = "choose";
+            await settings.click(add);
+            return next(await read());
+        } else if (phase === "choose") {
+            if (/表单 ID: GoToWindow/.test(state)) {
+                const field = uniqueIndex(state, /文本栏 \(settable\).*ID: PathTextField/);
+                if (field === undefined) return { status: "blocked", phase };
+                await settings.setValue(field, appPath);
+                state = await read();
+                if (!state.split("\n").some(line => line.includes(`ID: ${appPath}`))) {
+                    return { status: "blocked", phase };
+                }
+                await settings.pressKey("Return");
+                return next(await read());
+            }
+            if (!choosing(state)) return { status: "blocked", phase };
+            const file = uniqueIndex(state, selectedFile);
+            if (file === undefined) {
+                await settings.pressKey("super+shift+g");
+                return next(await read());
+            }
+            if (!state.split("\n").some(line => line.includes("text LibreShot.app") && line.includes(`版本 ${version} `))) {
+                return { status: "blocked", phase };
+            }
+            phase = "opened";
+            await settings.click(file, { clickCount: 2 });
+            return next(await read());
+        } else {
+            if (!onPage(state, pane)) return { status: "blocked", phase };
+            const list = permissionList(state);
+            const on = /转换 Value: on, ID: LibreShot\.app_Toggle/.test(list);
+            if (!on) {
+                const toggle = uniqueIndex(list, /转换 Value: off, ID: LibreShot\.app_Toggle/);
+                if (toggle === undefined) return { status: "blocked", phase };
+                await settings.click(toggle);
+                state = await read();
+                if (authenticating(state)) return { status: "authentication", phase };
+            }
+            return {
+                status: onPage(state, pane) && /转换 Value: on, ID: LibreShot\.app_Toggle/.test(permissionList(state))
+                    ? "enabled" : "blocked",
+                phase
+            };
         }
     };
 }
