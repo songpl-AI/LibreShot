@@ -46,8 +46,8 @@ struct VisualWorkflowUITestApp {
         window.contentView = NSHostingView(rootView: OverlayView(viewModel: model))
         window.bindEditingActions(to: model)
         window.onEscapeKey = { model.clearImageTranslation() }
-        model.onCapture = { rect, annotations, action, image in
-            guard let image else { return }
+        model.onCapture = { rect, annotations, action, source in
+            guard let image = source?.fullImage(selection: rect) else { return }
             let scale = model.previewScale
             guard let cropped = image.cropping(to: CGRect(x: rect.minX * scale, y: rect.minY * scale,
                                                           width: rect.width * scale, height: rect.height * scale)) else { return }

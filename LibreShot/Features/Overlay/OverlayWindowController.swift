@@ -92,7 +92,7 @@ class OverlayWindowController: NSWindowController {
     
     func show(
         captureMode: CaptureMode = .normal,
-        onCapture: @escaping (CGRect, [Annotation], CaptureAction, CGImage?, Bool) -> Void,
+        onCapture: @escaping (CGRect, [Annotation], CaptureAction, CaptureExportSource?, Bool) -> Void,
         onLongCapture: ((NSImage) -> Void)? = nil,
         onLongCaptureError: ((Error) -> Void)? = nil,
         onPreviewError: ((Error) -> Void)? = nil,

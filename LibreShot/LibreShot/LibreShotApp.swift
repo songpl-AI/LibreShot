@@ -322,7 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hold a strong reference to keep it alive during the session
         self.overlayWindowController = controller
         
-        controller.show(onCapture: { [weak self, weak controller] rect, annotations, action, image, roundedCorners in
+        controller.show(onCapture: { [weak self, weak controller] rect, annotations, action, source, roundedCorners in
             // Capture the specific screen where the selection happened
             // Use local controller reference to ensure we get the ID even if self?.overlayWindowController is nil
             let displayID = controller?.getCurrentDisplayID()
@@ -333,19 +333,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let preserveExistingImage = (controller?.captureRequiresExistingPreview() ?? false) || action == .ocr
             // Release the overlay owner before the detached selection is prepared.
             // finishOverlaySession() has already cleared the SwiftUI host and
-            // preview image; the callback's image argument remains independently
+            // preview image; the callback's image source remains independently
             // owned until prepareAreaImage() finishes.
             self?.overlayWindowController = nil
             #if DEBUG
             MemoryTrace.mark("selection_overlay_released")
             #endif
-            let directRegionRequested = ProcessInfo.processInfo.environment["LIBRESHOT_DIRECT_REGION_CAPTURE"] == "1"
-            let directRegionAction: Bool = [.copy, .save, .saveAs, .saveAndCopy].contains(action)
-            let directRegionCanUseFreshCapture = directRegionRequested && directRegionAction && !preserveExistingImage
             self?.performAreaCapture(rect: rect, annotations: annotations, displayID: displayID,
-                                     action: action, roundedCorners: roundedCorners, existingImage: image,
-                                     preserveExistingImage: preserveExistingImage,
-                                     discardExistingImage: directRegionCanUseFreshCapture)
+                                     action: action, roundedCorners: roundedCorners, source: source,
+                                     preserveExistingImage: preserveExistingImage)
         }, onLongCapture: { [weak self] image in
             Task { [weak self] in
                 await self?.handleLongCaptureResult(image)
@@ -469,8 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func performAreaCapture(rect: CGRect, annotations: [Annotation], displayID: CGDirectDisplayID?, action: CaptureAction,
                                     roundedCorners: Bool,
-                                    existingImage: CGImage? = nil, preserveExistingImage: Bool = false,
-                                    discardExistingImage: Bool = false) {
+                                    source: CaptureExportSource?, preserveExistingImage: Bool) {
         // Keep the direct-region path behind an environment switch so the
         // installed build can be compared against the existing full-screen path
         // without changing the default user flow.
@@ -481,7 +476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let directRegionCapture = ProcessInfo.processInfo.environment["LIBRESHOT_DIRECT_REGION_CAPTURE"] == "1"
             && actionAllowsDirectRegion
             && !preserveExistingImage
-        let needsCapture = directRegionCapture || existingImage == nil
+        let needsCapture = directRegionCapture || source == nil
         // Keep the source only until the detached crop is ready. The task is
         // intentionally scheduled after the overlay callback returns, giving
         // SwiftUI/WindowServer one run-loop turn to release its graphics backing.
@@ -489,7 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // task when direct capture is selected. The overlay callback has
         // already released its owner; keeping this parameter alive would make
         // the direct region frame overlap the full-screen backing again.
-        var pendingImage = (directRegionCapture || discardExistingImage) ? nil : existingImage
+        var pendingSource = directRegionCapture ? nil : source
         Task { [weak self] in
             if needsCapture {
                 // Small delay to ensure overlay window is fully closed/faded out
@@ -509,19 +504,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         directRegion: directRegionCapture
                     )
                 } else {
-                    if let sourceImage = pendingImage {
+                    if let source = pendingSource {
                         preparedImage = autoreleasepool {
-                            self?.prepareAreaImage(
-                                NSImage(cgImage: sourceImage, size: NSSize(width: sourceImage.width, height: sourceImage.height)),
-                                rect: rect,
-                                annotations: annotations,
-                                displayID: displayID,
-                                action: action,
-                                roundedCorners: roundedCorners
-                            )
+                            self?.prepareAreaImage(source, rect: rect, annotations: annotations,
+                                                   displayID: displayID, action: action, roundedCorners: roundedCorners)
                         }
-                        // Do not let the full-screen source survive into save/OCR.
-                        pendingImage = nil
+                        pendingSource = nil
                     } else {
                         preparedImage = nil
                     }
@@ -574,25 +562,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                       width: rect.width, height: rect.height)
     }
 
+    private func prepareAreaImage(_ source: CaptureExportSource, rect: CGRect, annotations: [Annotation],
+                                  displayID: CGDirectDisplayID?, action: CaptureAction,
+                                  roundedCorners: Bool) -> PreparedAreaImage? {
+        let globalRect = globalAreaRect(rect, displayID: displayID)
+        if case .translation(let original, let replacement, let scale) = source,
+           let cropped = CaptureService.shared.translatedCrop(image: original, replacement: replacement,
+                                                              selection: rect, scale: scale,
+                                                              to: globalRect, displayID: displayID) {
+            return prepareCroppedAreaImage(cropped, rect: rect, globalRect: globalRect, annotations: annotations,
+                                           displayID: displayID, action: action, roundedCorners: roundedCorners)
+        }
+        guard let pixels = source.fullImage(selection: rect) else { return nil }
+        let image = NSImage(cgImage: pixels, size: NSSize(width: pixels.width, height: pixels.height))
+        return prepareAreaImage(image, rect: rect, annotations: annotations, displayID: displayID,
+                                action: action, roundedCorners: roundedCorners)
+    }
+
     private func prepareAreaImage(_ image: NSImage, rect: CGRect, annotations: [Annotation],
                                   displayID: CGDirectDisplayID?, action: CaptureAction,
                                   roundedCorners: Bool) -> PreparedAreaImage? {
         autoreleasepool {
             let globalRect = globalAreaRect(rect, displayID: displayID)
             guard let cropped = CaptureService.shared.crop(image: image, to: globalRect, displayID: displayID) else { return nil }
-            #if DEBUG
-            MemoryTrace.mark("selection_cropped")
-            #endif
-            // Only a pin needs the immutable cropped base for later edits.
-            // Ordinary exports release the full-display source before saving/OCR.
-            let document = action == .pin
-                ? PinnedImageDocument(baseImage: cropped, annotations: annotations,
-                                      origin: rect.origin, roundedCorners: roundedCorners)
-                : nil
-            let output = annotations.isEmpty ? cropped
-                : CaptureService.shared.compositeCropped(image: cropped, annotations: annotations, cropRect: rect, displayID: displayID)
-            return (output, globalRect, document)
+            return prepareCroppedAreaImage(cropped, rect: rect, globalRect: globalRect, annotations: annotations,
+                                           displayID: displayID, action: action, roundedCorners: roundedCorners)
         }
+    }
+
+    private func prepareCroppedAreaImage(_ cropped: NSImage, rect: CGRect, globalRect: CGRect,
+                                         annotations: [Annotation], displayID: CGDirectDisplayID?,
+                                         action: CaptureAction, roundedCorners: Bool) -> PreparedAreaImage {
+        #if DEBUG
+        MemoryTrace.mark("selection_cropped")
+        #endif
+        let document = action == .pin
+            ? PinnedImageDocument(baseImage: cropped, annotations: annotations,
+                                  origin: rect.origin, roundedCorners: roundedCorners)
+            : nil
+        let output = annotations.isEmpty ? cropped
+            : CaptureService.shared.compositeCropped(image: cropped, annotations: annotations, cropRect: rect, displayID: displayID)
+        return (output, globalRect, document)
     }
     
     @MainActor

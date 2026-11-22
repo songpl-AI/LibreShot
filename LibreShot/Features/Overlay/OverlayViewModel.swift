@@ -22,6 +22,21 @@ enum CaptureAction {
     case ocr
 }
 
+enum CaptureExportSource {
+    case display(CGImage)
+    case translation(original: CGImage, replacement: CGImage, scale: CGFloat)
+
+    func fullImage(selection: CGRect) -> CGImage? {
+        switch self {
+        case .display(let image):
+            return image
+        case .translation(let original, let replacement, let scale):
+            return ImageTranslationRenderer.replacingSelection(in: original, with: replacement,
+                                                               selection: selection, scale: scale)
+        }
+    }
+}
+
 enum CaptureMode: Equatable {
     case normal
     case longScreenshot
@@ -183,10 +198,22 @@ class OverlayViewModel: ObservableObject {
     }
 
     func imageForExport() -> CGImage? {
-        guard let original = previewImage, translationSource != nil,
-              !showsOriginalTranslation, let translated = translatedSelection else { return previewImage }
-        return ImageTranslationRenderer.replacingSelection(in: original, with: translated,
-                                                           selection: selectionRect, scale: previewScale)
+        guard let original = previewImage else { return nil }
+        return exportSource(original: original).fullImage(selection: selectionRect)
+    }
+
+    private func exportSource(original: CGImage) -> CaptureExportSource {
+        guard translationSource != nil, !showsOriginalTranslation, let translated = translatedSelection else {
+            return .display(original)
+        }
+        return .translation(original: original, replacement: translated, scale: previewScale)
+    }
+
+    private func captureSource(for action: CaptureAction) -> CaptureExportSource? {
+        if captureMode == .normal, [.copy, .save, .saveAs, .saveAndCopy].contains(action) {
+            return previewImage.map(exportSource(original:))
+        }
+        return imageForExport().map(CaptureExportSource.display)
     }
 
     func isToolbarItemEnabled(_ item: ToolbarItem) -> Bool {
@@ -313,7 +340,7 @@ class OverlayViewModel: ObservableObject {
     }
     
     // Actions
-    var onCapture: ((CGRect, [Annotation], CaptureAction, CGImage?) -> Void)?
+    var onCapture: ((CGRect, [Annotation], CaptureAction, CaptureExportSource?) -> Void)?
     var onCancel: (() -> Void)?
     // A pin can save on blank double-click without completing a capture session.
     var onBlankDoubleClick: (() -> Void)?
@@ -417,35 +444,35 @@ class OverlayViewModel: ObservableObject {
         guard canExportSelection else { return }
         commitTextInput()
         guard !isEditingText else { return }
-        onCapture?(selectionRect, annotations, .copy, imageForExport())
+        onCapture?(selectionRect, annotations, .copy, captureSource(for: .copy))
     }
     
     func confirmSave() {
         guard canExportSelection else { return }
         commitTextInput()
         guard !isEditingText else { return }
-        onCapture?(selectionRect, annotations, .save, imageForExport())
+        onCapture?(selectionRect, annotations, .save, captureSource(for: .save))
     }
 
     func confirmSaveAndCopy() {
         guard canExportSelection else { return }
         commitTextInput()
         guard !isEditingText else { return }
-        onCapture?(selectionRect, annotations, .saveAndCopy, imageForExport())
+        onCapture?(selectionRect, annotations, .saveAndCopy, captureSource(for: .saveAndCopy))
     }
     
     func confirmPin() {
         guard canExportSelection else { return }
         commitTextInput()
         guard !isEditingText else { return }
-        onCapture?(selectionRect, annotations, .pin, imageForExport())
+        onCapture?(selectionRect, annotations, .pin, captureSource(for: .pin))
     }
 
     func confirmOCR() {
         guard canExportSelection else { return }
         commitTextInput()
         guard !isEditingText else { return }
-        onCapture?(selectionRect, annotations, .ocr, imageForExport())
+        onCapture?(selectionRect, annotations, .ocr, captureSource(for: .ocr))
     }
 
     func confirmImageTranslation() {
@@ -493,7 +520,7 @@ class OverlayViewModel: ObservableObject {
         guard canExportSelection else { return }
         commitTextInput()
         guard !isEditingText else { return }
-        onCapture?(selectionRect, annotations, .saveAs, imageForExport())
+        onCapture?(selectionRect, annotations, .saveAs, captureSource(for: .saveAs))
     }
     
     func cancel() {

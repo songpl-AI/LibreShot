@@ -41,11 +41,35 @@ nonisolated enum ImageTranslationRenderer {
                                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        let rect = CGRect(x: selection.minX * scale, y: CGFloat(image.height) - selection.maxY * scale,
-                          width: selection.width * scale, height: selection.height * scale)
+        let rect = placement(of: selection, scale: scale, imageHeight: image.height)
         context.clip(to: rect)
         context.draw(translated, in: rect)
         return context.makeImage()
+    }
+
+    static func replacingSelectionInCrop(of image: CGImage, with translated: CGImage,
+                                       selection: CGRect, scale: CGFloat, crop: CGRect) -> CGImage? {
+        let rect = placement(of: selection, scale: scale, imageHeight: image.height)
+        let cropInContext = CGRect(x: crop.minX, y: CGFloat(image.height) - crop.maxY,
+                                   width: crop.width, height: crop.height)
+        // The whole-display path handles fractional, clipped and resampled selections.
+        guard crop == crop.integral, rect == cropInContext,
+              CGFloat(translated.width) == crop.width, CGFloat(translated.height) == crop.height,
+              let original = image.cropping(to: crop),
+              let context = CGContext(data: nil, width: original.width, height: original.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+        else { return nil }
+        let bounds = CGRect(x: 0, y: 0, width: original.width, height: original.height)
+        context.draw(original, in: bounds)
+        context.draw(translated, in: bounds)
+        return context.makeImage()
+    }
+
+    private static func placement(of selection: CGRect, scale: CGFloat, imageHeight: Int) -> CGRect {
+        CGRect(x: selection.minX * scale, y: CGFloat(imageHeight) - selection.maxY * scale,
+               width: selection.width * scale, height: selection.height * scale)
     }
 
     static func render(image: CGImage, regions: [TranslatedImageRegion], scale: CGFloat) throws -> ImageTranslationRender {

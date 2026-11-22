@@ -134,7 +134,9 @@ final class ImageEditorWindowController: NSWindowController, NSWindowDelegate {
         window.bindEditingActions(to: model)
         window.onEscapeKey = { [weak self] in self?.close() }
         model.onCancel = { [weak self] in self?.close() }
-        model.onCapture = { [weak self] _, _, action, base in self?.perform(action, base: base) }
+        model.onCapture = { [weak self] rect, _, action, source in
+            self?.perform(action, base: source?.fullImage(selection: rect))
+        }
         if screen != nil {
             window.setFrameOrigin(CGPoint(x: visible.midX - window.frame.width / 2,
                                           y: visible.midY - window.frame.height / 2))

@@ -329,7 +329,37 @@ class CaptureService {
     
     func crop(image: NSImage, to rect: CGRect, displayID: CGDirectDisplayID? = nil) -> NSImage? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        
+        guard let geometry = cropGeometry(image: cgImage, to: rect, displayID: displayID) else { return nil }
+        guard let croppedCGImage = cgImage.cropping(to: geometry.pixels) else {
+            print("CaptureService: CGImage cropping failed")
+            return nil
+        }
+
+        // A CGImage crop can retain the entire display backing store while the selection is open.
+        guard let context = CGContext(data: nil, width: croppedCGImage.width, height: croppedCGImage.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: croppedCGImage.colorSpace ?? exportColorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
+            return nil
+        }
+        context.interpolationQuality = .none
+        context.setBlendMode(.copy)
+        context.draw(croppedCGImage, in: CGRect(x: 0, y: 0, width: croppedCGImage.width, height: croppedCGImage.height))
+        guard let detachedImage = context.makeImage() else { return nil }
+        return NSImage(cgImage: detachedImage, size: geometry.points)
+    }
+
+    func translatedCrop(image: CGImage, replacement: CGImage, selection: CGRect, scale: CGFloat,
+                        to rect: CGRect, displayID: CGDirectDisplayID?) -> NSImage? {
+        guard let geometry = cropGeometry(image: image, to: rect, displayID: displayID),
+              let pixels = ImageTranslationRenderer.replacingSelectionInCrop(
+                of: image, with: replacement, selection: selection, scale: scale, crop: geometry.pixels
+              ) else { return nil }
+        return NSImage(cgImage: pixels, size: geometry.points)
+    }
+
+    private func cropGeometry(image: CGImage, to rect: CGRect,
+                              displayID: CGDirectDisplayID?) -> (pixels: CGRect, points: CGSize)? {
         // Find the screen's frame to calculate relative coordinates
         var screenFrame = NSScreen.main?.frame ?? .zero
         if let id = displayID, let screen = NSScreen.screens.first(where: {
@@ -339,9 +369,9 @@ class CaptureService {
         }
         
         // Calculate scale factor based on actual image pixels vs screen points
-        // cgImage is in pixels, screenFrame is in points
-        let scaleX = CGFloat(cgImage.width) / screenFrame.width
-        let scaleY = CGFloat(cgImage.height) / screenFrame.height
+        // The image is in pixels and screenFrame is in points.
+        let scaleX = CGFloat(image.width) / screenFrame.width
+        let scaleY = CGFloat(image.height) / screenFrame.height
         
         // Calculate the crop rect in image coordinates (Pixels)
         // rect is in global screen coordinates (bottom-left origin)
@@ -358,7 +388,7 @@ class CaptureService {
         let cropRect = CGRect(x: x, y: y, width: width, height: height)
         
         // Ensure crop rect is within image bounds to prevent failure due to rounding errors
-        let imageRect = CGRect(x: 0, y: 0, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        let imageRect = CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height))
         let finalRect = cropRect.intersection(imageRect)
         
         if finalRect.isNull || finalRect.isEmpty {
@@ -366,26 +396,7 @@ class CaptureService {
             return nil
         }
         
-        guard let croppedCGImage = cgImage.cropping(to: finalRect) else {
-            print("CaptureService: CGImage cropping failed")
-            return nil
-        }
-
-        // A CGImage crop can retain the entire display backing store while the selection is open.
-        guard let context = CGContext(data: nil, width: croppedCGImage.width, height: croppedCGImage.height,
-                                      bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: croppedCGImage.colorSpace ?? exportColorSpace,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
-            return nil
-        }
-        context.interpolationQuality = .none
-        context.setBlendMode(.copy)
-        context.draw(croppedCGImage, in: CGRect(x: 0, y: 0, width: croppedCGImage.width, height: croppedCGImage.height))
-        guard let detachedImage = context.makeImage() else { return nil }
-        
-        // Return image with the logical size of the cropped area (Points)
-        let finalSize = CGSize(width: finalRect.width / scaleX, height: finalRect.height / scaleY)
-        return NSImage(cgImage: detachedImage, size: finalSize)
+        return (finalRect, CGSize(width: finalRect.width / scaleX, height: finalRect.height / scaleY))
     }
     
     // Updated to accept optional displayID. If sourceRect is supplied, capture

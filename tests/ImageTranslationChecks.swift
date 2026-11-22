@@ -18,6 +18,7 @@ enum ImageTranslationChecks {
     static func run() async throws {
         let image = fixture()
         let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+        checkTranslationCrop()
         let request = CancellationRequest()
         let operation = OCRRecognitionOperation(request: request)
         let queue = DispatchQueue(label: "LibreShot.OCR.CancellationCheck")
@@ -115,6 +116,50 @@ enum ImageTranslationChecks {
                 print("PASS: installed system translation model returns all batch region IDs")
             } else { print("NOT RUN: real batch translation; language model not installed (no download requested)") }
         }
+    }
+
+    static func checkTranslationCrop() {
+        let packed = CGImageAlphaInfo.premultipliedLast.rawValue
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+        let crop = CGRect(x: 28, y: 12, width: 126, height: 66)
+        let selection = CGRect(x: 14, y: 6, width: 63, height: 33)
+        let replacement = CGContext(data: nil, width: 126, height: 66, bitsPerComponent: 8,
+                                    bytesPerRow: 0, space: sRGB, bitmapInfo: packed)!
+        replacement.setFillColor(red: 0.8, green: 0.2, blue: 0.6, alpha: 0.55)
+        replacement.fill(CGRect(x: 0, y: 15, width: 117, height: 49))
+        let translated = replacement.makeImage()!
+
+        func raster(_ image: CGImage) -> Data {
+            let canvas = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                   bytesPerRow: image.width * 4, space: sRGB,
+                                   bitmapInfo: packed | CGBitmapInfo.byteOrder32Big.rawValue)!
+            canvas.setBlendMode(.copy)
+            canvas.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return Data(bytes: canvas.data!, count: canvas.bytesPerRow * image.height)
+        }
+
+        for space in [sRGB, CGColorSpace(name: CGColorSpace.displayP3)!] {
+            let background = CGContext(data: nil, width: 220, height: 150, bitsPerComponent: 8,
+                                       bytesPerRow: 0, space: space, bitmapInfo: packed)!
+            for y in 0..<150 {
+                let shade = CGFloat(y) / 150
+                background.setFillColor(red: shade, green: 0.4, blue: 0.9, alpha: 0.6 + shade * 0.4)
+                background.fill(CGRect(x: 0, y: y, width: 220, height: 1))
+            }
+            let original = background.makeImage()!
+            let full = ImageTranslationRenderer.replacingSelection(in: original, with: translated,
+                                                                   selection: selection, scale: 2)!
+            let cropped = ImageTranslationRenderer.replacingSelectionInCrop(
+                of: original, with: translated, selection: selection, scale: 2, crop: crop
+            )!
+            precondition(raster(cropped) == raster(full.cropping(to: crop)!), "Direct crop changed rendered pixels")
+            for incompatible in [crop.offsetBy(dx: 0.5, dy: 0), crop.insetBy(dx: 1, dy: 1), crop.offsetBy(dx: 1, dy: 0)] {
+                precondition(ImageTranslationRenderer.replacingSelectionInCrop(
+                    of: original, with: translated, selection: selection, scale: 2, crop: incompatible
+                ) == nil, "Mismatched geometry must use the whole-display route")
+            }
+        }
+        print("PASS: translated selection crop matches whole-display compositing in sRGB and Display P3 and rejects mismatched geometry")
     }
 
     @available(macOS 26.0, *)

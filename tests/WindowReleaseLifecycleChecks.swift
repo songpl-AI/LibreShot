@@ -87,9 +87,9 @@ struct WindowReleaseLifecycleChecks {
         let controller = OverlayWindowController(), token = Token(), state = State()
         let probe = Probe(controller, state: state, token: token)
         controller.previewImageLoader = { _ in token.touch(); throw CaptureServiceError.permissionDenied }
-        controller.show(onCapture: { [weak controller] _, _, action, image, _ in
+        controller.show(onCapture: { [weak controller] rect, _, action, source, _ in
             token.touch(); state.captures += 1
-            if case .ocr = action { state.image = image } else { preconditionFailure("Unexpected action") }
+            if case .ocr = action { state.image = source?.fullImage(selection: rect) } else { preconditionFailure("Unexpected action") }
             state.displayPreserved = controller?.getCurrentDisplayID() == state.expectedDisplayID
             state.previewRequirementPreserved = controller?.captureRequiresExistingPreview() == true
         }, onPreviewError: { _ in token.touch(); state.errors += 1 }, onCancel: { token.touch(); state.cancels += 1 })
