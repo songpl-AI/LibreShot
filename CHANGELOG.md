@@ -1,5 +1,9 @@
 # 更新日志 / Changelog
 
+## 未发布 / Unreleased
+
+- 当前源码采用 [LibreShot 源码可见许可证](LICENSE)。个人或公司日常使用仍然免费，付费再分发或集成进付费产品和服务须另获授权。已按 MIT 发布的版本沿用原许可。
+
 ## [1.3.34](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.34) — 2026-11-21
 
 - 工具栏设置以紧凑的多行布局展示全部工具，可拖动排序，点选工具可设置显隐和快捷键。

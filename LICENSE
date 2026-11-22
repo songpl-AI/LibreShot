@@ -1,21 +1,50 @@
-MIT License
+LibreShot Source-Available License 1.0
 
 Copyright (c) 2026 Allen
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license applies to LibreShot source code, binaries, and accompanying
+materials distributed under these terms by Allen (the Licensor), collectively
+the Software.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Permission
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+The Licensor grants you a worldwide, royalty-free copyright license to use,
+copy, study, modify, and redistribute the Software and modified versions,
+subject to the conditions below.
+
+Personal use and use as a tool in your own work are permitted, including
+internal deployment by businesses and work done for paying clients. You may
+share or sell screenshots and other output you create with the Software. This
+license does not grant rights in third-party content captured in that output.
+
+2. Activities that require separate permission
+
+You must obtain the Licensor's prior written permission to sell, rent, license
+for a fee, or otherwise provide the Software or a modified version to third
+parties in exchange for payment or other consideration. The same requirement
+applies when you bundle or integrate the Software or any of its code into a
+paid product or service offered to third parties, or give customers access to
+its functionality as part of a paid offering, including through a hosted
+service. These conditions apply regardless of the name used and whether any
+separate fee is charged for the Software itself.
+
+Voluntary donations do not by themselves make a free distribution subject to
+this section when access does not depend on making a donation.
+
+3. Notices and previously granted rights
+
+You must include this license and retain applicable copyright and license
+notices in all copies or substantial portions of the Software that you
+redistribute, including modified versions.
+
+This license does not limit rights granted under earlier or separate licenses,
+including MIT rights for material previously distributed under MIT.
+Separately licensed material remains subject to its own license terms.
+
+4. Disclaimer
+
+To the extent permitted by law, the Software is provided as is, without
+warranties or conditions of any kind, including implied warranties of
+merchantability, fitness for a particular purpose, and noninfringement.
+The Licensor and contributors are not liable for claims, damages, or other
+liability arising out of or in connection with the Software or its use.

@@ -1,8 +1,8 @@
 # LibreShot
 
-[中文](README.md) | [English](README_EN.md) · [MIT License](LICENSE)
+[中文](README.md) | [English](README_EN.md) · [License](LICENSE)
 
-A free, open-source native screenshot and annotation tool for macOS.
+A free-to-use, source-available native screenshot and annotation tool for macOS.
 
 [Download v1.3.34](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.34) · [Release notes](docs/releases/1.3.34.md) · [Changelog](CHANGELOG.md)
 
@@ -53,6 +53,8 @@ Support maintenance through [GitHub Sponsors](https://github.com/sponsors/songpl
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+The current source uses the [LibreShot Source-Available License](LICENSE). Individuals and organizations can use LibreShot for free, including for work and paid projects. Redistributing LibreShot or a modified version for a fee, or integrating its code or functionality into a paid product or service offered to others, requires written permission. For commercial licensing, contact the [maintainer](https://github.com/songpl-AI).
+
+Versions released under MIT, including [v1.3.34](https://github.com/songpl-AI/LibreShot/blob/v1.3.34/LICENSE), remain available under their original license.
 
 Copyright (c) 2026 Allen

@@ -1,8 +1,8 @@
 # LibreShot
 
-[中文](README.md) | [English](README_EN.md) · [MIT License](LICENSE)
+[中文](README.md) | [English](README_EN.md) · [许可证](LICENSE)
 
-免费开源的原生 macOS 截图与标注工具。
+免费使用、源码可见的原生 macOS 截图与标注工具。
 
 [下载 v1.3.34](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.34) · [更新说明](docs/releases/1.3.34.md) · [更新日志](CHANGELOG.md)
 
@@ -53,6 +53,8 @@
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE) 开源。
+当前源码采用 [LibreShot 源码可见许可证](LICENSE)。个人和公司均可免费使用，包括工作截图和付费项目。付费分发 LibreShot 或修改版，以及将其代码或功能集成到对外提供的付费产品或服务，需要取得书面授权。商业授权请联系[维护者](https://github.com/songpl-AI)。
+
+已按 MIT 发布的版本（包括 [v1.3.34](https://github.com/songpl-AI/LibreShot/blob/v1.3.34/LICENSE)）仍可按原许可证使用。
 
 Copyright (c) 2026 Allen

@@ -10,7 +10,7 @@ const translations = new Map([
   ["用 LibreShot 截图、标注、提取文字，", "Capture, annotate, and extract text with LibreShot,"],
   ["把屏幕上的内容变成清楚的表达。", "turning your screen into a clear message."],
   ["免费下载 macOS 版", "Download free for macOS"],
-  ["免费开源", "Free & open source"], ["原生 macOS", "Native macOS"], ["本机处理", "Runs locally"],
+  ["免费使用", "Free to use"], ["原生 macOS", "Native macOS"], ["本机处理", "Runs locally"],
   ["标注", "Annotate"], ["贴图", "Pin"],
   ["工作场景示意 · 非应用截图", "Work example · Not an app screenshot"],
   ["点击放大", "View larger"],
@@ -66,10 +66,10 @@ const translations = new Map([
   ["截图完成后，会自动保存吗？", "Are captures saved automatically?"],
   ["新用户默认仅复制到剪贴板。可在设置中开启自动保存，或用 ⌘S 手动保存、⌘⇧S 另存为。升级会保留原来的设置。", "New users copy to the clipboard by default. Turn on auto-save in Settings, or use ⌘S to save and ⌘⇧S to save as. Upgrades keep your settings."],
   ["真的免费吗？可以参与开发吗？", "Is it really free? Can I help?"],
-  ["LibreShot 免费使用，源代码以 MIT 许可证开放。欢迎提交 Issue 或 Pull Request，也可以通过 GitHub Sponsors 支持项目维护。", "LibreShot is free to use and released under the MIT license. Open an Issue or Pull Request, or support maintenance through GitHub Sponsors."],
+  ["LibreShot 对个人和公司免费。付费分发或集成进付费产品和服务须另获授权。欢迎在 GitHub 提交问题和贡献代码。", "LibreShot is free for individuals and organizations to use. Redistributing it for a fee or integrating it into a paid product or service requires separate permission. Issues and pull requests are welcome on GitHub."],
   ["为清楚的表达，留一把小剪刀。", "A small pair of scissors for clear communication."],
   ["下一张截图，用 LibreShot。", "Use LibreShot for your next capture."],
-  ["以 MIT 开源，为你的 Mac 而做。", "MIT open source, made for your Mac."],
+  ["许可证", "License"],
   ["更新日志", "Changelog"], ["支持项目", "Support the project"],
   ["LibreShot 首页", "LibreShot home"], ["主导航", "Main navigation"], ["页脚导航", "Footer navigation"],
   ["LibreShot 工作场景示意", "LibreShot work examples"], ["LibreShot 图标", "LibreShot icon"],
@@ -144,8 +144,8 @@ function setLanguage(next) {
   document.documentElement.lang = language === "en" ? "en" : "zh-CN";
   document.title = language === "en" ? "LibreShot — Capture the point, make it clear." : "LibreShot — 截下重点，表达清楚。";
   document.querySelector('meta[name="description"]').content = language === "en"
-    ? "LibreShot, a free and open-source native macOS capture and annotation tool. Area capture, scrolling capture, OCR, and pinned images help make your point clear."
-    : "LibreShot，免费开源的原生 macOS 截图与标注工具。区域截图、长截图、OCR 与原位贴图，把重点表达清楚。";
+    ? "LibreShot, a free-to-use, source-available native macOS capture and annotation tool. Area capture, scrolling capture, OCR, and pinned images help make your point clear."
+    : "LibreShot，免费使用、源码可见的原生 macOS 截图与标注工具。区域截图、长截图、OCR 与原位贴图，把重点表达清楚。";
   localizedText.forEach(({node, original, translated}) => {
     node.textContent = language === "en" ? original.replace(original.trim(), translated) : original;
   });

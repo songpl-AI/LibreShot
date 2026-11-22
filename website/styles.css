@@ -120,7 +120,6 @@ details[open] .faq-plus::after{transform:rotate(0)}
 .site-footer>div{display:flex;align-items:center;gap:15px;margin-right:auto}
 .footer-brand{font-size:16px;gap:6px;letter-spacing:-.5px}
 .footer-brand img{border-radius:6px}
-.footer-note{font-size:9px;color:#9ba492}
 .site-footer nav{display:flex;gap:22px;font-size:10px;color:#7c8a70}
 .copyright{font-size:9px;color:#a6ae9e}
 @media(min-width:1500px){.hero{padding-top:95px;padding-bottom:85px;gap:64px}
@@ -141,7 +140,6 @@ h1{font-size:56px}
 .extra-features{gap:24px}
 .workflow-inner{gap:40px}
 .faq{gap:50px}
-.footer-note{display:none}
 }
 @media(max-width:900px){.container{width:calc(100% - 48px)}
 .nav-links{margin-left:0;gap:25px}

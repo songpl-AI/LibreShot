@@ -36,4 +36,4 @@ bash tests/run-issue25-checks.sh
 
 Detailed evidence lives in `docs/qa/`; historical changes are in the [changelog](../CHANGELOG.md). Publishing and Issue replies follow the [release workflow](operations/release-and-issue-response.md).
 
-Describe the problem, scope and validation in Issues or Pull Requests. The project uses the [MIT License](../LICENSE).
+Describe the problem, scope and validation in Issues or Pull Requests. The current source uses the [LibreShot Source-Available License](../LICENSE).

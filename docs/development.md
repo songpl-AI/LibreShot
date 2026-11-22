@@ -36,4 +36,4 @@ bash tests/run-issue25-checks.sh
 
 详细记录保留在 `docs/qa/`，历史更新见 [CHANGELOG](../CHANGELOG.md)。发布及 Issue 回复遵循 [发布流程](operations/release-and-issue-response.md)。
 
-提交 Issue 或 Pull Request 时说明问题、修改范围和验证结果。项目采用 [MIT License](../LICENSE)。
+提交 Issue 或 Pull Request 时说明问题、修改范围和验证结果。当前源码适用 [LibreShot 源码可见许可证](../LICENSE)。

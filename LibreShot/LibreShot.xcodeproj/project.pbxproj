@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A0C000000000000000000002 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = A0C000000000000000000003 /* LICENSE */; };
 		9FE4E29C2F36E28D00F19710 /* OverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2972F36E28D00F19710 /* OverlayView.swift */; };
 		9FE4E29D2F36E28D00F19710 /* OverlayViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2982F36E28D00F19710 /* OverlayViewModel.swift */; };
 		9FE4E29E2F36E28D00F19710 /* OverlayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE4E2992F36E28D00F19710 /* OverlayWindowController.swift */; };
@@ -17,6 +18,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A0C000000000000000000003 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = ../LICENSE; sourceTree = SOURCE_ROOT; };
 		9FE4E26B2F36D4E100F19710 /* LibreShot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LibreShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9FE4E2972F36E28D00F19710 /* OverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayView.swift; sourceTree = "<group>"; };
 		9FE4E2982F36E28D00F19710 /* OverlayViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayViewModel.swift; sourceTree = "<group>"; };
@@ -53,6 +55,7 @@
 				9FE4E2A32F36E4A300F19710 /* Editor */,
 				9FE4E29B2F36E28D00F19710 /* Features */,
 				9FE4E26D2F36D4E100F19710 /* LibreShot */,
+				A0C000000000000000000003 /* LICENSE */,
 				9FE4E26C2F36D4E100F19710 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -166,6 +169,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A0C000000000000000000002 /* LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
