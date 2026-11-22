@@ -521,6 +521,11 @@ struct ShortcutSettingsView: View {
                         onClear: { saveLongScreenshotShortcut(keyCode: -1, modifiers: 0) }
                     )
 
+                    Text("F1–F19 可单独设为截图快捷键。若上排按键默认调节音量或亮度，请配合 Fn 使用，或在系统键盘设置中启用标准功能键。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
                     Toggle("双击 Option 启动区域截图", isOn: $settings.doubleOptionEnabled)
                         .onChange(of: settings.doubleOptionEnabled) { enabled in
                             let active = HotkeyService.shared.enableDoubleOption(enabled, requestPermission: enabled)
@@ -607,7 +612,8 @@ struct ShortcutRow: View {
                 keyCode: $keyCode,
                 modifiers: $modifiers,
                 onShortcutRecorded: onSave,
-                onClear: onClear
+                onClear: onClear,
+                unmodifiedKeys: .functionKeys
             )
             .frame(width: 140)
         }
@@ -678,7 +684,7 @@ private struct ToolbarShortcutRecorder: View {
                     error = settings.setEditorShortcut(.init(keyCode: key, modifiers: modifiers), for: item)
                 },
                 onClear: { error = settings.setEditorShortcut(nil, for: item) },
-                allowsUnmodified: true,
+                unmodifiedKeys: .all,
                 recordingWidth: 116
             )
             .accessibilityLabel("\(item.title)快捷键")

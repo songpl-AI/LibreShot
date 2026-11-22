@@ -203,7 +203,7 @@ class SettingsService: ObservableObject {
     @Published private(set) var hotkeyRegistrationError: String?
 
     func reportHotkeyRegistrationFailures(_ titles: [String]) {
-        hotkeyRegistrationError = titles.isEmpty ? nil : "全局快捷键未生效：\(titles.joined(separator: "、"))。可能已被系统或其他应用占用，请更换组合键。"
+        hotkeyRegistrationError = titles.isEmpty ? nil : "全局快捷键未生效：\(titles.joined(separator: "、"))。可能已被系统或其他应用占用，请更换快捷键。"
     }
 
     private var globalShortcuts: [(title: String, shortcut: EditorShortcut)] {

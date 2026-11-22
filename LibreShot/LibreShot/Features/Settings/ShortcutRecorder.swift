@@ -5,18 +5,35 @@ private extension Notification.Name {
     static let shortcutRecordingStarted = Notification.Name("LibreShot.shortcutRecordingStarted")
 }
 
+enum UnmodifiedShortcutKeys {
+    case none, functionKeys, all
+
+    func contains(_ keyCode: Int) -> Bool {
+        switch self {
+        case .none: return false
+        case .functionKeys: return ShortcutUtils.functionKeyCodes.contains(keyCode)
+        case .all: return true
+        }
+    }
+
+    var rejectionPrompt: String {
+        self == .functionKeys ? "请用功能键或组合键" : "请使用组合键"
+    }
+}
+
 struct ShortcutRecorder: View {
     @Binding var keyCode: Int
     @Binding var modifiers: Int
     var onShortcutRecorded: ((Int, Int) -> Void)? = nil
     var onClear: (() -> Void)? = nil
-    var allowsUnmodified = false
+    var unmodifiedKeys: UnmodifiedShortcutKeys = .none
     var recordingWidth: CGFloat = 140
     var recordingHeight: CGFloat = 28
     var textSize: CGFloat = 13
     var embedsClearButton = false
     
     @State private var isRecording = false
+    @State private var rejectedKey = false
     @State private var isHovering = false
     
     var body: some View {
@@ -34,7 +51,7 @@ struct ShortcutRecorder: View {
                                 .stroke(isRecording ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: 1)
                         )
                     if isRecording {
-                        Text("输入快捷键...")
+                        Text(rejectedKey ? unmodifiedKeys.rejectionPrompt : "输入快捷键...")
                             .font(.system(size: textSize))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
@@ -80,7 +97,7 @@ struct ShortcutRecorder: View {
         .background(
             RecorderWindowManager(
                 isRecording: $isRecording,
-                allowsUnmodified: allowsUnmodified,
+                unmodifiedKeys: unmodifiedKeys,
                 onKeyRecorded: { recordedKey, recordedMods in
                     if let onShortcutRecorded {
                         onShortcutRecorded(recordedKey, recordedMods)
@@ -90,6 +107,7 @@ struct ShortcutRecorder: View {
                     }
                     isRecording = false
                 },
+                onKeyRejected: { rejectedKey = true },
                 onCancel: {
                     isRecording = false
                 }
@@ -99,6 +117,7 @@ struct ShortcutRecorder: View {
     
     private func startRecording() {
         print("Starting recording...")
+        rejectedKey = false
         isRecording = true
     }
     
@@ -115,8 +134,9 @@ struct ShortcutRecorder: View {
 // A recording belongs to one visible key window, not the whole application.
 struct RecorderWindowManager: NSViewRepresentable {
     @Binding var isRecording: Bool
-    var allowsUnmodified = false
+    var unmodifiedKeys: UnmodifiedShortcutKeys = .none
     var onKeyRecorded: ((Int, Int) -> Void)?
+    var onKeyRejected: (() -> Void)?
     var onCancel: (() -> Void)?
     
     func makeNSView(context: Context) -> NSView {
@@ -125,8 +145,9 @@ struct RecorderWindowManager: NSViewRepresentable {
     }
     
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.allowsUnmodified = allowsUnmodified
+        context.coordinator.unmodifiedKeys = unmodifiedKeys
         context.coordinator.onKeyRecorded = onKeyRecorded
+        context.coordinator.onKeyRejected = onKeyRejected
         context.coordinator.onCancel = onCancel
         if isRecording {
             context.coordinator.startMonitoring(in: nsView.window)
@@ -146,12 +167,13 @@ struct RecorderWindowManager: NSViewRepresentable {
     class Coordinator: NSObject {
         @Binding var isRecording: Bool
         var onKeyRecorded: ((Int, Int) -> Void)?
+        var onKeyRejected: (() -> Void)?
         var onCancel: (() -> Void)?
         private var keyDownMonitor: Any?
         private var recordingObserver: NSObjectProtocol?
         private var windowObservers: [NSObjectProtocol] = []
         private weak var recordingWindow: NSWindow?
-        var allowsUnmodified = false
+        var unmodifiedKeys: UnmodifiedShortcutKeys = .none
         
         init(isRecording: Binding<Bool>, onKeyRecorded: ((Int, Int) -> Void)?, onCancel: (() -> Void)?) {
             self._isRecording = isRecording
@@ -188,10 +210,14 @@ struct RecorderWindowManager: NSViewRepresentable {
                 cancelRecording()
                 return nil
             }
+            let keyCode = Int(event.keyCode)
             let modifiers = ShortcutUtils.carbonModifiers(from: event.modifierFlags)
-            guard modifiers != 0 || allowsUnmodified else { return nil }
+            guard modifiers != 0 || unmodifiedKeys.contains(keyCode) else {
+                DispatchQueue.main.async { self.onKeyRejected?() }
+                return nil
+            }
             stopMonitoring()
-            DispatchQueue.main.async { self.onKeyRecorded?(Int(event.keyCode), modifiers) }
+            DispatchQueue.main.async { self.onKeyRecorded?(keyCode, modifiers) }
             return nil
         }
 
@@ -319,6 +345,11 @@ class RecorderView: NSView {
 }
 
 struct ShortcutUtils {
+    static let functionKeyCodes = [
+        kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8, kVK_F9, kVK_F10,
+        kVK_F11, kVK_F12, kVK_F13, kVK_F14, kVK_F15, kVK_F16, kVK_F17, kVK_F18, kVK_F19
+    ]
+
     static func string(for keyCode: Int, modifiers: Int) -> String {
         var str = ""
         

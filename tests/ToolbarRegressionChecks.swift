@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import ScreenCaptureKit
 import Translation
@@ -15,6 +16,11 @@ struct ToolbarRegressionChecks {
             checkInitialSelectionBounds()
             return
         }
+        if CommandLine.arguments.contains("--global-shortcut-only") {
+            checkGlobalShortcutRecording()
+            return
+        }
+        checkGlobalShortcutRecording()
         checkInitialSelectionBounds()
         checkEscapeCancellation()
         checkAutomaticAnnotationSelection()
@@ -473,6 +479,87 @@ struct ToolbarRegressionChecks {
         }
     }
 
+    @MainActor
+    private static func checkGlobalShortcutRecording() {
+        _ = NSApplication.shared
+        let suite = "LibreShot.GlobalShortcutChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsService(defaults: defaults)
+        var recordings: [(key: Int, modifiers: Int)] = []
+        let row = ShortcutRow(title: "全屏截图", description: "全屏截图",
+                              keyCode: .constant(-1), modifiers: .constant(0),
+                              onSave: { key, modifiers in
+                                  if settings.saveFullScreenShortcut(keyCode: key, modifiers: modifiers) {
+                                      recordings.append((key, modifiers))
+                                  }
+                              }, onClear: {})
+        let window = NSWindow(contentRect: CGRect(x: 100, y: 100, width: 420, height: 80),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: row.frame(width: 420, height: 80))
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        host.layoutSubtreeIfNeeded()
+        defer { window.close() }
+
+        func drainEvents() {
+            let deadline = Date().addingTimeInterval(0.08)
+            while let event = NSApp.nextEvent(matching: .any, until: deadline, inMode: .default, dequeue: true) {
+                NSApp.sendEvent(event)
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.025))
+        }
+
+        func beginRecording() {
+            let point = CGPoint(x: host.bounds.maxX - 82, y: host.bounds.midY)
+            for type: NSEvent.EventType in [.leftMouseDown, .leftMouseUp] {
+                let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                               timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber, context: nil,
+                                               eventNumber: 0, clickCount: 1, pressure: 1)!
+                NSApp.postEvent(event, atStart: false)
+            }
+            drainEvents()
+        }
+
+        func press(_ key: Int, flags: NSEvent.ModifierFlags = [], characters: String) {
+            let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                                        timestamp: ProcessInfo.processInfo.systemUptime,
+                                        windowNumber: window.windowNumber, context: nil,
+                                        characters: characters, charactersIgnoringModifiers: characters,
+                                        isARepeat: false, keyCode: UInt16(key))!
+            NSApp.postEvent(event, atStart: false)
+            drainEvents()
+        }
+
+        drainEvents()
+        beginRecording()
+        press(kVK_F1, flags: [.command, .shift], characters: "\u{f704}")
+        precondition(recordings.count == 1 && recordings[0].key == kVK_F1 &&
+                     recordings[0].modifiers == (cmdKey | shiftKey),
+                     "The global recorder must accept Command-Shift-F1 through the settings row")
+
+        beginRecording()
+        press(kVK_F1, characters: "\u{f704}")
+        if recordings.count != 2 || recordings[1].key != kVK_F1 || recordings[1].modifiers != 0 {
+            print("FAIL: the full-screen settings recorder dropped bare F1")
+            exit(EXIT_FAILURE)
+        }
+
+        beginRecording()
+        press(kVK_ANSI_A, characters: "a")
+        press(kVK_ANSI_1, characters: "1")
+        precondition(recordings.count == 2, "Bare letters and digits must not become global shortcuts")
+        press(kVK_F19, characters: "\u{f716}")
+        precondition(recordings.count == 3 && recordings[2].key == kVK_F19 && recordings[2].modifiers == 0,
+                     "The global recorder must accept bare F19")
+        let reloaded = SettingsService(defaults: defaults)
+        precondition(reloaded.fullScreenShortcutKey == kVK_F19 && reloaded.fullScreenShortcutModifiers == 0,
+                     "Restarting settings must preserve a saved unmodified function key")
+        print("PASS: global shortcut row saves bare F1 and F19, rejects bare typing keys and preserves modified combinations")
+    }
+
     @available(macOS 26.0, *)
     @MainActor
     private static func checkTranslationLifecycle() async {
@@ -496,7 +583,7 @@ struct ToolbarRegressionChecks {
         precondition(recorderCancelled, "Losing keyboard focus must cancel shortcut recording")
         var recordedKey: Int?
         recorder.onKeyRecorded = { key, _ in recordedKey = key }
-        recorder.allowsUnmodified = true
+        recorder.unmodifiedKeys = .all
         recorder.startMonitoring(in: recorderWindow)
         let otherWindow = NSWindow(contentRect: recorderWindow.frame, styleMask: [.titled], backing: .buffered, defer: false)
         otherWindow.isReleasedWhenClosed = false
