@@ -1,8 +1,12 @@
 # 更新日志 / Changelog
 
-## 未发布 / Unreleased
+## [1.3.34+92](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.34%2B92) — 2026-11-22
 
-- 当前源码采用 [LibreShot 源码可见许可证](LICENSE)。个人或公司日常使用仍然免费，付费再分发或集成进付费产品和服务须另获授权。已按 MIT 发布的版本沿用原许可。
+- 降低反复框选后的内存占用和带标注大图导出的内存峰值。
+- 按选区大小合成原图翻译截图，减少本机 OCR 处理时的临时像素拷贝。
+- 采用 [LibreShot 源码可见许可证](LICENSE)。个人和公司日常使用仍然免费，付费再分发或集成进付费产品和服务须另获授权。
+
+应用版本 1.3.34，构建号 92。复用同包重启前后截图、保存均通过的原镜像。[更新说明](docs/releases/1.3.34-92.md) · [验收记录](docs/qa/1.3.34-92-ocr-residency-study.md)。
 
 ## [1.3.34](https://github.com/songpl-AI/LibreShot/releases/tag/v1.3.34) — 2026-11-21
 
