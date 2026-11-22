@@ -63,12 +63,16 @@ import Darwin
                                     space: CGColorSpace(name: name)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
             context.setFillColor(CGColor(red: 0.8, green: 0.1, blue: 0.3, alpha: 0.5))
             context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
-            let source = context.makeImage()!, requestID = UUID()
-            try OCRWire.write(image: source, requestID: requestID, directory: temporary, forceRasterCopy: true)
-            let restored = try OCRWire.read(directory: temporary, requestID: requestID)
-            precondition(source.dataProvider!.data! as Data == restored.dataProvider!.data! as Data)
-            precondition(source.colorSpace!.copyICCData()! as Data == restored.colorSpace!.copyICCData()! as Data)
-            precondition(source.bitmapInfo == restored.bitmapInfo && source.width == restored.width && source.height == restored.height)
+            let source = context.makeImage()!
+            for forceRasterCopy in [false, true] {
+                let requestID = UUID()
+                try OCRWire.write(image: source, requestID: requestID, directory: temporary,
+                                  forceRasterCopy: forceRasterCopy)
+                let restored = try OCRWire.read(directory: temporary, requestID: requestID)
+                precondition(source.dataProvider!.data! as Data == restored.dataProvider!.data! as Data)
+                precondition(source.colorSpace!.copyICCData()! as Data == restored.colorSpace!.copyICCData()! as Data)
+                precondition(source.bitmapInfo == restored.bitmapInfo && source.width == restored.width && source.height == restored.height)
+            }
         }
         print("PASS: transparent sRGB/P3 raster, color profile and physical dimensions round-trip losslessly")
         let fakeDirectory = URL(fileURLWithPath: CommandLine.arguments[1])

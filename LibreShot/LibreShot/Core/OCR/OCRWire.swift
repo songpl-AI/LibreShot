@@ -44,6 +44,7 @@ nonisolated enum OCRWire {
         if !forceRasterCopy, image.bytesPerRow > 0, image.bitsPerPixel > 0,
            image.height <= maximumRasterBytes / image.bytesPerRow,
            let pixels = image.dataProvider?.data,
+           let bytes = CFDataGetBytePtr(pixels),
            CFDataGetLength(pixels) >= image.bytesPerRow * (image.height - 1) + (image.width * image.bitsPerPixel + 7) / 8,
            CFDataGetLength(pixels) <= image.bytesPerRow * image.height {
             let metadata = Raster(version: version, requestID: requestID, width: image.width,
@@ -52,7 +53,13 @@ nonisolated enum OCRWire {
                                   bitmapInfo: image.bitmapInfo.rawValue, colorProfile: profile, colorSpaceName: name,
                                   decode: image.decode.map { Array(UnsafeBufferPointer(start: $0, count: space.numberOfComponents * 2)) },
                                   interpolate: image.shouldInterpolate, intent: image.renderingIntent.rawValue)
-            try (pixels as Data).write(to: rasterURL)
+            // Keep the provider bytes alive through the synchronous write.
+            // Bridging its CFData to Data can copy the entire raster.
+            try withExtendedLifetime(pixels) {
+                let raster = Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes),
+                                  count: CFDataGetLength(pixels), deallocator: .none)
+                try raster.write(to: rasterURL)
+            }
             try JSONEncoder().encode(metadata).write(to: metadataURL)
             return
         }
