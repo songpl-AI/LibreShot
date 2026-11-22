@@ -554,18 +554,17 @@ struct ImageTranslationReleaseChecks {
             guard let active = overlay.imageTranslationModel else {
                 throw Failure(description: "The overlay did not create its translation session")
             }
-            let sessionID = overlay.translationSessionID
             overlay.translationCanExport = true
             try require(!overlay.canExportSelection,
                         "A stale view publication must not allow export before the owner's model has a rendered result")
             try require(active.original === overlay.translationSource,
                         "The overlay and its model must use the same source image")
-            overlay.confirmImageTranslation()
-            try require(overlay.imageTranslationModel === active && overlay.translationSessionID == sessionID,
-                        "Toggling translation controls must reuse the owner's model")
             retainedCallbacks.append({ active })
-            if index.isMultiple(of: 2) { overlay.clearImageTranslation() }
-            else { overlay.selectionRect = overlay.selectionRect.offsetBy(dx: 1, dy: 1) }
+            switch index % 3 {
+            case 0: overlay.confirmImageTranslation()  // The active toolbar item toggles translation off.
+            case 1: overlay.clearImageTranslation()
+            default: overlay.selectionRect = overlay.selectionRect.offsetBy(dx: 1, dy: 1)
+            }
             try requireDismissed(active, "overlay removal \(index)")
             try require(overlay.imageTranslationModel == nil && overlay.translationSource == nil &&
                         overlay.translatedSelection == nil && overlay.previewImage != nil && overlay.canExportSelection,
