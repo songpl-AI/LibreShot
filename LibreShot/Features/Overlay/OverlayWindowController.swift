@@ -102,6 +102,14 @@ class OverlayWindowController: NSWindowController {
     private var pointerFollowScreen: NSScreen?
     private var pointerFollowCandidate: NSScreen?
     private var pointerFollowCandidateSince: TimeInterval = 0
+    /// A display switch whose preview capture is still in flight. The overlay
+    /// only moves once that capture succeeds.
+    private var pendingAdoption: (screen: NSScreen, startedAt: TimeInterval)?
+    /// A display that just failed to capture; retry only after a pause so a
+    /// broken display does not thrash ScreenCaptureKit every poll.
+    private var failedAdoptionScreenID: CGDirectDisplayID?
+    private var failedAdoptionAt: TimeInterval = 0
+    private static let adoptionRetryDelay: TimeInterval = 2
     /// Test seam: the pointer location used by the follow poll.
     var pointerLocationProvider: () -> CGPoint = { NSEvent.mouseLocation }
     
@@ -275,7 +283,8 @@ class OverlayWindowController: NSWindowController {
               let window,
               window.isVisible,
               viewModel.state == .idle,
-              !viewModel.isEditingText else {
+              !viewModel.isEditingText,
+              pendingAdoption == nil else {
             pointerFollowCandidate = nil
             return
         }
@@ -285,6 +294,10 @@ class OverlayWindowController: NSWindowController {
             pointerFollowCandidate = nil
             return
         }
+        if let id = Self.displayID(of: candidate), id == failedAdoptionScreenID,
+           now - failedAdoptionAt < Self.adoptionRetryDelay {
+            return
+        }
         if pointerFollowCandidate !== candidate {
             pointerFollowCandidate = candidate
             pointerFollowCandidateSince = now
@@ -292,11 +305,55 @@ class OverlayWindowController: NSWindowController {
         }
         guard now - pointerFollowCandidateSince >= Self.pointerFollowSettleDelay else { return }
         pointerFollowCandidate = nil
-        adoptPointerScreen(candidate)
+        beginAdoptingPointerScreen(candidate, now: now)
     }
 
-    /// Moves the overlay and its frozen preview to the display under the pointer.
-    private func adoptPointerScreen(_ screen: NSScreen) {
+    /// Captures the new display first and only then moves the overlay, so a
+    /// failed capture leaves the overlay — and its frozen preview — on the
+    /// current display instead of showing a blank canvas on the new one.
+    private func beginAdoptingPointerScreen(_ screen: NSScreen, now: TimeInterval) {
+        guard pendingAdoption == nil else { return }
+        pendingAdoption = (screen, now)
+        let displayID = Self.displayID(of: screen)
+        let exclusion = overlayWindowNumbersToExclude
+        let loader = previewImageLoader
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let image: NSImage
+                if let loader {
+                    image = try await loader(displayID)
+                } else {
+                    image = try await self.previewCaptureService.captureDisplayImage(
+                        displayID: displayID,
+                        excludingWindowIDs: exclusion
+                    )
+                }
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                let pixelWidth = CGFloat(cgImage?.width ?? Int(image.size.width))
+                let screenWidth = screen.frame.width
+                let scale = screenWidth > 0 ? pixelWidth / screenWidth : 1
+                await MainActor.run {
+                    guard let pending = self.pendingAdoption, pending.screen === screen else { return }
+                    self.pendingAdoption = nil
+                    // The user may have started a selection while we captured.
+                    guard self.viewModel.state == .idle, !self.viewModel.isEditingText else { return }
+                    self.failedAdoptionScreenID = nil
+                    self.applyPointerScreen(screen, image: cgImage, scale: scale)
+                }
+            } catch {
+                await MainActor.run {
+                    guard let pending = self.pendingAdoption, pending.screen === screen else { return }
+                    self.pendingAdoption = nil
+                    self.failedAdoptionScreenID = displayID
+                    self.failedAdoptionAt = pending.startedAt
+                }
+            }
+        }
+    }
+
+    /// Moves the overlay and swaps in the already-captured preview in one step.
+    private func applyPointerScreen(_ screen: NSScreen, image: CGImage?, scale: CGFloat) {
         guard let window else { return }
         pointerFollowScreen = screen
         targetScreen = screen
@@ -306,8 +363,11 @@ class OverlayWindowController: NSWindowController {
         window.contentView?.needsLayout = true
         window.layoutIfNeeded()
         NSAnimationContext.endGrouping()
-        viewModel.updatePreviewImage(nil)
-        reloadPreviewForCurrentScreen()
+        viewModel.updatePreviewImage(image, scale: scale)
+    }
+
+    private static func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
     /// Our own overlay window, excluded from every re-capture that happens while
@@ -315,44 +375,6 @@ class OverlayWindowController: NSWindowController {
     private var overlayWindowNumbersToExclude: Set<CGWindowID> {
         guard let window, window.isVisible else { return [] }
         return [CGWindowID(window.windowNumber)]
-    }
-
-    /// Re-captures the frozen preview without touching window focus or ordering.
-    private func reloadPreviewForCurrentScreen() {
-        let requestID = UUID()
-        previewRequestID = requestID
-        previewTask?.cancel()
-        let requestedDisplayID = getCurrentDisplayID()
-        let loader = previewImageLoader
-        let referenceWidth = targetScreen?.frame.width
-        previewTask = Task { [weak self] in
-            guard let self else { return }
-            defer { if self.previewRequestID == requestID { self.previewTask = nil } }
-            do {
-                try await Task.sleep(nanoseconds: 10 * 1_000_000)
-                guard self.previewRequestID == requestID else { return }
-                let image: NSImage
-                if let loader {
-                    image = try await loader(requestedDisplayID)
-                } else {
-                    image = try await self.previewCaptureService.captureDisplayImage(
-                        displayID: requestedDisplayID,
-                        excludingWindowIDs: self.overlayWindowNumbersToExclude
-                    )
-                }
-                try Task.checkCancellation()
-                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-                let pixelWidth = CGFloat(cgImage?.width ?? Int(image.size.width))
-                let screenWidth = referenceWidth ?? NSScreen.main?.frame.width ?? pixelWidth
-                let scale = pixelWidth / screenWidth
-                await MainActor.run {
-                    guard self.previewRequestID == requestID else { return }
-                    self.viewModel.updatePreviewImage(cgImage, scale: scale)
-                }
-            } catch {
-                // A failed refresh keeps the previous preview; the session stays usable.
-            }
-        }
     }
 
     // Helper to get the display ID of the current target screen
