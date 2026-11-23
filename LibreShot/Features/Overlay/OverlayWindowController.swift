@@ -89,6 +89,21 @@ class OverlayWindowController: NSWindowController {
     
     // Store the screen where the window is shown
     private var targetScreen: NSScreen?
+
+    // MARK: Pointer following across displays
+
+    /// Poll interval for the pointer's display. Cheap (no event tap, no Input
+    /// Monitoring permission) and fast enough to feel immediate.
+    private static let pointerFollowInterval: TimeInterval = 0.1
+    /// The pointer must stay on the new display for this long before the
+    /// overlay moves, so grazing the seam does not thrash preview captures.
+    private static let pointerFollowSettleDelay: TimeInterval = 0.08
+    private var pointerFollowTimer: Timer?
+    private var pointerFollowScreen: NSScreen?
+    private var pointerFollowCandidate: NSScreen?
+    private var pointerFollowCandidateSince: TimeInterval = 0
+    /// Test seam: the pointer location used by the follow poll.
+    var pointerLocationProvider: () -> CGPoint = { NSEvent.mouseLocation }
     
     func show(
         captureMode: CaptureMode = .normal,
@@ -190,7 +205,12 @@ class OverlayWindowController: NSWindowController {
                 if let previewImageLoader {
                     image = try await previewImageLoader(requestedDisplayID)
                 } else {
-                    image = try await previewCaptureService.captureDisplayImage(displayID: requestedDisplayID)
+                    // This path runs while the overlay is already on screen, so
+                    // hide it from the capture instead of photographing ourselves.
+                    image = try await previewCaptureService.captureDisplayImage(
+                        displayID: requestedDisplayID,
+                        excludingWindowIDs: self.overlayWindowNumbersToExclude
+                    )
                 }
                 try Task.checkCancellation()
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -209,6 +229,7 @@ class OverlayWindowController: NSWindowController {
                     self.pushCrosshairCursor()
                     NSApp.activate(ignoringOtherApps: true) // Then activate app
                     overlayWindow.makeKeyAndOrderFront(nil) // Then make key
+                    self.startFollowingPointer()
                 }
             } catch {
                 await MainActor.run {
@@ -219,6 +240,121 @@ class OverlayWindowController: NSWindowController {
         }
     }
     
+    // MARK: - Pointer following across displays
+
+    /// Area capture follows the pointer across displays: trigger anywhere, move
+    /// the mouse to the screen you actually want, and the overlay plus its
+    /// frozen preview move with it. A selection that has already started keeps
+    /// its display (see `followPointerIfNeeded`), so this never disturbs an
+    /// in-progress capture.
+    private func startFollowingPointer() {
+        stopFollowingPointer()
+        guard currentCaptureMode == .normal, NSScreen.screens.count > 1 else { return }
+        pointerFollowScreen = targetScreen
+        pointerFollowCandidate = nil
+        let timer = Timer(timeInterval: Self.pointerFollowInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.followPointerIfNeeded() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pointerFollowTimer = timer
+    }
+
+    private func stopFollowingPointer() {
+        pointerFollowTimer?.invalidate()
+        pointerFollowTimer = nil
+        pointerFollowScreen = nil
+        pointerFollowCandidate = nil
+    }
+
+    /// One poll. Internal so the regression check can drive it without a timer.
+    func followPointerIfNeeded(now: TimeInterval = Date.timeIntervalSinceReferenceDate) {
+        guard pointerFollowTimer != nil || pointerFollowScreen != nil else { return }
+        guard currentCaptureMode == .normal,
+              longCaptureSession == nil,
+              longCaptureStartTask == nil,
+              let window,
+              window.isVisible,
+              viewModel.state == .idle,
+              !viewModel.isEditingText else {
+            pointerFollowCandidate = nil
+            return
+        }
+        let location = pointerLocationProvider()
+        guard let candidate = NSScreen.screens.first(where: { $0.frame.contains(location) }),
+              candidate !== pointerFollowScreen else {
+            pointerFollowCandidate = nil
+            return
+        }
+        if pointerFollowCandidate !== candidate {
+            pointerFollowCandidate = candidate
+            pointerFollowCandidateSince = now
+            return
+        }
+        guard now - pointerFollowCandidateSince >= Self.pointerFollowSettleDelay else { return }
+        pointerFollowCandidate = nil
+        adoptPointerScreen(candidate)
+    }
+
+    /// Moves the overlay and its frozen preview to the display under the pointer.
+    private func adoptPointerScreen(_ screen: NSScreen) {
+        guard let window else { return }
+        pointerFollowScreen = screen
+        targetScreen = screen
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        window.setFrame(screen.frame, display: true)
+        window.contentView?.needsLayout = true
+        window.layoutIfNeeded()
+        NSAnimationContext.endGrouping()
+        viewModel.updatePreviewImage(nil)
+        reloadPreviewForCurrentScreen()
+    }
+
+    /// Our own overlay window, excluded from every re-capture that happens while
+    /// it is already on screen (following the pointer, or re-triggering a session).
+    private var overlayWindowNumbersToExclude: Set<CGWindowID> {
+        guard let window, window.isVisible else { return [] }
+        return [CGWindowID(window.windowNumber)]
+    }
+
+    /// Re-captures the frozen preview without touching window focus or ordering.
+    private func reloadPreviewForCurrentScreen() {
+        let requestID = UUID()
+        previewRequestID = requestID
+        previewTask?.cancel()
+        let requestedDisplayID = getCurrentDisplayID()
+        let loader = previewImageLoader
+        let referenceWidth = targetScreen?.frame.width
+        previewTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.previewRequestID == requestID { self.previewTask = nil } }
+            do {
+                try await Task.sleep(nanoseconds: 10 * 1_000_000)
+                guard self.previewRequestID == requestID else { return }
+                let image: NSImage
+                if let loader {
+                    image = try await loader(requestedDisplayID)
+                } else {
+                    image = try await self.previewCaptureService.captureDisplayImage(
+                        displayID: requestedDisplayID,
+                        excludingWindowIDs: self.overlayWindowNumbersToExclude
+                    )
+                }
+                try Task.checkCancellation()
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                let pixelWidth = CGFloat(cgImage?.width ?? Int(image.size.width))
+                let screenWidth = referenceWidth ?? NSScreen.main?.frame.width ?? pixelWidth
+                let scale = pixelWidth / screenWidth
+                await MainActor.run {
+                    guard self.previewRequestID == requestID else { return }
+                    self.viewModel.updatePreviewImage(cgImage, scale: scale)
+                }
+            } catch {
+                // A failed refresh keeps the previous preview; the session stays usable.
+            }
+        }
+    }
+
     // Helper to get the display ID of the current target screen
     func getCurrentDisplayID() -> CGDirectDisplayID? {
         guard let screen = targetScreen else { return nil }
@@ -459,6 +595,7 @@ class OverlayWindowController: NSWindowController {
     }
 
     private func finishOverlaySession(preservingTargetScreen: Bool = false) {
+        stopFollowingPointer()
         captureGeneration = UUID()
         previewRequestID = UUID()
         previewTask?.cancel()
