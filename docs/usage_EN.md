@@ -8,6 +8,8 @@ Use the scissors menu for area, full-screen or scrolling capture. Default shortc
 
 Full-screen captures the display under the pointer and opens annotation editing. Area capture also uses the display under the pointer when capture starts. If you drag onto another display, the selection stops at the edge of the starting display. Drag back inside to continue adjusting it.
 
+With more than one display attached, area capture follows the pointer: after triggering, move the mouse to another display and the overlay and its frozen preview move with it, so you can select there without cancelling and re-triggering. Following stops once a selection has started (or while text input is active) so an in-progress capture is never interrupted.
+
 Area capture defaults to Select/Move after selecting a region; change the default tool in toolbar settings. Outer handles resize the capture region.
 
 Left-click the menu bar scissors to start area capture by default; right-click opens the full menu. Change the left-click action in General settings. Fine dashed crosshair guides appear while selecting and can be disabled in Settings.

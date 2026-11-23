@@ -401,7 +401,8 @@ class CaptureService {
     
     // Updated to accept optional displayID. If sourceRect is supplied, capture
     // only that display-local rectangle instead of creating a full-screen frame.
-    func captureDisplayImage(displayID: CGDirectDisplayID? = nil, sourceRect: CGRect? = nil) async throws -> NSImage {
+    func captureDisplayImage(displayID: CGDirectDisplayID? = nil, sourceRect: CGRect? = nil,
+                             excludingWindowIDs: Set<CGWindowID> = []) async throws -> NSImage {
         // Register cancellation before either async permission/content loading
         // or gate acquisition. Each request owns its own result and stream.
         let request = CaptureRequestState<CGImage>()
@@ -409,7 +410,9 @@ class CaptureService {
             try await lifecycleGate.withLock {
                 try Task.checkCancellation()
                 return try await captureDisplayImageUnlocked(displayID: displayID,
-                                                             sourceRect: sourceRect, request: request)
+                                                             sourceRect: sourceRect,
+                                                             excludingWindowIDs: excludingWindowIDs,
+                                                             request: request)
             }
         } onCancel: {
             request.fail(CancellationError())
@@ -417,6 +420,7 @@ class CaptureService {
     }
 
     private func captureDisplayImageUnlocked(displayID: CGDirectDisplayID?, sourceRect: CGRect?,
+                                             excludingWindowIDs: Set<CGWindowID>,
                                              request: CaptureRequestState<CGImage>) async throws -> NSImage {
         try Task.checkCancellation()
         let content = try await ScreenCaptureAccess.content {
@@ -470,7 +474,13 @@ class CaptureService {
             effectiveSourceRect = nil
         }
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // A re-capture that happens while the overlay is already on screen must
+        // exclude our own windows, otherwise the frozen preview contains the
+        // dimming layer, the selection guides and the toolbar.
+        let excludedWindows = excludingWindowIDs.isEmpty
+            ? []
+            : content.windows.filter { excludingWindowIDs.contains(CGWindowID($0.windowID)) }
+        let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         let configuration = Self.displayConfiguration(width: physicalWidth, height: physicalHeight, sourceRect: effectiveSourceRect)
 
         let output = CaptureStreamOutput { sampleBuffer in
