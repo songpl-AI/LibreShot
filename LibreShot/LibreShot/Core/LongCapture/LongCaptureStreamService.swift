@@ -3,7 +3,7 @@ import ScreenCaptureKit
 import CoreMedia
 import OSLog
 
-final class LongCaptureStreamService: @unchecked Sendable {
+final class LongCaptureStreamService: LongCaptureFrameSource, @unchecked Sendable {
     private let outputQueue = DispatchQueue(label: "com.libreshot.long-capture")
     private let lifecycleGate = StreamLifecycleGate()
     private let traceEnabled = ProcessInfo.processInfo.environment["LIBRESHOT_LONG_CAPTURE_TRACE"] == "1"

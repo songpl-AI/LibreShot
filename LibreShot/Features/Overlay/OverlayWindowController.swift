@@ -17,6 +17,7 @@ class OverlayWindowController: NSWindowController {
     private var longCaptureGuideOverlay: LongCaptureGuideOverlay?
     private var longCaptureSession: LongCaptureSession?
     private var longCaptureStartTask: Task<Void, Never>?
+    private var longCaptureFinishTask: Task<Void, Never>?
     private var longCaptureSubscriptions: Set<AnyCancellable> = []
     private var longCaptureActionInFlight = false
     // Every show() owns one generation. Async start/finish/cancel callbacks
@@ -487,19 +488,26 @@ class OverlayWindowController: NSWindowController {
             overlayWindow.clearEditingActions()
         }
         
-        Task { [weak self] in
+        longCaptureFinishTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let image = try await session.finish()
+                let result = try await session.finish()
                 await MainActor.run {
                     guard self.captureGeneration == generation, self.longCaptureSession === session else { return }
-                    NSApp.activate(ignoringOtherApps: true)
-                    self.finishOverlaySession()
-                    onFinish?(image)
+                    self.longCaptureFinishTask = nil
+                    switch result {
+                    case .completed(let image):
+                        NSApp.activate(ignoringOtherApps: true)
+                        self.finishOverlaySession()
+                        onFinish?(image)
+                    case .resumedCapture:
+                        self.longCaptureActionInFlight = false
+                    }
                 }
             } catch {
                 await MainActor.run {
                     guard self.captureGeneration == generation, self.longCaptureSession === session else { return }
+                    self.longCaptureFinishTask = nil
                     self.finishOverlaySession()
                     onCancel()
                     onError?(error)
@@ -603,9 +611,12 @@ class OverlayWindowController: NSWindowController {
         // and clear a replacement session.
         captureGeneration = UUID()
         let startTask = longCaptureStartTask
+        let finishTask = longCaptureFinishTask
         let session = longCaptureSession
         startTask?.cancel()
+        finishTask?.cancel()
         if let startTask { await startTask.value }
+        if let finishTask { await finishTask.value }
         if let session { await session.cancel() }
         if let session {
             guard longCaptureSession === session else { return }
@@ -703,6 +714,8 @@ class OverlayWindowController: NSWindowController {
     private func cleanupLongCaptureState() {
         longCaptureStartTask?.cancel()
         longCaptureStartTask = nil
+        longCaptureFinishTask?.cancel()
+        longCaptureFinishTask = nil
         longCaptureSession = nil
         longCaptureSubscriptions.removeAll()
         longCaptureGuideOverlay?.close()

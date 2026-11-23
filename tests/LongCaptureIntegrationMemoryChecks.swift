@@ -93,6 +93,26 @@ struct LongCaptureIntegrationMemoryChecks {
         check(tracker.releases == [0: 1, 1: 1, 2: 1, 3: 1],
               "releasing accumulator releases the final raw provider exactly once")
 
+        let revisitTracker = ProviderTracker()
+        var revisiting: LongCaptureFrameAccumulator? = LongCaptureFrameAccumulator(limits: spillLimits)
+        let revisitOffsets = [0, 120, 240, 360, 480, 360, 240, 120, 0, 480]
+        let frontierIndex = 4
+        for (index, offset) in revisitOffsets.enumerated() {
+            _ = autoreleasepool {
+                revisiting!.process(frame: .init(image: trackedDocument(offset: offset, id: index, tracker: revisitTracker),
+                                                 timestamp: Double(index) / 10))
+            }
+            var live = [index]
+            if index > frontierIndex {
+                live = offset == 480 ? [frontierIndex] : [frontierIndex, index]
+            }
+            let released = Dictionary(uniqueKeysWithValues: (0...index).filter { !live.contains($0) }.map { ($0, 1) })
+            check(revisitTracker.releases == released, "only the frontier and current verified revisit can retain raw frame \(index)")
+        }
+        revisiting = nil
+        check(revisitTracker.releases == Dictionary(uniqueKeysWithValues: revisitOffsets.indices.map { ($0, 1) }),
+              "every raw provider is released exactly once after a revisit session")
+
         // Failed append transactions must remain failures when the same frame
         // repeats. Only returning to the exact accepted frontier restores export.
         var outputLimits = LongCaptureLimits()

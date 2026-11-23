@@ -73,7 +73,7 @@ final class LongCaptureFrameAccumulator {
         case .accept:
             let result = stitcher.append(frame: frame)
             if result.accepted {
-                connection = stitcher.lastAppendDiagnostics.outcome == "reverse-revisit" ? .revisiting : .atFrontier
+                connection = result.isRevisit ? .revisiting : .atFrontier
             } else {
                 connection = .unresolved(stitcher.lastFailure ?? .incompleteCapture)
             }
@@ -160,9 +160,16 @@ final class LongCaptureFrameDeduplicator {
 /// original-pixel seam check, and a successful strip transaction. The latest
 /// observation is never promoted to the frontier merely because it repeats.
 final class LongCaptureStitcher {
+    private struct Revisit {
+        let image: CGImage
+        let documentOffset: Int
+        let body: LongCaptureSeamVerifier.MovingBody
+    }
+
     private let overlapMatcher = LongCaptureOverlapMatcher()
     private let document: LongCaptureDocumentStore
-    private var previousImage: CGImage?
+    private var frontierImage: CGImage?
+    private var revisit: Revisit?
     private var footerImage: CGImage?
     private var fixedFooterHeight: Int?
     private var initialFrameHeight = 0
@@ -179,15 +186,18 @@ final class LongCaptureStitcher {
 
     /// Exact return to the committed frontier is evidence of recovery; replaying
     /// an unmatched observation, including with a new timestamp, is not.
-    func restoreFrontier() { lastFailure = nil }
+    func restoreFrontier() {
+        revisit = nil
+        lastFailure = nil
+    }
 
     private func result(accepted: Bool, appendedPixelHeight: Int, outcome: String,
-                        error: LongCaptureError? = nil) -> LongCaptureAppendResult {
+                        isRevisit: Bool = false, error: LongCaptureError? = nil) -> LongCaptureAppendResult {
         lastFailure = accepted ? nil : (error ?? .incompleteCapture)
         lastAppendDiagnostics.outcome = outcome
         lastAppendDiagnostics.totalHeightAfter = totalPixelHeight
         lastAppendDiagnostics.segmentCount = document.count
-        return LongCaptureAppendResult(accepted: accepted, appendedPixelHeight: appendedPixelHeight)
+        return LongCaptureAppendResult(accepted: accepted, appendedPixelHeight: appendedPixelHeight, isRevisit: isRevisit)
     }
 
     func append(frame: LongCaptureFrame) -> LongCaptureAppendResult {
@@ -220,22 +230,53 @@ final class LongCaptureStitcher {
             lastAppendDiagnostics.segmentYOffset = 0
             lastAppendDiagnostics.segmentWidth = first.width
             lastAppendDiagnostics.segmentHeight = first.height
-            previousImage = image
+            frontierImage = image
             return result(accepted: true, appendedPixelHeight: image.height, outcome: "initial-frame")
         }
-        guard let previousImage else {
+        guard let frontierImage else {
             return result(accepted: false, appendedPixelHeight: 0, outcome: "missing-previous-frame")
         }
-        guard previousImage.width == image.width, previousImage.height == image.height else {
+        guard frontierImage.width == image.width, frontierImage.height == image.height else {
             return result(accepted: false, appendedPixelHeight: 0, outcome: "dimension-mismatch")
         }
-        let forward = overlapMatcher.match(previous: previousImage, current: image)
+        let frontierOffset = totalPixelHeight - initialFrameHeight
+        var requiredAppendHeight: Int?
+        if let revisit {
+            if LongCaptureFrameDeduplicator.samePixels(frontierImage, image) {
+                restoreFrontier()
+                return result(accepted: true, appendedPixelHeight: 0, outcome: "retry-frontier")
+            }
+            if LongCaptureFrameDeduplicator.samePixels(revisit.image, image) {
+                return result(accepted: true, appendedPixelHeight: 0, outcome: "revisit-duplicate", isRevisit: true)
+            }
+            if let motion = verifiedRevisitMotion(from: revisit.image, to: image) {
+                let offset = revisit.documentOffset + motion.shift
+                if offset <= frontierOffset {
+                    let body = revisit.body.including(motion.body)
+                    guard matchesDocument(image, at: offset, body: body) else {
+                        return result(accepted: false, appendedPixelHeight: 0, outcome: "revisit-document-mismatch")
+                    }
+                    if offset == frontierOffset {
+                        restoreFrontier()
+                        return result(accepted: true, appendedPixelHeight: 0, outcome: "retry-frontier")
+                    }
+                    self.revisit = Revisit(image: image, documentOffset: offset, body: body)
+                    return result(accepted: true, appendedPixelHeight: 0, outcome: "covered-revisit", isRevisit: true)
+                }
+                // Both observations must agree on where new content begins.
+                requiredAppendHeight = offset - frontierOffset
+            }
+        }
+        let forward = overlapMatcher.match(previous: frontierImage, current: image)
         let forwardDiagnostics = overlapMatcher.lastDiagnostics
-        let reverse = overlapMatcher.match(previous: image, current: previousImage)
+        let reverse = overlapMatcher.match(previous: image, current: frontierImage)
         lastAppendDiagnostics.forward = forwardDiagnostics
         lastAppendDiagnostics.reverse = overlapMatcher.lastDiagnostics
+        if let requiredAppendHeight, forward.map({ image.height - $0.overlapHeight }) != requiredAppendHeight {
+            return result(accepted: false, appendedPixelHeight: 0, outcome: "revisit-frontier-mismatch")
+        }
         if forward == nil, reverse == nil {
-            let stationary = overlapMatcher.isStationaryRedraw(previous: previousImage, current: image)
+            let stationary = overlapMatcher.isStationaryRedraw(previous: frontierImage, current: image)
             lastAppendDiagnostics.stationary = overlapMatcher.lastStationaryDiagnostics
             diagnosticTrace.event("event=stationary-proof accepted=\(stationary) details={\(overlapMatcher.lastStationaryDiagnostics.traceSummary)}")
             if stationary {
@@ -249,13 +290,22 @@ final class LongCaptureStitcher {
         }
         if let reverse, reverse.confidence > (forward?.confidence ?? -.infinity) {
             let distance = image.height - reverse.overlapHeight
-            guard distance <= totalPixelHeight - initialFrameHeight,
-                  LongCaptureSeamVerifier.verify(previous: image, current: previousImage,
-                                                 shift: distance, footerHeight: fixedFooterHeight ?? reverse.footerHeight,
-                                                 bodyStart: lastAppendDiagnostics.reverse?.rowTop) else {
+            guard requiredAppendHeight == nil, distance <= frontierOffset,
+                  hasMatchingFooter(frontierImage, image),
+                  let body = LongCaptureSeamVerifier.movingBody(previous: image, current: frontierImage,
+                      shift: distance, footerHeight: fixedFooterHeight ?? reverse.footerHeight,
+                      bodyStart: lastAppendDiagnostics.reverse?.rowTop) else {
                 return result(accepted: false, appendedPixelHeight: 0, outcome: "reverse-outside-frontier")
             }
-            return result(accepted: true, appendedPixelHeight: 0, outcome: "reverse-revisit")
+            let offset = frontierOffset - distance
+            // A shallow revisit can already finish on evidence from the frontier.
+            // Tracking it farther requires independent proof against the document.
+            if matchesDocument(image, at: offset, body: body) {
+                revisit = Revisit(image: image, documentOffset: offset, body: body)
+            } else {
+                revisit = nil
+            }
+            return result(accepted: true, appendedPixelHeight: 0, outcome: "reverse-revisit", isRevisit: true)
         }
         guard let match = forward else {
             return result(accepted: false, appendedPixelHeight: 0, outcome: "forward-unmatched")
@@ -271,22 +321,22 @@ final class LongCaptureStitcher {
         let footerHeight: Int
         if let fixedFooterHeight, fixedFooterHeight > 0 {
             guard (match.footerHeight == 0 || match.footerHeight == fixedFooterHeight),
-                  LongCaptureSeamVerifier.sameSuffix(previous: previousImage, current: image,
+                  LongCaptureSeamVerifier.sameSuffix(previous: frontierImage, current: image,
                                                      height: fixedFooterHeight),
-                  LongCaptureSeamVerifier.verify(previous: previousImage, current: image,
+                  LongCaptureSeamVerifier.verify(previous: frontierImage, current: image,
                                                  shift: appendHeight, footerHeight: fixedFooterHeight, bodyStart: forwardDiagnostics.rowTop) else {
                 return result(accepted: false, appendedPixelHeight: 0, outcome: "footer-geometry-changed")
             }
             footerHeight = fixedFooterHeight
-        } else if LongCaptureSeamVerifier.verify(previous: previousImage, current: image,
+        } else if LongCaptureSeamVerifier.verify(previous: frontierImage, current: image,
                                                  shift: appendHeight, footerHeight: 0,
                                                  allowRedraw: match.footerHeight == 0, bodyStart: forwardDiagnostics.rowTop) {
             footerHeight = 0
         } else {
             guard fixedFooterHeight == nil, match.footerHeight > 0,
-                  LongCaptureSeamVerifier.sameSuffix(previous: previousImage, current: image,
+                  LongCaptureSeamVerifier.sameSuffix(previous: frontierImage, current: image,
                                                      height: match.footerHeight),
-                  LongCaptureSeamVerifier.verify(previous: previousImage, current: image,
+                  LongCaptureSeamVerifier.verify(previous: frontierImage, current: image,
                                                  shift: appendHeight, footerHeight: match.footerHeight, bodyStart: forwardDiagnostics.rowTop) else {
                 return result(accepted: false, appendedPixelHeight: 0, outcome: "original-pixel-seam-rejected")
             }
@@ -340,7 +390,8 @@ final class LongCaptureStitcher {
         // Every potential allocation and disk failure precedes this commit.
         footerImage = nextFooter
         fixedFooterHeight = footerHeight
-        self.previousImage = image
+        self.frontierImage = image
+        revisit = nil
         totalPixelHeight = nextHeight
         acceptedFrameCount += 1
         lastAppendDiagnostics.segmentYOffset = placement
@@ -348,6 +399,40 @@ final class LongCaptureStitcher {
         lastAppendDiagnostics.segmentHeight = appended.height
         diagnosticTrace.event("event=document-commit segments=\(document.count) residentBytes=\(document.residentBytes) spilledBytes=\(document.spilledBytes) height=\(totalPixelHeight)")
         return result(accepted: true, appendedPixelHeight: appendHeight, outcome: "forward-append")
+    }
+
+    private func verifiedRevisitMotion(from previous: CGImage, to image: CGImage)
+        -> (shift: Int, body: LongCaptureSeamVerifier.MovingBody)? {
+        guard hasMatchingFooter(previous, image) else { return nil }
+        let forward = overlapMatcher.match(previous: previous, current: image)
+        let forwardDiagnostics = overlapMatcher.lastDiagnostics
+        let reverse = overlapMatcher.match(previous: image, current: previous)
+        let reverseDiagnostics = overlapMatcher.lastDiagnostics
+        if let forward, let reverse, abs(forward.confidence - reverse.confidence) < 0.025 { return nil }
+        let footerHeight = fixedFooterHeight ?? 0
+        if let reverse, reverse.confidence > (forward?.confidence ?? -.infinity) {
+            let shift = image.height - reverse.overlapHeight
+            guard let body = LongCaptureSeamVerifier.movingBody(previous: image, current: previous, shift: shift,
+                footerHeight: footerHeight, bodyStart: reverseDiagnostics.rowTop) else { return nil }
+            return (-shift, body)
+        }
+        guard let forward else { return nil }
+        let shift = image.height - forward.overlapHeight
+        guard let body = LongCaptureSeamVerifier.movingBody(previous: previous, current: image, shift: shift,
+            footerHeight: footerHeight, bodyStart: forwardDiagnostics.rowTop) else { return nil }
+        return (shift, body)
+    }
+
+    private func hasMatchingFooter(_ a: CGImage, _ b: CGImage) -> Bool {
+        guard let fixedFooterHeight, fixedFooterHeight > 0 else { return true }
+        return LongCaptureSeamVerifier.sameSuffix(previous: a, current: b, height: fixedFooterHeight)
+    }
+
+    private func matchesDocument(_ image: CGImage, at offset: Int, body: LongCaptureSeamVerifier.MovingBody) -> Bool {
+        let bodyEnd = image.height - (fixedFooterHeight ?? 0)
+        guard offset >= 0, bodyEnd <= document.totalHeight - offset else { return false }
+        return document.firstDifferentRow(from: image, documentStart: offset + body.firstRow,
+            imageStart: body.firstRow, rowCount: bodyEnd - body.firstRow, columns: body.columns, normalizeInput: true) == -1
     }
 
     private func storageFailure(_ error: Error) -> LongCaptureAppendResult {
@@ -369,7 +454,7 @@ final class LongCaptureStitcher {
         diagnosticTrace.event("event=render-start output=\(document.width ?? 0)x\(totalPixelHeight) segmentCount=\(document.count) footerHeight=\(footerImage?.height ?? 0)")
         do {
             let image = try document.render(height: totalPixelHeight, footer: footerImage)
-            diagnosticTrace.event("event=render-ended outcome=success elapsedMs=\(diagnosticTrace.elapsed(since: start))")
+            diagnosticTrace.event("event=render-ended outcome=success elapsedMs=\(diagnosticTrace.elapsed(since: start)) residentBytes=\(document.residentBytes) spilledBytes=\(document.spilledBytes)")
             return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         } catch {
             _ = storageFailure(error)

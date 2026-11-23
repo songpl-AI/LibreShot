@@ -58,6 +58,7 @@ struct LongCaptureFrame {
 struct LongCaptureAppendResult {
     let accepted: Bool
     let appendedPixelHeight: Int
+    let isRevisit: Bool
 }
 
 /// Numeric lifecycle evidence only. Formatting and logging stay disabled unless

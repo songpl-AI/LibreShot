@@ -28,6 +28,8 @@ struct LongCaptureSegment {
 /// Canonical, lossless, contiguous document strips on the engine's serial queue.
 /// Spills contain only independent RGBA bytes, never a retained capture buffer.
 final class LongCaptureDocumentStore {
+    private static let spillBeforeRenderBytes = 64 * 1024 * 1024
+
     private struct Strip {
         let yOffset: Int
         let width: Int
@@ -118,7 +120,7 @@ final class LongCaptureDocumentStore {
             throw LongCaptureDocumentStoreError.invalidPlacement
         }
         let strip = try makeStrip(image, at: yOffset)
-        try commit(strips + [strip])
+        try commit(strips + [strip], residentBudget: limits.residentDocumentBytes)
     }
 
     /// Stage the entire replacement, including every spill, before changing any
@@ -140,7 +142,7 @@ final class LongCaptureDocumentStore {
             expectedOffset = end
             proposed.append(strip)
         }
-        try commit(proposed)
+        try commit(proposed, residentBudget: limits.residentDocumentBytes)
     }
 
     private func makeStrip(_ image: CGImage, at yOffset: Int) throws -> Strip {
@@ -172,7 +174,7 @@ final class LongCaptureDocumentStore {
         guard end == height else { throw LongCaptureDocumentStoreError.invalidPlacement }
     }
 
-    private func commit(_ proposed: [Strip]) throws {
+    private func commit(_ proposed: [Strip], residentBudget: Int) throws {
         let proposedHeight: Int
         if let last = proposed.last {
             let (end, overflow) = last.yOffset.addingReportingOverflow(last.height)
@@ -193,7 +195,7 @@ final class LongCaptureDocumentStore {
         let existingDirectory = directory
         var created: [URL] = []
         do {
-            for index in next.indices where resident > limits.residentDocumentBytes && next[index].image != nil {
+            for index in next.indices where resident > residentBudget && next[index].image != nil {
                 let strip = next[index]
                 guard let image = strip.image, let value = Self.canonicalData(image),
                       value.count == strip.byteCount else { throw LongCaptureDocumentStoreError.invalidImage }
@@ -285,8 +287,19 @@ final class LongCaptureDocumentStore {
             }
             guard data.count <= limits.maximumFrameBytes else { throw LongCaptureDocumentStoreError.frameLimit }
         }
-        guard let bytes = Self.byteLayout(width: width, height: height),
-              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+        guard let bytes = Self.byteLayout(width: width, height: height) else {
+            throw LongCaptureDocumentStoreError.rendererFailure
+        }
+        if bytes.count >= Self.spillBeforeRenderBytes, residentBytes > 0 {
+            // The final bitmap is large enough to amortize the write. Release
+            // the resident strips before allocating that bitmap.
+            do { try commit(strips, residentBudget: 0) }
+            catch LongCaptureDocumentStoreError.storageFailure {
+                // The transaction kept every original strip. Saving can still
+                // proceed with the regular resident budget if this write fails.
+            }
+        }
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: width, height: height,
                                       bitsPerComponent: 8, bytesPerRow: bytes.row,
                                       space: colorSpace,
@@ -310,14 +323,34 @@ final class LongCaptureDocumentStore {
     /// Compare a covered document interval without constructing the full image.
     /// Nil means invalid range/format/I/O; -1 means all requested rows are equal.
     func firstDifferentRow(from image: CGImage, documentStart: Int, imageStart: Int,
-                           rowCount: Int) -> Int? {
+                           rowCount: Int, columns: [Int]? = nil, normalizeInput: Bool = false) -> Int? {
         let (imageEnd, imageOverflow) = imageStart.addingReportingOverflow(rowCount)
         let (documentEnd, documentOverflow) = documentStart.addingReportingOverflow(rowCount)
         guard rowCount > 0, imageStart >= 0, documentStart >= 0,
               !imageOverflow, !documentOverflow, imageEnd <= image.height, documentEnd <= totalHeight,
-              image.width == width, let incoming = Self.canonicalData(image),
-              let pointer = CFDataGetBytePtr(incoming.data) else { return nil }
+              image.width == width else { return nil }
+        let incoming = Self.canonicalData(image) ?? (normalizeInput
+            ? Self.detached(image, maximumBytes: limits.maximumFrameBytes).flatMap(Self.canonicalData)
+            : nil)
+        guard let incoming, let pointer = CFDataGetBytePtr(incoming.data) else { return nil }
         defer { withExtendedLifetime(incoming.data) {} }
+        var byteRanges: [Range<Int>] = []
+        if let columns {
+            guard let first = columns.first, first >= 0, let last = columns.last, last < image.width else { return nil }
+            var start = first
+            var end = first + 1
+            for column in columns.dropFirst() {
+                guard column >= end else { return nil }
+                if column != end {
+                    byteRanges.append(start * 4..<end * 4)
+                    start = column
+                }
+                end = column + 1
+            }
+            byteRanges.append(start * 4..<end * 4)
+        } else {
+            byteRanges = [0..<incoming.row]
+        }
         var covered = documentStart
         var low = 0, high = strips.count
         while low < high {
@@ -342,7 +375,9 @@ final class LongCaptureDocumentStore {
                     for y in lower..<upper {
                         let a = pointer + (imageStart + (y - documentStart)) * incoming.row
                         let b = storedPointer + (y - strip.yOffset) * strip.bytesPerRow
-                        if memcmp(a, b, incoming.row) != 0 { return y }
+                        for range in byteRanges {
+                            if memcmp(a + range.lowerBound, b + range.lowerBound, range.count) != 0 { return y }
+                        }
                     }
                     return nil
                 }

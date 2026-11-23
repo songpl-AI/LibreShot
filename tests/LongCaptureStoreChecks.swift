@@ -194,6 +194,33 @@ struct LongCaptureStoreChecks {
         check(defaults.permits(width: 1024, height: 32768) &&
               !defaults.permits(width: 1024, height: 32769),
               "final-render byte geometry accepts exact cap and rejects one extra row")
+        let priorSpools = spoolDirectories()
+        let large = LongCaptureDocumentStore()
+        let largeWidth = 2048
+        let largeHeight = 8192
+        for y in stride(from: 0, to: largeHeight, by: 1024) {
+            try! autoreleasepool { try large.append(canonical(width: largeWidth, height: 1024, documentY: y), at: y) }
+        }
+        let residentBeforeRender = large.residentBytes
+        let newSpools = spoolDirectories().subtracting(priorSpools)
+        if newSpools.count == 1, let largeSpool = newSpools.first {
+            let originalFiles = files(in: largeSpool)
+            do {
+                try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: largeSpool.path)
+                defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: largeSpool.path) }
+                let fallbackWasExact = try autoreleasepool {
+                    try exact(large.render(height: largeHeight), canonical(width: largeWidth, height: largeHeight))
+                }
+                check(fallbackWasExact && large.residentBytes == residentBeforeRender && files(in: largeSpool) == originalFiles,
+                      "failed optional spill preserves exact large output and leaves original strips intact")
+            } catch { check(false, "failed optional spill fallback: \(error)") }
+        } else { check(false, "large test owns one spool directory") }
+        let largeOutput = try! large.render(height: largeHeight)
+        check(residentBeforeRender == 32 * 1024 * 1024 && large.residentBytes == 0 &&
+              large.spilledBytes == largeWidth * largeHeight * 4,
+              "a 64 MiB output lands remaining resident strips before final composition")
+        check(exact(largeOutput, canonical(width: largeWidth, height: largeHeight)),
+              "large composition and its spilled strips preserve all original pixels")
         check(!defaults.permits(width: 0, height: 1) && !defaults.permits(width: 1, height: 0) &&
               !defaults.permits(width: -1, height: 1) && !defaults.permits(width: Int.max, height: 2),
               "invalid and overflow-prone dimensions reject safely")

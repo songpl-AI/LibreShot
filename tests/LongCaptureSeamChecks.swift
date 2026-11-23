@@ -66,6 +66,24 @@ struct LongCaptureSeamChecks {
         exact(reverse, offsets: [0, 120, 240, 360], footers: [0, 0, 0, 0],
               "reverse revisit leaves the committed forward frontier and exact 840px output")
 
+        let deepRevisit = LongCaptureFrameAccumulator(limits: .init(residentDocumentBytes: 0))
+        let forwardOffsets = [0, 120, 240, 360, 480, 600, 690, 810]
+        let revisitOffsets = [480, 360, 240, 120, 0, 120, 240, 360, 480, 570]
+        let offsets = Array(forwardOffsets.prefix(6)) + revisitOffsets + forwardOffsets.suffix(2)
+        var farthest = 0
+        var stayedConnected = true
+        for (index, offset) in offsets.enumerated() {
+            let frame = fixture(offset: offset, footer: 20, patches: [], useCaptureFormat: true)
+            let progress = deepRevisit.process(frame: .init(image: frame, timestamp: Double(index) / 10))
+            farthest = max(farthest, offset)
+            if progress?.warning != nil || progress?.appendedPixelHeight != 480 + farthest {
+                stayedConnected = false
+            }
+        }
+        check(stayedConnected, "deep revisit with fixed chrome connects across spilled strips and resumes past the frontier")
+        exact(deepRevisit, offsets: forwardOffsets, footers: forwardOffsets.map { _ in 20 },
+              "deep revisit and resumed scrolling render exactly the forward-only document")
+
         // A caret/hover can remain at the same screen location while the body
         // scrolls. Alignment exposes both the old and new small repaint patch.
         let caret = Patch(x: 200, y: 250, width: 4, height: 4)
@@ -163,7 +181,7 @@ struct LongCaptureSeamChecks {
         return UInt8(20 + bits % 210)
     }
 
-    private static func fixture(offset: Int, footer: Int, patches: [Patch]) -> CGImage {
+    private static func fixture(offset: Int, footer: Int, patches: [Patch], useCaptureFormat: Bool = false) -> CGImage {
         var pixels = [UInt8](repeating: 255, count: 480 * 480 * 4)
         for y in 0..<480 {
             for x in 0..<480 {
@@ -181,6 +199,11 @@ struct LongCaptureSeamChecks {
                     pixels[i] = 250; pixels[i + 1] = 250; pixels[i + 2] = 250
                 }
             }
+        }
+        if useCaptureFormat {
+            // The fixture is opaque grayscale, so RGBA and BGRA use the same bytes.
+            let bgra: CGBitmapInfo = [.byteOrder32Little, .init(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)]
+            return image(pixels, height: 480, bitmapInfo: bgra)
         }
         return image(pixels, height: 480)
     }
@@ -209,10 +232,11 @@ struct LongCaptureSeamChecks {
         return image(pixels, height: pixels.count / (480 * 4))
     }
 
-    private static func image(_ pixels: [UInt8], height: Int) -> CGImage {
+    private static func image(_ pixels: [UInt8], height: Int,
+                              bitmapInfo: CGBitmapInfo = .init(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)) -> CGImage {
         CGImage(width: 480, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
                 bytesPerRow: 480 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                bitmapInfo: bitmapInfo,
                 provider: CGDataProvider(data: Data(pixels) as CFData)!, decode: nil,
                 shouldInterpolate: false, intent: .defaultIntent)!
     }

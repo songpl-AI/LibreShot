@@ -74,6 +74,35 @@ struct LongCaptureEngineChecks {
         exact(revisit, document(offset: 0, height: 840),
               "reverse revisits then forward progress contain no repeated or missing rows")
 
+        let deepRevisit = LongCaptureFrameAccumulator()
+        do { _ = try deepRevisit.seed(image: document(offset: 0)) }
+        catch { check(false, "deep revisit capture starts at the frozen selection: \(error)") }
+        for (index, offset) in [120, 240, 360, 480, 600, 480, 360, 240, 120, 0].enumerated() {
+            _ = feed(deepRevisit, document(offset: offset), index + 1)
+        }
+        exact(deepRevisit, document(offset: 0, height: 1080),
+              "finishing after returning to the top preserves all captured pixels")
+
+        let changedRevisit = LongCaptureFrameAccumulator()
+        for (index, offset) in [0, 120, 240, 360, 480, 600, 480, 360, 240, 120].enumerated() {
+            _ = feed(changedRevisit, document(offset: offset), index)
+        }
+        let top = document(offset: 0)
+        var changedPixels = Array(top.dataProvider!.data! as Data)
+        for y in 40..<50 {
+            for x in 200..<240 {
+                let pixel = (y * top.width + x) * 4
+                changedPixels.replaceSubrange(pixel..<(pixel + 3), with: [255, 255, 255])
+            }
+        }
+        let changedTop = image(changedPixels, width: top.width, height: top.height)
+        _ = feed(changedRevisit, changedTop, 10)
+        _ = feed(changedRevisit, changedTop, 11)
+        incomplete(changedRevisit, "newly visible changed rows outside the adjacent overlap cannot be treated as a revisit")
+        _ = feed(changedRevisit, top, 12)
+        exact(changedRevisit, document(offset: 0, height: 1080),
+              "the true recorded rows recover a deep revisit without changing the document")
+
         // A known compositor-like change: one uniform color pair at exactly the
         // same location, 126px tall, with distinctive stable structure above and
         // below in those columns. It must preserve the connected frontier.

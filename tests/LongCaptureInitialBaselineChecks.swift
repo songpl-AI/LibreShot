@@ -81,8 +81,8 @@ struct LongCaptureInitialBaselineChecks {
         catch { check(false, "duplicate seed returned unexpected \(error)") }
         exact(duplicateSeed, initial, "rejected reseeding preserves the original trusted selection")
 
-        // The single-frontier engine cannot prove a revisit farther than one
-        // viewport. A trusted initial image does not repair that separate limit.
+        // A direct jump still needs a provable connection. The covered-revisit
+        // path requires overlapping observations to track back to the top.
         let deepReverse = seeded(initial)
         for (index, offset) in [120, 240, 360, 480, 600, 0].enumerated() {
             feed(deepReverse, document(offset: offset), index + 1)
